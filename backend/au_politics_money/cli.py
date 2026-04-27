@@ -1,0 +1,280 @@
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+
+from au_politics_money.db.load import load_processed_artifacts
+from au_politics_money.ingest.discovered_sources import (
+    child_source_id,
+    source_from_discovered_link,
+)
+from au_politics_money.ingest.discovery import (
+    discover_links_from_body,
+    latest_body_path,
+    latest_discovered_links_path,
+    read_discovered_links,
+    write_discovered_links,
+)
+from au_politics_money.ingest.aec_annual import (
+    normalize_aec_annual_money_flows,
+    summarize_aec_annual_zip,
+)
+from au_politics_money.ingest.aph_roster import build_current_parliament_roster
+from au_politics_money.ingest.fetch import fetch_source
+from au_politics_money.ingest.house_interests import extract_house_interest_sections
+from au_politics_money.ingest.house_interest_records import extract_house_interest_records
+from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
+from au_politics_money.ingest.senate_interests import (
+    extract_senate_interest_records,
+    fetch_senate_interest_statements,
+)
+from au_politics_money.ingest.sources import all_sources, get_source
+from au_politics_money.models import DiscoveredLink, SourceRecord
+from au_politics_money.pipeline import run_federal_foundation_pipeline
+
+
+def list_sources() -> int:
+    for source in all_sources():
+        print(
+            f"{source.source_id}\t{source.priority}\t{source.jurisdiction}\t"
+            f"{source.source_type}\t{source.name}"
+        )
+    return 0
+
+
+def show_source(source_id: str) -> int:
+    source = get_source(source_id)
+    print(json.dumps(source.to_dict(), indent=2, sort_keys=True))
+    return 0
+
+
+def fetch_source_command(source_id: str) -> int:
+    source = get_source(source_id)
+    metadata_path = fetch_source(source)
+    print(str(Path(metadata_path).resolve()))
+    return 0
+
+
+def discover_links_command(source_id: str) -> int:
+    source = get_source(source_id)
+    body_path = latest_body_path(source.source_id)
+    if body_path is None:
+        fetch_source(source)
+        body_path = latest_body_path(source.source_id)
+    if body_path is None:
+        raise FileNotFoundError(f"No raw body found for source {source.source_id}")
+
+    links = discover_links_from_body(source, body_path)
+    output_path = write_discovered_links(source, links)
+    print(f"{len(links)} links")
+    print(str(Path(output_path).resolve()))
+    return 0
+
+
+def _child_source_id(parent_source_id: str, link: DiscoveredLink) -> str:
+    return child_source_id(parent_source_id, link)
+
+
+def _source_from_discovered_link(parent: SourceRecord, link: DiscoveredLink) -> SourceRecord:
+    return source_from_discovered_link(parent, link)
+
+
+def fetch_discovered_command(source_id: str, link_type: str | None, limit: int | None) -> int:
+    parent = get_source(source_id)
+    links_path = latest_discovered_links_path(parent.source_id)
+    if links_path is None:
+        discover_links_command(parent.source_id)
+        links_path = latest_discovered_links_path(parent.source_id)
+    if links_path is None:
+        raise FileNotFoundError(f"No discovered links found for source {parent.source_id}")
+
+    links = read_discovered_links(links_path)
+    if link_type:
+        links = [link for link in links if link.link_type == link_type]
+    if limit is not None:
+        links = links[:limit]
+
+    for link in links:
+        child_source = _source_from_discovered_link(parent, link)
+        metadata_path = fetch_source(child_source)
+        print(str(Path(metadata_path).resolve()))
+
+    print(f"fetched {len(links)} links")
+    return 0
+
+
+def build_roster_command() -> int:
+    roster_path = build_current_parliament_roster()
+    print(str(Path(roster_path).resolve()))
+    return 0
+
+
+def extract_pdf_text_command(prefix: str, limit: int | None) -> int:
+    summary_path = extract_pdf_text_batch(prefix=prefix, limit=limit)
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def summarize_aec_annual_command(sample_size: int) -> int:
+    summary_path = summarize_aec_annual_zip(sample_size=sample_size)
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def normalize_aec_annual_command() -> int:
+    summary_path = normalize_aec_annual_money_flows()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def extract_house_interest_sections_command() -> int:
+    summary_path = extract_house_interest_sections()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def extract_house_interest_records_command() -> int:
+    summary_path = extract_house_interest_records()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def fetch_senate_interests_api_command(limit: int | None) -> int:
+    summary_path = fetch_senate_interest_statements(limit=limit)
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def extract_senate_interest_records_command() -> int:
+    summary_path = extract_senate_interest_records()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def run_pipeline_command(smoke: bool, skip_house_pdfs: bool, skip_pdf_text: bool) -> int:
+    manifest_path = run_federal_foundation_pipeline(
+        smoke=smoke,
+        skip_house_pdfs=skip_house_pdfs,
+        skip_pdf_text=skip_pdf_text,
+    )
+    print(str(Path(manifest_path).resolve()))
+    return 0
+
+
+def load_postgres_command(
+    apply_schema_first: bool,
+    skip_roster: bool,
+    skip_money_flows: bool,
+    skip_house_interests: bool,
+    skip_senate_interests: bool,
+) -> int:
+    summary = load_processed_artifacts(
+        apply_schema_first=apply_schema_first,
+        include_roster=not skip_roster,
+        include_money_flows=not skip_money_flows,
+        include_house_interests=not skip_house_interests,
+        include_senate_interests=not skip_senate_interests,
+    )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="au-politics-money")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    subparsers.add_parser("list-sources")
+
+    show_parser = subparsers.add_parser("show-source")
+    show_parser.add_argument("source_id")
+
+    fetch_parser = subparsers.add_parser("fetch-source")
+    fetch_parser.add_argument("source_id")
+
+    discover_parser = subparsers.add_parser("discover-links")
+    discover_parser.add_argument("source_id")
+
+    fetch_discovered_parser = subparsers.add_parser("fetch-discovered")
+    fetch_discovered_parser.add_argument("source_id")
+    fetch_discovered_parser.add_argument("--link-type")
+    fetch_discovered_parser.add_argument("--limit", type=int)
+
+    subparsers.add_parser("build-roster")
+
+    pdf_text_parser = subparsers.add_parser("extract-pdf-text")
+    pdf_text_parser.add_argument("--prefix", default="aph_members_interests_48__")
+    pdf_text_parser.add_argument("--limit", type=int)
+
+    aec_annual_parser = subparsers.add_parser("summarize-aec-annual")
+    aec_annual_parser.add_argument("--sample-size", type=int, default=3)
+
+    subparsers.add_parser("normalize-aec-annual-money-flows")
+
+    subparsers.add_parser("extract-house-interest-sections")
+
+    subparsers.add_parser("extract-house-interest-records")
+
+    senate_fetch_parser = subparsers.add_parser("fetch-senate-interests-api")
+    senate_fetch_parser.add_argument("--limit", type=int)
+
+    subparsers.add_parser("extract-senate-interest-records")
+
+    pipeline_parser = subparsers.add_parser("run-federal-foundation-pipeline")
+    pipeline_parser.add_argument("--smoke", action="store_true")
+    pipeline_parser.add_argument("--skip-house-pdfs", action="store_true")
+    pipeline_parser.add_argument("--skip-pdf-text", action="store_true")
+
+    load_parser = subparsers.add_parser("load-postgres")
+    load_parser.add_argument("--apply-schema", action="store_true")
+    load_parser.add_argument("--skip-roster", action="store_true")
+    load_parser.add_argument("--skip-money-flows", action="store_true")
+    load_parser.add_argument("--skip-house-interests", action="store_true")
+    load_parser.add_argument("--skip-senate-interests", action="store_true")
+
+    return parser
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    if args.command == "list-sources":
+        return list_sources()
+    if args.command == "show-source":
+        return show_source(args.source_id)
+    if args.command == "fetch-source":
+        return fetch_source_command(args.source_id)
+    if args.command == "discover-links":
+        return discover_links_command(args.source_id)
+    if args.command == "fetch-discovered":
+        return fetch_discovered_command(args.source_id, args.link_type, args.limit)
+    if args.command == "build-roster":
+        return build_roster_command()
+    if args.command == "extract-pdf-text":
+        return extract_pdf_text_command(args.prefix, args.limit)
+    if args.command == "summarize-aec-annual":
+        return summarize_aec_annual_command(args.sample_size)
+    if args.command == "normalize-aec-annual-money-flows":
+        return normalize_aec_annual_command()
+    if args.command == "extract-house-interest-sections":
+        return extract_house_interest_sections_command()
+    if args.command == "extract-house-interest-records":
+        return extract_house_interest_records_command()
+    if args.command == "fetch-senate-interests-api":
+        return fetch_senate_interests_api_command(args.limit)
+    if args.command == "extract-senate-interest-records":
+        return extract_senate_interest_records_command()
+    if args.command == "run-federal-foundation-pipeline":
+        return run_pipeline_command(args.smoke, args.skip_house_pdfs, args.skip_pdf_text)
+    if args.command == "load-postgres":
+        return load_postgres_command(
+            args.apply_schema,
+            args.skip_roster,
+            args.skip_money_flows,
+            args.skip_house_interests,
+            args.skip_senate_interests,
+        )
+    raise ValueError(f"Unhandled command: {args.command}")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,0 +1,29 @@
+name: federal-pipeline-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 18 * * 0"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e '.[dev]'
+      - name: Run tests
+        run: python -m pytest
+      - name: Run lint
+        run: ruff check .
+      - name: Run federal smoke pipeline
+        run: python -m au_politics_money.cli run-federal-foundation-pipeline --smoke
+
