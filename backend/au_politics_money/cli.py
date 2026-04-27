@@ -9,6 +9,7 @@ from au_politics_money.ingest.discovered_sources import (
     child_source_id,
     source_from_discovered_link,
 )
+from au_politics_money.ingest.entity_classification import classify_entity_names
 from au_politics_money.ingest.discovery import (
     discover_links_from_body,
     latest_body_path,
@@ -152,6 +153,12 @@ def extract_senate_interest_records_command() -> int:
     return 0
 
 
+def classify_entities_command() -> int:
+    summary_path = classify_entity_names()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
 def run_pipeline_command(smoke: bool, skip_house_pdfs: bool, skip_pdf_text: bool) -> int:
     manifest_path = run_federal_foundation_pipeline(
         smoke=smoke,
@@ -168,6 +175,7 @@ def load_postgres_command(
     skip_money_flows: bool,
     skip_house_interests: bool,
     skip_senate_interests: bool,
+    skip_entity_classifications: bool,
 ) -> int:
     summary = load_processed_artifacts(
         apply_schema_first=apply_schema_first,
@@ -175,6 +183,7 @@ def load_postgres_command(
         include_money_flows=not skip_money_flows,
         include_house_interests=not skip_house_interests,
         include_senate_interests=not skip_senate_interests,
+        include_entity_classifications=not skip_entity_classifications,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
@@ -220,6 +229,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("extract-senate-interest-records")
 
+    subparsers.add_parser("classify-entities")
+
     pipeline_parser = subparsers.add_parser("run-federal-foundation-pipeline")
     pipeline_parser.add_argument("--smoke", action="store_true")
     pipeline_parser.add_argument("--skip-house-pdfs", action="store_true")
@@ -231,6 +242,7 @@ def build_parser() -> argparse.ArgumentParser:
     load_parser.add_argument("--skip-money-flows", action="store_true")
     load_parser.add_argument("--skip-house-interests", action="store_true")
     load_parser.add_argument("--skip-senate-interests", action="store_true")
+    load_parser.add_argument("--skip-entity-classifications", action="store_true")
 
     return parser
 
@@ -263,6 +275,8 @@ def main() -> int:
         return fetch_senate_interests_api_command(args.limit)
     if args.command == "extract-senate-interest-records":
         return extract_senate_interest_records_command()
+    if args.command == "classify-entities":
+        return classify_entities_command()
     if args.command == "run-federal-foundation-pipeline":
         return run_pipeline_command(args.smoke, args.skip_house_pdfs, args.skip_pdf_text)
     if args.command == "load-postgres":
@@ -272,6 +286,7 @@ def main() -> int:
             args.skip_money_flows,
             args.skip_house_interests,
             args.skip_senate_interests,
+            args.skip_entity_classifications,
         )
     raise ValueError(f"Unhandled command: {args.command}")
 

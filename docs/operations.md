@@ -93,6 +93,14 @@ cd backend
 .venv/bin/python -m au_politics_money.cli extract-house-interest-records
 ```
 
+Regenerate entity/industry classifications from the latest processed money-flow
+and interest artifacts:
+
+```bash
+cd backend
+.venv/bin/python -m au_politics_money.cli classify-entities
+```
+
 If Docker is unavailable on a development machine, still run the unit tests and
 smoke pipeline; the database loader should then be verified on the first machine
 with PostgreSQL/PostGIS available.
@@ -112,6 +120,8 @@ Current local baseline after the 2026-04-27 federal load:
 - `money_flow`: 192,201 AEC annual rows.
 - `gift_interest`: 7,605 total rows: 5,853 House and 1,752 Senate.
 - `gift_interest` gift/travel subset: House gifts 538, House sponsored travel/hospitality 317, Senate gifts 227, Senate sponsored travel/hospitality 263.
+- `entity_industry_classification`: 35,874 generated rows from `public_interest_sector_rules_v1`.
+- Current classifier sector totals include 14,833 `individual_uncoded`, 1,482 `unions`, 1,017 `finance`, 904 `political_entity`, 582 `property_development`, 278 `mining`, and 205 `fossil_fuels`.
 
 ## Operational Checks
 
@@ -126,11 +136,14 @@ After each scheduled run, check:
 - OCR-needed PDFs are queued.
 - Any APH contact CSV and House interests register member-count mismatch is reviewed.
 - House structured extraction summaries are checked for explanatory-note/header leakage and duplicate external keys.
+- Entity classification summaries are checked for broad-rule false positives before database load.
+- Any sector used for public-facing claims is marked as inferred unless backed by official identifiers or manual review.
 
 ## Known Current Limitations
 
 - House PDF records are structured into declaration lines, but table interpretation remains heuristic and should be sampled before public analytical claims.
 - OCR fallback is implemented for low-text House PDF pages, but OCR-derived names/electorates still need QA sampling.
 - Senate interests API ingestion is implemented; House interests rely on PDF text/OCR extraction.
+- Entity/industry classification is currently rule-based and not yet official ANZSIC/ABN/ASIC-backed.
 - AEC GIS ZIPs are discovered but not yet transformed into GeoJSON/PostGIS.
 - They Vote For You API needs an API key before vote ingestion can run.

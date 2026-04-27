@@ -3,12 +3,18 @@ from __future__ import annotations
 import json
 import os
 import re
+from collections import Counter
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from au_politics_money.config import PROCESSED_DIR, PROJECT_ROOT
+from au_politics_money.ingest.entity_classification import (
+    CLASSIFIER_NAME,
+    PUBLIC_INTEREST_SECTORS,
+    latest_entity_classifications_jsonl,
+)
 
 STATE_CODES = {
     "Australian Capital Territory": "ACT",
@@ -207,6 +213,35 @@ def get_or_create_entity(conn, raw_name: str, entity_type: str = "unknown") -> i
     with conn.cursor() as cur:
         cur.execute(
             """
+            SELECT id
+            FROM entity
+            WHERE normalized_name = %s
+            ORDER BY
+                CASE
+                    WHEN entity_type = %s THEN 0
+                    WHEN entity_type = 'unknown' THEN 1
+                    ELSE 2
+                END,
+                id
+            LIMIT 1
+            """,
+            (normalized_name, entity_type),
+        )
+        existing = cur.fetchone()
+        if existing is not None:
+            entity_id = int(existing[0])
+            cur.execute(
+                """
+                UPDATE entity
+                SET canonical_name = %s
+                WHERE id = %s AND entity_type = 'unknown'
+                """,
+                (canonical_name, entity_id),
+            )
+            return entity_id
+
+        cur.execute(
+            """
             INSERT INTO entity (canonical_name, normalized_name, entity_type)
             VALUES (%s, %s, %s)
             ON CONFLICT (normalized_name, entity_type) DO UPDATE SET
@@ -214,6 +249,21 @@ def get_or_create_entity(conn, raw_name: str, entity_type: str = "unknown") -> i
             RETURNING id
             """,
             (canonical_name, normalized_name, entity_type),
+        )
+        row = cur.fetchone()
+    return int(row[0])
+
+
+def get_or_create_industry_code(conn, scheme: str, code: str, label: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO industry_code (scheme, code, label)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (scheme, code) DO UPDATE SET label = EXCLUDED.label
+            RETURNING id
+            """,
+            (scheme, code, label),
         )
         row = cur.fetchone()
     return int(row[0])
@@ -690,6 +740,136 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
     }
 
 
+def _entity_id_by_normalized_name(conn, normalized_name: str) -> int | None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id
+            FROM entity
+            WHERE normalized_name = %s
+            ORDER BY CASE WHEN entity_type = 'unknown' THEN 1 ELSE 0 END, id
+            LIMIT 1
+            """,
+            (normalized_name,),
+        )
+        row = cur.fetchone()
+    return int(row[0]) if row is not None else None
+
+
+def _update_entity_type_from_classification(conn, entity_id: int, entity_type: str) -> None:
+    if not entity_type or entity_type == "unknown":
+        return
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE entity
+            SET entity_type = %s
+            WHERE id = %s
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM entity duplicate
+                  WHERE duplicate.normalized_name = entity.normalized_name
+                    AND duplicate.entity_type = %s
+                    AND duplicate.id <> entity.id
+              )
+            """,
+            (entity_type, entity_id, entity_type),
+        )
+
+
+def load_entity_classifications(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_entity_classifications_jsonl()
+    except FileNotFoundError:
+        return {
+            "entity_classifications": 0,
+            "skipped_entities": 0,
+            "skipped_reason": "no_entity_classification_artifact",
+        }
+
+    code_ids = {
+        sector["code"]: get_or_create_industry_code(
+            conn,
+            "public_interest_sector",
+            sector["code"],
+            sector["label"],
+        )
+        for sector in PUBLIC_INTEREST_SECTORS
+    }
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM entity_industry_classification
+            WHERE method = 'rule_based'
+              AND metadata->>'classifier_name' = %s
+            """,
+            (CLASSIFIER_NAME,),
+        )
+
+    inserted = 0
+    skipped = 0
+    sector_counts: Counter[str] = Counter()
+    entity_type_counts: Counter[str] = Counter()
+    confidence_counts: Counter[str] = Counter()
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            record = json.loads(line)
+            entity_id = _entity_id_by_normalized_name(conn, record["normalized_name"])
+            if entity_id is None:
+                skipped += 1
+                continue
+
+            _update_entity_type_from_classification(conn, entity_id, record["entity_type"])
+            industry_code_id = code_ids.get(record["public_sector"])
+            metadata = {
+                "classifier_name": record["classifier_name"],
+                "matched_rule_id": record["matched_rule_id"],
+                "raw_name_variants": record["raw_name_variants"],
+                "source_contexts": record["source_contexts"],
+                "money_flow_source_count": record["money_flow_source_count"],
+                "money_flow_recipient_count": record["money_flow_recipient_count"],
+                "gift_interest_source_count": record["gift_interest_source_count"],
+                "total_source_amount_aud": record["total_source_amount_aud"],
+                "total_recipient_amount_aud": record["total_recipient_amount_aud"],
+                "sample_source_ids": record["sample_source_ids"],
+                "review_recommended": record["review_recommended"],
+                "classification_artifact_path": str(path),
+            }
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO entity_industry_classification (
+                        entity_id, industry_code_id, public_sector, method, confidence,
+                        evidence_note, metadata
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                    """,
+                    (
+                        entity_id,
+                        industry_code_id,
+                        record["public_sector"],
+                        record["method"],
+                        record["confidence"],
+                        record["evidence_note"],
+                        as_jsonb(metadata),
+                    ),
+                )
+            inserted += 1
+            sector_counts[record["public_sector"]] += 1
+            entity_type_counts[record["entity_type"]] += 1
+            confidence_counts[record["confidence"]] += 1
+
+    conn.commit()
+    return {
+        "entity_classifications": inserted,
+        "skipped_entities": skipped,
+        "public_sector_counts": dict(sorted(sector_counts.items())),
+        "entity_type_counts": dict(sorted(entity_type_counts.items())),
+        "confidence_counts": dict(sorted(confidence_counts.items())),
+    }
+
+
 def load_processed_artifacts(
     *,
     database_url: str | None = None,
@@ -698,6 +878,7 @@ def load_processed_artifacts(
     include_money_flows: bool = True,
     include_house_interests: bool = True,
     include_senate_interests: bool = True,
+    include_entity_classifications: bool = True,
 ) -> dict[str, Any]:
     with connect(database_url) as conn:
         if apply_schema_first:
@@ -712,4 +893,6 @@ def load_processed_artifacts(
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:
             summary["senate_interests"] = load_senate_interest_records(conn)
+        if include_entity_classifications:
+            summary["entity_classifications"] = load_entity_classifications(conn)
         return summary

@@ -71,6 +71,7 @@ Current local federal baseline loaded into PostgreSQL:
 - 5,853 House interest records from PDF text/OCR extraction.
 - 1,752 Senate interest records from the official APH-backed Senate interests API.
 - 226 people/office terms, including one documented House-register-derived fallback for Sussan Ley/Farrer because the APH contact CSV omitted that House seat.
+- 35,874 generated entity-sector classifications from `public_interest_sector_rules_v1`; these are inferred rule-based labels pending official identifier/manual-review enrichment.
 
 ## Reproducible Pipeline
 
@@ -89,6 +90,7 @@ The pipeline currently archives and normalizes:
 - AEC annual disclosure bulk data.
 - Senate register JSON records from the official APH-backed Senate interests API.
 - House register PDF text/OCR, numbered sections, and structured interest records.
+- Rule-based entity and public-interest-sector classifications.
 
 For CI/development:
 

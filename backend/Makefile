@@ -1,4 +1,4 @@
-.PHONY: install test lint fetch-core discover-core roster aec-annual-summary aec-money pdf-text senate-interests pipeline pipeline-smoke db-up db-load
+.PHONY: install test lint fetch-core discover-core roster aec-annual-summary aec-money pdf-text senate-interests classify-entities pipeline pipeline-smoke db-up db-load
 
 install:
 	python3 -m venv .venv
@@ -41,6 +41,9 @@ pdf-text:
 senate-interests:
 	.venv/bin/python -m au_politics_money.cli fetch-senate-interests-api
 	.venv/bin/python -m au_politics_money.cli extract-senate-interest-records
+
+classify-entities:
+	.venv/bin/python -m au_politics_money.cli classify-entities
 
 pipeline:
 	.venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline

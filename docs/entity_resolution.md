@@ -54,7 +54,7 @@ Use two parallel classifications:
 1. Official ANZSIC where available.
 2. Public-interest sector for analysis and visualization.
 
-Suggested first public-interest sectors:
+Implemented first public-interest sectors:
 
 - fossil_fuels
 - mining
@@ -91,6 +91,46 @@ Suggested first public-interest sectors:
 - individual_uncoded
 - unknown
 
+## Current Automated Classifier
+
+The first classifier is `public_interest_sector_rules_v1`.
+
+It is intentionally conservative and reproducible:
+
+- Input: latest processed AEC annual money-flow JSONL plus latest House and
+  Senate interest-record JSONL.
+- Output: `data/processed/entity_classifications/<timestamp>.jsonl` and a
+  matching summary JSON.
+- Method: rule-based name patterns only.
+- Confidence: clear sector/name patterns are `fuzzy_high`; company/trust suffix
+  and individual-name-shape detections are `fuzzy_low`; non-matches are
+  `unresolved`.
+- Database load: generated rows are replaceable. Reloading deletes and rewrites
+  rows whose metadata has `classifier_name = public_interest_sector_rules_v1`.
+
+This classifier does not yet use official ANZSIC, ABN, ACN, ASIC, ACNC, or
+manual review evidence. Public-facing analysis should label these values as
+inferred classifications until reviewed or supported by official identifiers.
+
+Current 2026-04-27 artifact:
+
+- 35,874 normalized entity names.
+- 23,648 names with a non-unknown public-interest sector.
+- 12,226 unknown/uncoded names.
+- 27,059 names recommended for review because they are `fuzzy_low` or
+  `unresolved`.
+
+High-volume sectors in the current artifact include:
+
+- `individual_uncoded`: 14,833
+- `unions`: 1,482
+- `finance`: 1,017
+- `political_entity`: 904
+- `property_development`: 582
+- `business_associations`: 470
+- `mining`: 278
+- `fossil_fuels`: 205
+
 ## Human Review Queue
 
 Every uncertain match should generate a review item with:
@@ -104,4 +144,3 @@ Every uncertain match should generate a review item with:
 - Reviewer decision.
 - Reviewer note.
 - Decision timestamp.
-

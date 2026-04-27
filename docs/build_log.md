@@ -31,12 +31,14 @@ Completed:
 - Added Senate interest record flattening for gifts, travel/hospitality, liabilities, assets, income, directorships, and alterations.
 - Extended the PostgreSQL loader to insert Senate and House interest records into `gift_interest` after matching MPs/Senators to the reproducible APH roster.
 - Added a provenance-marked House-register fallback person path for cases where the APH contact CSV omits a valid House member present in the official House interests register.
+- Added reproducible rule-based entity and public-interest-sector classification artifact generation (`public_interest_sector_rules_v1`).
+- Extended the PostgreSQL loader to replace/load generated entity-sector classifications and update entity types without creating duplicate entities on future reloads.
 - Installed Docker Desktop 4.71.0 as `/Applications/Docker.app` and linked Docker CLI tools for the current shell environment.
 - Started the local PostGIS stack with Docker Compose and loaded the current reproducible artifacts into PostgreSQL.
 
 Verification:
 
-- `pytest`: 29 passed.
+- `pytest`: 33 passed.
 - `ruff check .`: passed.
 - Federal smoke pipeline: succeeded (`federal_foundation_20260427T111450Z.json`).
 - Senate smoke API fetch: 5 of 76 available senator statements fetched; 104 flattened interest records produced.
@@ -45,6 +47,8 @@ Verification:
 - Full House section extraction: 2,852 numbered sections from 150 member documents; 277 gift sections.
 - Full House structured extraction: 5,853 unique House interest records after excluding explanatory notes, form prompts, and duplicate keys.
 - Docker/PostGIS load succeeded: 226 people, 226 office terms, 192,201 AEC money-flow rows, 5,853 House interest records, 1,752 Senate interest records, 7,605 total `gift_interest` rows.
+- Full entity classification artifact: 35,874 normalized entity names, 23,648 non-unknown sector classifications, 12,226 unknown/uncoded names.
+- Entity classification database load: 35,874 generated `entity_industry_classification` rows; repeat load verified as idempotent at 35,874 rows.
 
 Notable data observations:
 
@@ -53,3 +57,4 @@ Notable data observations:
 - The first money-flow normalizer covers Detailed Receipts, Donations Made, Donor Donations Received, and Third Party Donations Received. It does not yet normalize debts, discretionary benefits, capital contributions, or return summary tables.
 - House interests text extraction needed OCR fallback for scanned/low-text pages, including `Gosling_48P.pdf` and `Katter_48P.pdf`; OCR artifacts are handled in the metadata extractor and record filters.
 - The Senate register currently exposes structured JSON through a public API used by the official APH React app; this is preferable to PDF scraping for current Senate interests, but the API should be monitored for schema changes.
+- `public_interest_sector_rules_v1` is useful for exploratory filtering but remains inferred. Any public claim about an entity's sector should retain the classifier/method/confidence caveat until ABN/ASIC/ANZSIC or manual-review evidence is added.

@@ -24,6 +24,7 @@ from au_politics_money.ingest.discovery import (
     read_discovered_links,
     write_discovered_links,
 )
+from au_politics_money.ingest.entity_classification import classify_entity_names
 from au_politics_money.ingest.fetch import fetch_source
 from au_politics_money.ingest.house_interests import extract_house_interest_sections
 from au_politics_money.ingest.house_interest_records import extract_house_interest_records
@@ -250,6 +251,8 @@ def run_federal_foundation_pipeline(
                 ("extract_house_interest_records", extract_house_interest_records),
             ]
         )
+
+    steps.append(("classify_entities", classify_entity_names))
 
     try:
         for name, func in steps:
