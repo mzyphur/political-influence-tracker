@@ -653,7 +653,10 @@ function CoveragePanel({
         <span>State: {stateLayer?.status || "planned"}</span>
         <span>Council: {councilLayer?.status || "planned"}</span>
       </div>
-      <p>{coverage.caveat}</p>
+      <details className="coverage-caveat">
+        <summary>Coverage caveat</summary>
+        <p>{coverage.caveat}</p>
+      </details>
     </div>
   );
 }
