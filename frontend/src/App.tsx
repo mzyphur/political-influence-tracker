@@ -8,6 +8,9 @@ import {
   Layers,
   Loader2,
   MapPin,
+  PanelLeftClose,
+  PanelLeftOpen,
+  PanelRightOpen,
   Search,
   Users
 } from "lucide-react";
@@ -92,6 +95,8 @@ function App() {
   const [influenceGraph, setInfluenceGraph] = useState<InfluenceGraph | null>(null);
   const [influenceGraphStatus, setInfluenceGraphStatus] = useState<LoadState>("idle");
   const [influenceGraphError, setInfluenceGraphError] = useState("");
+  const [controlsCollapsed, setControlsCollapsed] = useState(false);
+  const [detailsCollapsed, setDetailsCollapsed] = useState(false);
 
   useEffect(() => {
     if (dataLevel !== "federal") {
@@ -349,7 +354,11 @@ function App() {
 
   return (
     <main className="app-shell">
-      <section className="map-stage" aria-label="Australian political influence map">
+      <section
+        className="map-stage"
+        data-details-collapsed={detailsCollapsed}
+        aria-label="Australian political influence map"
+      >
         <MapCanvas
           features={features}
           selectedFeature={selectedFeature}
@@ -380,8 +389,35 @@ function App() {
           </div>
         </div>
 
-        <aside className="control-panel" aria-label="Map controls and search">
-          <div className="level-control" role="group" aria-label="Government level">
+        {controlsCollapsed ? (
+          <button
+            type="button"
+            className="panel-peek-button panel-peek-left"
+            aria-label="Open map controls"
+            aria-expanded={false}
+            title="Open map controls"
+            onClick={() => setControlsCollapsed(false)}
+          >
+            <PanelLeftOpen size={18} aria-hidden="true" />
+            <span>Controls</span>
+          </button>
+        ) : (
+          <aside className="control-panel" id="map-controls-panel" aria-label="Map controls and search">
+            <div className="control-panel-heading">
+              <span>Explore</span>
+              <button
+                type="button"
+                className="panel-collapse-button control-collapse-button"
+                aria-label="Collapse map controls"
+                aria-controls="map-controls-panel"
+                aria-expanded={true}
+                title="Collapse map controls"
+                onClick={() => setControlsCollapsed(true)}
+              >
+                <PanelLeftClose size={16} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="level-control" role="group" aria-label="Government level">
             {(["federal", "state", "council"] as DataLevel[]).map((level) => (
               <button
                 key={level}
@@ -546,23 +582,39 @@ function App() {
             </div>
           )}
         </aside>
+        )}
 
-        <DetailsPanel
-          feature={selectedFeature}
-          caveat={mapCaveat}
-          partyColor={
-            selectedFeature?.properties.chamber === "senate"
-              ? senateRegionColor(selectedFeature.properties.state_or_territory)
-              : electorateColor(selectedFeature?.properties.party_name)
-          }
-          selectedPersonId={selectedPersonId}
-          contactPersonId={contactPersonId}
-          representativeProfile={representativeProfile}
-          representativeProfileStatus={representativeProfileStatus}
-          onSelectRepresentative={selectRepresentativeForContact}
-          onOpenRepresentativeGraph={openRepresentativeGraph}
-          onCloseContact={() => setContactPersonId(null)}
-        />
+        {detailsCollapsed ? (
+          <button
+            type="button"
+            className="panel-peek-button panel-peek-right"
+            aria-label="Open selection details"
+            aria-expanded={false}
+            title="Open selection details"
+            onClick={() => setDetailsCollapsed(false)}
+          >
+            <PanelRightOpen size={18} aria-hidden="true" />
+            <span>Details</span>
+          </button>
+        ) : (
+          <DetailsPanel
+            feature={selectedFeature}
+            caveat={mapCaveat}
+            partyColor={
+              selectedFeature?.properties.chamber === "senate"
+                ? senateRegionColor(selectedFeature.properties.state_or_territory)
+                : electorateColor(selectedFeature?.properties.party_name)
+            }
+            selectedPersonId={selectedPersonId}
+            contactPersonId={contactPersonId}
+            representativeProfile={representativeProfile}
+            representativeProfileStatus={representativeProfileStatus}
+            onSelectRepresentative={selectRepresentativeForContact}
+            onOpenRepresentativeGraph={openRepresentativeGraph}
+            onCloseContact={() => setContactPersonId(null)}
+            onCollapse={() => setDetailsCollapsed(true)}
+          />
+        )}
         <InfluenceGraphPanel
           graph={influenceGraph}
           root={graphRoot}

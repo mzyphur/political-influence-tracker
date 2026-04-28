@@ -11,6 +11,7 @@ import {
   MapPin,
   Megaphone,
   Network,
+  PanelRightClose,
   Phone,
   X,
   Vote
@@ -35,6 +36,7 @@ type DetailsPanelProps = {
   onSelectRepresentative: (personId: number) => void;
   onOpenRepresentativeGraph: (personId: number, label: string) => void;
   onCloseContact: () => void;
+  onCollapse: () => void;
 };
 
 export function DetailsPanel({
@@ -47,7 +49,8 @@ export function DetailsPanel({
   representativeProfileStatus,
   onSelectRepresentative,
   onOpenRepresentativeGraph,
-  onCloseContact
+  onCloseContact,
+  onCollapse
 }: DetailsPanelProps) {
   const [eventFamilyFilter, setEventFamilyFilter] = useState("all");
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
@@ -86,7 +89,18 @@ export function DetailsPanel({
 
   if (!feature) {
     return (
-      <aside className="details-panel empty" aria-label="Selection details">
+      <aside className="details-panel empty" id="selection-details-panel" aria-label="Selection details">
+        <button
+          type="button"
+          className="panel-collapse-button details-collapse-button"
+          aria-label="Collapse selection details"
+          aria-controls="selection-details-panel"
+          aria-expanded={true}
+          title="Collapse selection details"
+          onClick={onCollapse}
+        >
+          <PanelRightClose size={16} aria-hidden="true" />
+        </button>
         <AlertCircle size={20} />
         <p>No electorate selected.</p>
       </aside>
@@ -95,7 +109,18 @@ export function DetailsPanel({
 
   const properties = feature.properties;
   return (
-    <aside className="details-panel" aria-label="Selection details">
+    <aside className="details-panel" id="selection-details-panel" aria-label="Selection details">
+      <button
+        type="button"
+        className="panel-collapse-button details-collapse-button"
+        aria-label="Collapse selection details"
+        aria-controls="selection-details-panel"
+        aria-expanded={true}
+        title="Collapse selection details"
+        onClick={onCollapse}
+      >
+        <PanelRightClose size={16} aria-hidden="true" />
+      </button>
       <div className="panel-header" style={{ borderColor: partyColor }}>
         <div>
           <p className="eyebrow">{properties.state_or_territory || "Federal"} · {properties.chamber}</p>
