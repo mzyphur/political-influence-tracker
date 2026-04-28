@@ -121,7 +121,10 @@ export type RepresentativeEvent = {
   reporting_period: string | null;
   date_reported: string | null;
   description: string;
+  disclosure_system: string;
+  disclosure_threshold: string | null;
   evidence_status: string;
+  extraction_method: string;
   review_status: string;
   missing_data_flags: unknown[];
   source_ref: string | null;

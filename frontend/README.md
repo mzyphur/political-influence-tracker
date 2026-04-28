@@ -34,6 +34,10 @@ The first usable screen is the national map explorer:
 - Representative record rows can be filtered by record family and expanded to
   show source links, source refs, evidence/review status, amount status, and
   missing-data flags.
+- Representative context cards, event-family cards, and record rows expose
+  backend field explanations on hover, including `event_family`, `event_type`,
+  disclosure system, extraction method, evidence status, review status, amount
+  status, and source refs where available.
 - Clicking a representative opens a public contact details popup. The popup uses
   APH contact CSV phone/address fields and APH contact-list PDF email fields
   when the official PDF exposes an email; otherwise it shows the official APH

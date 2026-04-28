@@ -3,7 +3,7 @@ import {
   AlertCircle,
   ArrowRight,
   Banknote,
-  ExternalLink,
+  CheckCircle2,
   Gift,
   Globe2,
   Loader2,
@@ -144,24 +144,28 @@ export function DetailsPanel({
         <h3>Representative-Linked Context</h3>
         <div className="fact-grid">
           <Fact
-            icon={<ExternalLink size={17} />}
+            icon={<CheckCircle2 size={17} />}
             label="Non-rejected records"
             value={properties.current_representative_lifetime_influence_event_count.toLocaleString("en-AU")}
+            tooltip="Backend filter: influence_event rows linked to the current representative where review_status is not rejected. This is a disclosed-record count, not a wrongdoing claim."
           />
           <Fact
             icon={<Banknote size={17} />}
             label="Money records"
             value={properties.current_representative_lifetime_money_event_count.toLocaleString("en-AU")}
+            tooltip="Backend event_family = money. These are AEC financial-disclosure rows directly linked to this representative only when the source supports that person-level attribution."
           />
           <Fact
             icon={<Gift size={17} />}
             label="Benefit records"
             value={properties.current_representative_lifetime_benefit_event_count.toLocaleString("en-AU")}
+            tooltip="Backend event_family = benefit. Includes disclosed gifts, sponsored travel, hospitality, tickets, memberships, flights, meals, and similar register records where classified as benefits."
           />
           <Fact
             icon={<Vote size={17} />}
             label="Reported total"
             value={formatMoney(properties.current_representative_lifetime_reported_amount_total)}
+            tooltip="Sum of reported monetary amounts for non-rejected person-linked records. Records with not-disclosed values stay in the count but not the total."
           />
         </div>
       </section>
@@ -182,7 +186,11 @@ export function DetailsPanel({
             <div className="event-family-grid">
               {representativeProfile.event_summary.length ? (
                 representativeProfile.event_summary.map((summary) => (
-                  <div className="event-family" key={summary.event_family}>
+                  <div
+                    className="event-family"
+                    key={summary.event_family}
+                    title={eventFamilyTooltip(summary)}
+                  >
                     <small>{summary.event_family.replaceAll("_", " ")}</small>
                     <strong>{summary.event_count.toLocaleString("en-AU")}</strong>
                     <span>{formatMoney(summary.reported_amount_total)}</span>
@@ -275,8 +283,9 @@ function EventRow({
 }) {
   const sourceHref = event.source_final_url || event.source_url;
   const sourceName = event.source_name || event.source_id || "Source document";
+  const tooltip = eventBackendTooltip(event);
   return (
-    <article className="event-row" data-expanded={expanded}>
+    <article className="event-row" data-expanded={expanded} title={tooltip}>
       <button
         type="button"
         className="event-summary-button"
@@ -301,6 +310,12 @@ function EventRow({
       </div>
       {expanded && (
         <div className="event-detail">
+          <DetailLine label="Backend family">{event.event_family}</DetailLine>
+          <DetailLine label="Backend type">
+            {[event.event_type, event.event_subtype].filter(Boolean).join(" / ")}
+          </DetailLine>
+          <DetailLine label="Disclosure system">{event.disclosure_system}</DetailLine>
+          <DetailLine label="Extraction method">{event.extraction_method}</DetailLine>
           <DetailLine label="Source">
             {sourceHref ? (
               <a href={sourceHref} target="_blank" rel="noreferrer">
@@ -314,9 +329,9 @@ function EventRow({
           <DetailLine label="Amount status">
             {[event.amount_status.replaceAll("_", " "), event.currency].filter(Boolean).join(" · ")}
           </DetailLine>
-          {event.event_subtype && (
-            <DetailLine label="Subtype">{event.event_subtype.replaceAll("_", " ")}</DetailLine>
-          )}
+          <DetailLine label="Disclosure threshold">
+            {event.disclosure_threshold || "Not recorded"}
+          </DetailLine>
           <DetailLine label="Missing fields">
             {formatMissingFlags(event.missing_data_flags)}
           </DetailLine>
@@ -324,6 +339,40 @@ function EventRow({
       )}
     </article>
   );
+}
+
+function eventFamilyTooltip(summary: {
+  event_family: string;
+  event_count: number;
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  first_event_date: string | null;
+  last_event_date: string | null;
+}) {
+  const dateSpan =
+    summary.first_event_date || summary.last_event_date
+      ? `${summary.first_event_date || "unknown"} to ${summary.last_event_date || "unknown"}`
+      : "no event dates disclosed";
+  return [
+    `Backend event_family: ${summary.event_family}`,
+    `Non-rejected person-linked rows: ${summary.event_count.toLocaleString("en-AU")}`,
+    `Rows with reported amounts: ${summary.reported_amount_event_count.toLocaleString("en-AU")}`,
+    `Reported total: ${formatMoney(summary.reported_amount_total)}`,
+    `Date span: ${dateSpan}`
+  ].join("\n");
+}
+
+function eventBackendTooltip(event: RepresentativeEvent) {
+  return [
+    `Backend family: ${event.event_family}`,
+    `Backend type: ${[event.event_type, event.event_subtype].filter(Boolean).join(" / ")}`,
+    `Disclosure system: ${event.disclosure_system}`,
+    `Extraction method: ${event.extraction_method}`,
+    `Evidence: ${event.evidence_status}`,
+    `Review: ${event.review_status}`,
+    `Amount status: ${event.amount_status}`,
+    `Source ref: ${event.source_ref || "not recorded"}`
+  ].join("\n");
 }
 
 function DetailLine({
@@ -504,9 +553,19 @@ function telHref(phone: string | null) {
   return cleaned ? `tel:${cleaned}` : null;
 }
 
-function Fact({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {
+function Fact({
+  icon,
+  label,
+  value,
+  tooltip
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string;
+  tooltip?: string;
+}) {
   return (
-    <div className="fact">
+    <div className="fact" title={tooltip}>
       <span className="fact-icon">{icon}</span>
       <span>{label}</span>
       <strong>{value}</strong>
