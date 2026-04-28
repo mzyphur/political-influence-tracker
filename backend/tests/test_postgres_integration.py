@@ -1,0 +1,389 @@
+from __future__ import annotations
+
+import os
+import uuid
+from collections.abc import Iterator
+from dataclasses import dataclass
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+
+import pytest
+from fastapi.testclient import TestClient
+from psycopg.types.json import Jsonb
+
+from au_politics_money.api.app import app
+from au_politics_money.config import PROJECT_ROOT
+from au_politics_money.db.load import apply_migrations, apply_schema, connect
+
+
+@dataclass(frozen=True)
+class IntegrationDatabase:
+    url: str
+    schema_name: str
+    person_id: int
+    electorate_id: int
+    topic_id: int
+
+
+def _test_database_url() -> str:
+    url = os.environ.get("DATABASE_URL_TEST")
+    if not url:
+        pytest.skip("DATABASE_URL_TEST is required for Postgres integration tests.")
+    if os.environ.get("AUPOL_RUN_POSTGRES_INTEGRATION") != "1" and os.environ.get("CI") != "true":
+        pytest.skip(
+            "Set AUPOL_RUN_POSTGRES_INTEGRATION=1 to run Postgres integration tests locally."
+        )
+    if url == os.environ.get("DATABASE_URL") and os.environ.get("CI") != "true":
+        pytest.fail("DATABASE_URL_TEST must not be identical to DATABASE_URL outside CI.")
+    parsed = urlparse(url)
+    host = parsed.hostname or ""
+    local_hosts = {"localhost", "127.0.0.1", "::1"}
+    test_marker_present = "test" in parsed.path.lower() or "test" in (
+        parsed.username or ""
+    ).lower()
+    if host not in local_hosts and os.environ.get("CI") != "true" and not test_marker_present:
+        pytest.fail(
+            "DATABASE_URL_TEST must point at localhost, CI, or a clearly test-named database/user."
+        )
+    return url
+
+
+def _with_search_path(database_url: str, schema_name: str) -> str:
+    parsed = urlparse(database_url)
+    query_items = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key != "options"
+    ]
+    query_items.append(("options", f"-csearch_path={schema_name},public"))
+    return urlunparse(parsed._replace(query=urlencode(query_items)))
+
+
+def _migration_count() -> int:
+    schema_dir = PROJECT_ROOT / "backend" / "schema"
+    return sum(1 for path in schema_dir.glob("*.sql") if path.name != "001_initial.sql")
+
+
+@pytest.fixture()
+def integration_db(monkeypatch: pytest.MonkeyPatch) -> Iterator[IntegrationDatabase]:
+    base_url = _test_database_url()
+    schema_name = f"pytest_{uuid.uuid4().hex}"
+    database_url = _with_search_path(base_url, schema_name)
+    schema_created = False
+
+    try:
+        with connect(base_url) as admin_conn:
+            admin_conn.execute(f'CREATE SCHEMA "{schema_name}"')
+            admin_conn.commit()
+            schema_created = True
+
+        with connect(database_url) as conn:
+            apply_schema(conn)
+            migration_summary = apply_migrations(conn)
+            assert migration_summary["migrations_applied"] == _migration_count()
+            assert apply_migrations(conn)["migrations_applied"] == 0
+            _assert_expected_indexes(conn)
+            ids = _seed_minimal_influence_graph(conn)
+
+        monkeypatch.setenv("DATABASE_URL", database_url)
+        yield IntegrationDatabase(database_url, schema_name, **ids)
+    finally:
+        if schema_created:
+            with connect(base_url) as admin_conn:
+                admin_conn.execute(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE')
+                admin_conn.commit()
+
+
+def _assert_expected_indexes(conn) -> None:
+    with conn.cursor() as cur:
+        for index_name in (
+            "person_display_name_trgm_idx",
+            "electorate_name_trgm_idx",
+            "policy_topic_label_trgm_idx",
+            "policy_topic_slug_trgm_idx",
+            "entity_industry_public_sector_trgm_idx",
+            "vote_division_external_id_idx",
+        ):
+            cur.execute("SELECT to_regclass(%s)", (index_name,))
+            assert cur.fetchone()[0] is not None, index_name
+
+
+def _seed_minimal_influence_graph(conn) -> dict[str, int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO source_document (
+                source_id, source_name, source_type, jurisdiction, url, fetched_at,
+                http_status, content_type, sha256, storage_path, metadata
+            )
+            VALUES (
+                'pytest-source', 'Pytest Source', 'test_fixture', 'Commonwealth',
+                'https://example.test/source', now(), 200, 'application/json',
+                'pytest-sha256', '/tmp/pytest-source.json', '{}'::jsonb
+            )
+            RETURNING id
+            """
+        )
+        source_document_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO jurisdiction (name, level, code)
+            VALUES ('Commonwealth of Australia', 'federal', 'CWLTH')
+            RETURNING id
+            """
+        )
+        jurisdiction_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO party (name, short_name, jurisdiction_id, source_document_id)
+            VALUES ('Example Party', 'EX', %s, %s)
+            RETURNING id
+            """,
+            (jurisdiction_id, source_document_id),
+        )
+        party_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO electorate (
+                name, jurisdiction_id, chamber, state_or_territory, source_document_id
+            )
+            VALUES ('Melbourne', %s, 'house', 'VIC', %s)
+            RETURNING id
+            """,
+            (jurisdiction_id, source_document_id),
+        )
+        electorate_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO person (
+                external_key, display_name, canonical_name, first_name, last_name,
+                source_document_id, metadata
+            )
+            VALUES (
+                'person:jane-citizen', 'Jane Citizen', 'Jane Citizen', 'Jane',
+                'Citizen', %s, %s
+            )
+            RETURNING id
+            """,
+            (source_document_id, Jsonb({"fixture": True})),
+        )
+        person_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO office_term (
+                external_key, person_id, chamber, electorate_id, party_id, role_title,
+                term_start, source_document_id
+            )
+            VALUES (
+                'term:jane-citizen-current', %s, 'house', %s, %s, 'MP',
+                '2022-05-21', %s
+            )
+            """,
+            (person_id, electorate_id, party_id, source_document_id),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO entity (
+                canonical_name, normalized_name, entity_type, country, source_document_id
+            )
+            VALUES ('Clean Energy Pty Ltd', 'clean energy pty ltd', 'company', 'AU', %s)
+            RETURNING id
+            """,
+            (source_document_id,),
+        )
+        entity_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO entity_industry_classification (
+                entity_id, public_sector, method, confidence, evidence_note,
+                source_document_id
+            )
+            VALUES (
+                %s, 'renewable_energy', 'manual', 'manual_reviewed',
+                'Fixture reviewed sector classification.', %s
+            )
+            """,
+            (entity_id, source_document_id),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO influence_event (
+                external_key, event_family, event_type, source_entity_id,
+                source_raw_name, recipient_person_id, recipient_raw_name,
+                jurisdiction_id, amount, amount_status, event_date, chamber,
+                disclosure_system, evidence_status, extraction_method, review_status,
+                description, source_document_id, source_ref, missing_data_flags,
+                metadata
+            )
+            VALUES (
+                'influence:clean-energy:jane-citizen:2023', 'money',
+                'donation_or_gift', %s, 'Clean Energy Pty Ltd', %s,
+                'Jane Citizen', %s, 1250.00, 'reported', '2023-02-14', 'house',
+                'pytest fixture', 'official_record', 'fixture_seed', 'not_required',
+                'Fixture disclosed donation from Clean Energy Pty Ltd.',
+                %s, 'fixture-row-1', '[]'::jsonb, %s
+            )
+            """,
+            (
+                entity_id,
+                person_id,
+                jurisdiction_id,
+                source_document_id,
+                Jsonb({"fixture": True}),
+            ),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO vote_division (
+                external_id, chamber, division_date, division_number, title,
+                bill_name, motion_text, aye_count, no_count, source_document_id
+            )
+            VALUES (
+                'division:climate-1', 'house', '2023-03-01', 1,
+                'Climate Transition Bill', 'Climate Transition Bill',
+                'That the bill be read a second time.', 1, 0, %s
+            )
+            RETURNING id
+            """,
+            (source_document_id,),
+        )
+        division_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO person_vote (
+                division_id, person_id, vote, party_id, rebelled_against_party,
+                source_document_id
+            )
+            VALUES (%s, %s, 'aye', %s, false, %s)
+            """,
+            (division_id, person_id, party_id, source_document_id),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO policy_topic (slug, label, description, metadata)
+            VALUES (
+                'climate_transition', 'Climate Transition',
+                'Fixture policy topic for integration testing.', %s
+            )
+            RETURNING id
+            """,
+            (Jsonb({"fixture": True}),),
+        )
+        topic_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO division_topic (
+                division_id, topic_id, method, confidence, evidence_note
+            )
+            VALUES (
+                %s, %s, 'manual', 1.000,
+                'Fixture manual link between division and climate topic.'
+            )
+            """,
+            (division_id, topic_id),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO sector_policy_topic_link (
+                public_sector, topic_id, relationship, method, confidence,
+                evidence_note, review_status, reviewer, reviewed_at, metadata
+            )
+            VALUES (
+                'renewable_energy', %s, 'direct_material_interest', 'manual',
+                1.000, 'Fixture reviewed sector-policy link.', 'reviewed',
+                'pytest', now(), %s
+            )
+            """,
+            (topic_id, Jsonb({"fixture": True})),
+        )
+    conn.commit()
+    return {
+        "person_id": person_id,
+        "electorate_id": electorate_id,
+        "topic_id": topic_id,
+    }
+
+
+def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationDatabase) -> None:
+    client = TestClient(app)
+
+    health_response = client.get("/api/health")
+    assert health_response.status_code == 200
+    assert health_response.json()["database"] == "ok"
+
+    search_response = client.get(
+        "/api/search",
+        params=[("q", "Jane Citizen"), ("types", "representative"), ("limit", "5")],
+    )
+    assert search_response.status_code == 200
+    search_payload = search_response.json()
+    assert search_payload["result_count"] == 1
+    assert search_payload["results"][0]["id"] == integration_db.person_id
+    assert search_payload["results"][0]["label"] == "Jane Citizen"
+
+    broad_search_response = client.get(
+        "/api/search",
+        params=[("q", "Climate"), ("types", "policy_topic"), ("types", "party")],
+    )
+    assert broad_search_response.status_code == 200
+    broad_search_types = {result["type"] for result in broad_search_response.json()["results"]}
+    assert "policy_topic" in broad_search_types
+
+    entity_search_response = client.get(
+        "/api/search",
+        params=[("q", "Clean Energy"), ("types", "entity")],
+    )
+    assert entity_search_response.status_code == 200
+    entity_search_types = {result["type"] for result in entity_search_response.json()["results"]}
+    assert "entity" in entity_search_types
+
+    sector_search_response = client.get(
+        "/api/search",
+        params=[("q", "renewable"), ("types", "sector")],
+    )
+    assert sector_search_response.status_code == 200
+    sector_search_types = {result["type"] for result in sector_search_response.json()["results"]}
+    assert "sector" in sector_search_types
+
+    electorate_response = client.get(f"/api/electorates/{integration_db.electorate_id}")
+    assert electorate_response.status_code == 200
+    electorate_payload = electorate_response.json()
+    assert electorate_payload["electorate"]["name"] == "Melbourne"
+    assert electorate_payload["current_representative_influence_summary"][0][
+        "reported_amount_total"
+    ] == 1250.0
+
+    representative_response = client.get(f"/api/representatives/{integration_db.person_id}")
+    assert representative_response.status_code == 200
+    representative_payload = representative_response.json()
+    assert representative_payload["person"]["display_name"] == "Jane Citizen"
+    assert representative_payload["influence_by_sector"][0]["public_sector"] == "renewable_energy"
+    assert representative_payload["vote_topics"][0]["topic_slug"] == "climate_transition"
+    assert representative_payload["source_effect_context"][0][
+        "lifetime_reported_amount_total"
+    ] == 1250.0
+
+    context_response = client.get(
+        "/api/influence-context",
+        params={
+            "person_id": integration_db.person_id,
+            "topic_id": integration_db.topic_id,
+            "public_sector": "renewable_energy",
+        },
+    )
+    assert context_response.status_code == 200
+    context_payload = context_response.json()
+    assert context_payload["row_count"] == 1
+    assert context_payload["rows"][0]["relationship"] == "direct_material_interest"

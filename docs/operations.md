@@ -11,6 +11,20 @@ make test
 make lint
 ```
 
+The default test command skips the PostgreSQL integration test unless
+`DATABASE_URL_TEST` is set. With the local Docker database running, use:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+AUPOL_RUN_POSTGRES_INTEGRATION=1 \
+  DATABASE_URL_TEST=postgresql://au_politics:change-me-local-only@127.0.0.1:54329/au_politics \
+  .venv/bin/python -m pytest tests/test_postgres_integration.py -q
+```
+
+The integration test creates and drops an isolated temporary schema. It applies
+the current baseline plus all incremental migrations, then exercises real
+FastAPI SQL query paths against seeded fixture data.
+
 ## Run the Federal Pipeline
 
 Production-style full run:

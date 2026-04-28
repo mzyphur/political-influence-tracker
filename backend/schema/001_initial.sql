@@ -491,6 +491,10 @@ CREATE TABLE vote_division (
     UNIQUE (chamber, division_date, division_number)
 );
 
+CREATE UNIQUE INDEX vote_division_external_id_idx
+    ON vote_division (external_id)
+    WHERE external_id IS NOT NULL;
+
 CREATE TABLE person_vote (
     id BIGSERIAL PRIMARY KEY,
     division_id BIGINT NOT NULL REFERENCES vote_division(id),

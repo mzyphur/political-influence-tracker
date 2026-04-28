@@ -24,6 +24,10 @@ CREATE INDEX IF NOT EXISTS sector_policy_topic_link_sector_idx
 CREATE INDEX IF NOT EXISTS sector_policy_topic_link_topic_idx
     ON sector_policy_topic_link (topic_id);
 
+DROP VIEW IF EXISTS person_policy_influence_context;
+DROP VIEW IF EXISTS person_influence_sector_summary;
+DROP VIEW IF EXISTS person_policy_vote_summary;
+
 CREATE OR REPLACE VIEW person_policy_vote_summary AS
 SELECT
     pv.person_id,

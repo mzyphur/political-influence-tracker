@@ -8,6 +8,20 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: au_politics_test
+          POSTGRES_USER: au_politics
+          POSTGRES_PASSWORD: au_politics_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U au_politics -d au_politics_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     defaults:
       run:
         working-directory: backend
@@ -21,9 +35,11 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -e '.[dev]'
       - name: Run tests
+        env:
+          AUPOL_RUN_POSTGRES_INTEGRATION: "1"
+          DATABASE_URL_TEST: postgresql://au_politics:au_politics_test@127.0.0.1:5432/au_politics_test
         run: python -m pytest
       - name: Run lint
         run: ruff check .
       - name: Run federal smoke pipeline
         run: python -m au_politics_money.cli run-federal-foundation-pipeline --smoke
-

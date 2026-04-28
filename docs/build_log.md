@@ -205,6 +205,16 @@ Verification:
   provisional topic links receive lower confidence, incremental migrations fail
   clearly on a missing baseline schema, and source-document fetched timestamps
   no longer move backwards on out-of-order replay.
+- Committed the federal backend foundation as reproducible repository state
+  (`e603a94`) and added the first real PostgreSQL/PostGIS integration test.
+  CI now starts a PostGIS service, applies the current baseline plus all
+  incremental migrations in an isolated schema, checks migration idempotence,
+  seeds a minimal
+  representative/entity/influence/vote/topic graph, and exercises the actual
+  FastAPI search, electorate, representative, and influence-context SQL paths.
+  This test exposed and fixed migration `009` view replay behavior by dropping
+  dependent views before recreating them. Local DB-backed test runs require the
+  explicit `AUPOL_RUN_POSTGRES_INTEGRATION=1` opt-in.
 
 Notable data observations:
 
