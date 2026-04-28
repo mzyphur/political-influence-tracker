@@ -170,6 +170,30 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
 
         cur.execute(
             """
+            INSERT INTO electorate (
+                name, jurisdiction_id, chamber, state_or_territory, source_document_id
+            )
+            VALUES ('Farrer', %s, 'house', '', %s)
+            RETURNING id
+            """,
+            (jurisdiction_id, source_document_id),
+        )
+        farrer_electorate_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO electorate (
+                name, jurisdiction_id, chamber, state_or_territory, source_document_id
+            )
+            VALUES ('Senate - NSW', %s, 'senate', 'NSW', %s)
+            RETURNING id
+            """,
+            (jurisdiction_id, source_document_id),
+        )
+        nsw_senate_electorate_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
             INSERT INTO electorate_boundary (
                 electorate_id, boundary_set, valid_from, geom, source_document_id, metadata
             )
@@ -183,6 +207,23 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
             )
             """,
             (electorate_id, source_document_id, Jsonb({"fixture": True})),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO electorate_boundary (
+                electorate_id, boundary_set, valid_from, geom, source_document_id, metadata
+            )
+            VALUES (
+                %s, 'pytest_boundary_set', '2025-01-01',
+                ST_Multi(ST_GeomFromText(
+                    'POLYGON((145.00 -35.00,145.10 -35.00,145.10 -34.90,145.00 -34.90,145.00 -35.00))',
+                    4326
+                )),
+                %s, %s
+            )
+            """,
+            (farrer_electorate_id, source_document_id, Jsonb({"fixture": True})),
         )
 
         cur.execute(
@@ -219,6 +260,38 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
 
         cur.execute(
             """
+            INSERT INTO person (
+                external_key, display_name, canonical_name, first_name, last_name,
+                source_document_id, metadata
+            )
+            VALUES (
+                'person:pat-farrer', 'Pat Farrer', 'Pat Farrer', 'Pat',
+                'Farrer', %s, %s
+            )
+            RETURNING id
+            """,
+            (source_document_id, Jsonb({"fixture": True})),
+        )
+        farrer_person_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
+            INSERT INTO person (
+                external_key, display_name, canonical_name, first_name, last_name,
+                source_document_id, metadata
+            )
+            VALUES (
+                'person:sam-senator', 'Sam Senator', 'Sam Senator', 'Sam',
+                'Senator', %s, %s
+            )
+            RETURNING id
+            """,
+            (source_document_id, Jsonb({"fixture": True})),
+        )
+        nsw_senator_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
             INSERT INTO office_term (
                 external_key, person_id, chamber, electorate_id, party_id, role_title,
                 term_start, source_document_id
@@ -238,6 +311,26 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
                 term_start, source_document_id, metadata
             )
             VALUES (
+                'term:pat-farrer-current', %s, 'house', %s, %s, 'MP',
+                '2022-05-21', %s, %s
+            )
+            """,
+            (
+                farrer_person_id,
+                farrer_electorate_id,
+                party_id,
+                source_document_id,
+                Jsonb({"state": "New South Wales"}),
+            ),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO office_term (
+                external_key, person_id, chamber, electorate_id, party_id, role_title,
+                term_start, source_document_id, metadata
+            )
+            VALUES (
                 'term:alex-senator-current', %s, 'senate', %s, %s, 'Senator',
                 '2022-07-01', %s, %s
             )
@@ -248,6 +341,26 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
                 party_id,
                 source_document_id,
                 Jsonb({"state": "VIC"}),
+            ),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO office_term (
+                external_key, person_id, chamber, electorate_id, party_id, role_title,
+                term_start, source_document_id, metadata
+            )
+            VALUES (
+                'term:sam-senator-current', %s, 'senate', %s, %s, 'Senator',
+                '2022-07-01', %s, %s
+            )
+            """,
+            (
+                nsw_senator_id,
+                nsw_senate_electorate_id,
+                party_id,
+                source_document_id,
+                Jsonb({"state": "NSW"}),
             ),
         )
 
@@ -449,6 +562,34 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
         == "state_territory_composite_from_house_boundaries"
     )
 
+    nsw_house_map_response = client.get(
+        "/api/map/electorates",
+        params={
+            "chamber": "house",
+            "state": "NSW",
+            "boundary_set": "pytest_boundary_set",
+        },
+    )
+    assert nsw_house_map_response.status_code == 200
+    nsw_house_payload = nsw_house_map_response.json()
+    assert nsw_house_payload["feature_count"] == 1
+    assert nsw_house_payload["features"][0]["properties"]["electorate_name"] == "Farrer"
+    assert nsw_house_payload["features"][0]["properties"]["state_or_territory"] == "NSW"
+
+    nsw_senate_map_response = client.get(
+        "/api/map/electorates",
+        params={
+            "chamber": "senate",
+            "state": "NSW",
+            "boundary_set": "pytest_boundary_set",
+        },
+    )
+    assert nsw_senate_map_response.status_code == 200
+    nsw_senate_payload = nsw_senate_map_response.json()
+    assert nsw_senate_payload["feature_count"] == 1
+    assert nsw_senate_payload["features"][0]["properties"]["electorate_name"] == "Senate - NSW"
+    assert nsw_senate_payload["features"][0]["properties"]["has_boundary"] is True
+
     coverage_response = client.get("/api/coverage")
     assert coverage_response.status_code == 200
     coverage_payload = coverage_response.json()
@@ -459,6 +600,15 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert {
         layer["id"]: layer["status"] for layer in coverage_payload["coverage_layers"]
     }["state_territory_disclosures"] == "planned"
+
+    representative_response = client.get(f"/api/representatives/{integration_db.person_id}")
+    assert representative_response.status_code == 200
+    representative_payload = representative_response.json()
+    assert {
+        row["event_family"]: row["event_count"]
+        for row in representative_payload["event_summary"]
+    }["money"] == 1
+    assert representative_payload["recent_events"][0]["source_raw_name"] == "Clean Energy Pty Ltd"
 
     search_response = client.get(
         "/api/search",

@@ -142,6 +142,18 @@ boundaries, money flows, gifts/hospitality/travel, interests/assets/roles,
 lobbying access, votes/proceedings, entity identifiers, and industry
 classifications.
 
+## Representative Profiles
+
+`/api/representatives/{person_id}` returns the representative's current and
+historical office terms, reviewed context summaries, and a person-linked
+`recent_events` feed. The feed is the first UI surface for "what did this person
+receive or disclose?" across money, gifts, hospitality, travel, private
+interests, organisational roles, and other traceable disclosed records.
+
+These are still person-linked records only. Party/entity/candidate-return money
+flows remain in the whole database and should be surfaced through party/entity
+and attribution-method views rather than forced onto a person without evidence.
+
 ## Source-To-Effect Context
 
 The API exposes `person_policy_influence_context`, which only emits rows when a

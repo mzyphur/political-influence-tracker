@@ -1,14 +1,34 @@
-import { AlertCircle, ArrowRight, Banknote, ExternalLink, Gift, Vote } from "lucide-react";
+import {
+  AlertCircle,
+  ArrowRight,
+  Banknote,
+  ExternalLink,
+  Gift,
+  Loader2,
+  Vote
+} from "lucide-react";
 import { formatMoney } from "../map";
-import type { ElectorateFeature } from "../types";
+import type { ElectorateFeature, LoadState, RepresentativeProfile } from "../types";
 
 type DetailsPanelProps = {
   feature: ElectorateFeature | null;
   caveat: string;
   partyColor: string;
+  selectedPersonId: number | null;
+  representativeProfile: RepresentativeProfile | null;
+  representativeProfileStatus: LoadState;
+  onSelectRepresentative: (personId: number) => void;
 };
 
-export function DetailsPanel({ feature, caveat, partyColor }: DetailsPanelProps) {
+export function DetailsPanel({
+  feature,
+  caveat,
+  partyColor,
+  selectedPersonId,
+  representativeProfile,
+  representativeProfileStatus,
+  onSelectRepresentative
+}: DetailsPanelProps) {
   if (!feature) {
     return (
       <aside className="details-panel empty" aria-label="Selection details">
@@ -39,13 +59,19 @@ export function DetailsPanel({ feature, caveat, partyColor }: DetailsPanelProps)
         <div className="rep-list">
           {properties.current_representatives.length ? (
             properties.current_representatives.map((representative) => (
-              <div className="rep-row" key={representative.person_id}>
+              <button
+                className="rep-row"
+                data-selected={representative.person_id === selectedPersonId}
+                key={representative.person_id}
+                type="button"
+                onClick={() => onSelectRepresentative(representative.person_id)}
+              >
                 <div>
                   <strong>{representative.display_name}</strong>
                   <span>{representative.party_name || "No party recorded"}</span>
                 </div>
                 <ArrowRight size={16} aria-hidden="true" />
-              </div>
+              </button>
             ))
           ) : (
             <p className="muted">No current representative is attached in the database.</p>
@@ -80,6 +106,54 @@ export function DetailsPanel({ feature, caveat, partyColor }: DetailsPanelProps)
       </section>
 
       <section className="panel-section">
+        <h3>Selected Representative Records</h3>
+        {representativeProfileStatus === "loading" && (
+          <p className="muted inline-loading">
+            <Loader2 size={14} className="spin" aria-hidden="true" />
+            Loading source-backed records
+          </p>
+        )}
+        {representativeProfileStatus === "error" && (
+          <p className="muted">Could not load representative records.</p>
+        )}
+        {representativeProfileStatus === "ready" && representativeProfile && (
+          <>
+            <div className="event-family-grid">
+              {representativeProfile.event_summary.length ? (
+                representativeProfile.event_summary.map((summary) => (
+                  <div className="event-family" key={summary.event_family}>
+                    <small>{summary.event_family.replaceAll("_", " ")}</small>
+                    <strong>{summary.event_count.toLocaleString("en-AU")}</strong>
+                    <span>{formatMoney(summary.reported_amount_total)}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="muted">No source-backed person-linked records are loaded yet.</p>
+              )}
+            </div>
+            <div className="event-list">
+              {representativeProfile.recent_events.slice(0, 8).map((event) => (
+                <article className="event-row" key={event.id}>
+                  <div>
+                    <strong>{event.event_type.replaceAll("_", " ")}</strong>
+                    <span>
+                      {event.source_entity_name || event.source_raw_name || "Source not identified"}
+                    </span>
+                  </div>
+                  <p>{event.description}</p>
+                  <small>
+                    {[eventTimeLabel(event), formatMoney(event.amount)]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </small>
+                </article>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="panel-section">
         <h3>Party Breakdown</h3>
         <div className="party-breakdown">
           {properties.party_breakdown.length ? (
@@ -98,6 +172,12 @@ export function DetailsPanel({ feature, caveat, partyColor }: DetailsPanelProps)
       <p className="caveat">{caveat}</p>
     </aside>
   );
+}
+
+function eventTimeLabel(event: { event_date: string | null; reporting_period: string | null }) {
+  if (event.event_date) return event.event_date;
+  if (event.reporting_period) return `Reporting period ${event.reporting_period}`;
+  return null;
 }
 
 function Fact({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {

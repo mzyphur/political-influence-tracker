@@ -244,6 +244,13 @@ Verification:
   representative map counts can be compared against whole-database source-family
   counts. The coverage model is written as a portable jurisdiction-adapter layer
   for later AU state/council, NZ, UK, and US builds.
+- Fixed Senate/House state normalization after visual inspection exposed a
+  missing NSW region. Farrer was carrying `New South Wales` while map filters and
+  Senate composites expected `NSW`; map/search APIs now normalize Australian
+  state names to codes.
+- Added person-linked representative record detail in `/api/representatives`
+  and the side panel. Selecting an MP or senator now shows family counts and
+  recent source-backed records instead of only aggregate map counts.
 
 Notable data observations:
 

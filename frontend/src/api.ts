@@ -1,4 +1,9 @@
-import type { CoverageResponse, ElectorateFeatureCollection, SearchResponse } from "./types";
+import type {
+  CoverageResponse,
+  ElectorateFeatureCollection,
+  RepresentativeProfile,
+  SearchResponse
+} from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -41,6 +46,13 @@ export async function fetchElectorateMap(options: {
 
 export async function fetchCoverage(signal?: AbortSignal): Promise<CoverageResponse> {
   return fetchJson<CoverageResponse>(apiUrl("/api/coverage"), signal);
+}
+
+export async function fetchRepresentativeProfile(
+  personId: number,
+  signal?: AbortSignal
+): Promise<RepresentativeProfile> {
+  return fetchJson<RepresentativeProfile>(apiUrl(`/api/representatives/${personId}`), signal);
 }
 
 export async function searchDatabase(

@@ -71,6 +71,22 @@ def _token_patterns(query: str) -> list[str]:
     ]
 
 
+def _state_code_sql(expression: str) -> str:
+    return f"""
+        CASE upper(trim({expression}))
+            WHEN 'AUSTRALIAN CAPITAL TERRITORY' THEN 'ACT'
+            WHEN 'NEW SOUTH WALES' THEN 'NSW'
+            WHEN 'NORTHERN TERRITORY' THEN 'NT'
+            WHEN 'QUEENSLAND' THEN 'QLD'
+            WHEN 'SOUTH AUSTRALIA' THEN 'SA'
+            WHEN 'TASMANIA' THEN 'TAS'
+            WHEN 'VICTORIA' THEN 'VIC'
+            WHEN 'WESTERN AUSTRALIA' THEN 'WA'
+            ELSE NULLIF(upper(trim({expression})), '')
+        END
+    """
+
+
 def _result(
     *,
     result_type: str,
@@ -116,6 +132,9 @@ def _search_representatives(
     token_patterns: list[str],
     limit: int,
 ) -> list[dict[str, Any]]:
+    state_expr = _state_code_sql(
+        "COALESCE(NULLIF(electorate.state_or_territory, ''), NULLIF(office_term.metadata->>'state', ''))"
+    )
     token_clause = ""
     params: list[Any] = [pattern, pattern]
     if token_patterns:
@@ -136,10 +155,7 @@ def _search_representatives(
             person.canonical_name,
             office_term.chamber,
             electorate.name AS electorate_name,
-            COALESCE(
-                NULLIF(electorate.state_or_territory, ''),
-                NULLIF(office_term.metadata->>'state', '')
-            ) AS state_or_territory,
+            {state_expr} AS state_or_territory,
             party.name AS party_name
         FROM person
         LEFT JOIN office_term
@@ -184,6 +200,9 @@ def _search_electorates(
     token_patterns: list[str],
     limit: int,
 ) -> list[dict[str, Any]]:
+    state_expr = _state_code_sql(
+        "COALESCE(NULLIF(electorate.state_or_territory, ''), NULLIF(office_term.metadata->>'state', ''))"
+    )
     token_clause = ""
     params: list[Any] = [pattern, pattern, pattern]
     if token_patterns:
@@ -207,10 +226,7 @@ def _search_electorates(
                 electorate.id,
                 electorate.name,
                 electorate.chamber,
-                COALESCE(
-                    NULLIF(electorate.state_or_territory, ''),
-                    NULLIF(office_term.metadata->>'state', '')
-                ) AS state_or_territory,
+                {state_expr} AS state_or_territory,
                 person.id AS representative_id,
                 person.display_name AS representative_name,
                 party.name AS party_name,
@@ -548,6 +564,9 @@ def get_electorate_map(
         else "NULL::TEXT AS geometry_geojson"
     )
     params: list[Any] = [simplify_tolerance] if include_geometry else []
+    state_expr = _state_code_sql(
+        "COALESCE(NULLIF(electorate.state_or_territory, ''), reps.representative_state)"
+    )
     boundary_filter = ""
     if boundary_set:
         boundary_filter = "AND boundary.boundary_set = %s"
@@ -556,11 +575,7 @@ def get_electorate_map(
     params.append(chamber)
     state_filter = ""
     if state:
-        state_filter = """
-            AND upper(
-                COALESCE(NULLIF(electorate.state_or_territory, ''), reps.representative_state, '')
-            ) = %s
-        """
+        state_filter = f"AND {state_expr} = %s"
         params.append(state)
     boundary_required_filter = "AND boundary.id IS NOT NULL" if boundary_set else ""
 
@@ -572,10 +587,7 @@ def get_electorate_map(
                 electorate.id AS electorate_id,
                 electorate.name AS electorate_name,
                 electorate.chamber,
-                COALESCE(
-                    NULLIF(electorate.state_or_territory, ''),
-                    reps.representative_state
-                ) AS state_or_territory,
+                {state_expr} AS state_or_territory,
                 boundary.boundary_set,
                 boundary.valid_from AS boundary_valid_from,
                 boundary.valid_to AS boundary_valid_to,
@@ -645,7 +657,8 @@ def get_electorate_map(
                     (array_agg(party.short_name ORDER BY person.display_name))[1]
                         AS party_short_name,
                     count(person.id) AS current_representative_count,
-                    max(NULLIF(office_term.metadata->>'state', '')) AS representative_state,
+                    max({_state_code_sql("office_term.metadata->>'state'")})
+                        AS representative_state,
                     COALESCE(
                         jsonb_agg(
                             jsonb_build_object(
@@ -655,6 +668,8 @@ def get_electorate_map(
                                 'party_name', party.name,
                                 'party_short_name', party.short_name,
                                 'chamber', office_term.chamber,
+                                'state_or_territory',
+                                    {_state_code_sql("office_term.metadata->>'state'")},
                                 'term_start', office_term.term_start
                             )
                             ORDER BY person.display_name
@@ -730,7 +745,7 @@ def get_electorate_map(
             {state_filter}
             {boundary_required_filter}
             ORDER BY
-                COALESCE(NULLIF(electorate.state_or_territory, ''), reps.representative_state, ''),
+                {state_expr},
                 electorate.name
             """,
             tuple(params),
@@ -1059,10 +1074,9 @@ def _get_senate_map(
             WITH boundary_rows AS (
                 SELECT
                     boundary.id,
-                    COALESCE(
-                        NULLIF(house_electorate.state_or_territory, ''),
-                        NULLIF(house_term.metadata->>'state', '')
-                    ) AS state_code,
+                    {_state_code_sql(
+                        "COALESCE(NULLIF(house_electorate.state_or_territory, ''), NULLIF(house_term.metadata->>'state', ''))"
+                    )} AS state_code,
                     boundary.boundary_set,
                     boundary.valid_from,
                     boundary.valid_to,
@@ -1291,14 +1305,16 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             return {}
         terms = _fetch_dicts(
             conn,
-            """
+            f"""
             SELECT
                 office_term.chamber,
                 office_term.term_start,
                 office_term.term_end,
                 electorate.id AS electorate_id,
                 electorate.name AS electorate_name,
-                electorate.state_or_territory,
+                {_state_code_sql(
+                    "COALESCE(NULLIF(electorate.state_or_territory, ''), NULLIF(office_term.metadata->>'state', ''))"
+                )} AS state_or_territory,
                 party.id AS party_id,
                 party.name AS party_name
             FROM office_term
@@ -1306,6 +1322,64 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             LEFT JOIN party ON party.id = office_term.party_id
             WHERE office_term.person_id = %s
             ORDER BY office_term.term_end NULLS FIRST, office_term.term_start DESC NULLS LAST
+            """,
+            (person_id,),
+        )
+        event_summary = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                event_family,
+                count(*) AS event_count,
+                count(*) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_event_count,
+                sum(amount) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_total,
+                min(event_date) AS first_event_date,
+                max(event_date) AS last_event_date
+            FROM influence_event
+            WHERE recipient_person_id = %s
+              AND review_status <> 'rejected'
+            GROUP BY event_family
+            ORDER BY event_count DESC, event_family
+            """,
+            (person_id,),
+        )
+        recent_events = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                influence_event.id,
+                influence_event.event_family,
+                influence_event.event_type,
+                influence_event.event_subtype,
+                influence_event.source_raw_name,
+                source_entity.canonical_name AS source_entity_name,
+                influence_event.amount,
+                influence_event.currency,
+                influence_event.amount_status,
+                influence_event.event_date,
+                influence_event.reporting_period,
+                influence_event.date_reported,
+                influence_event.description,
+                influence_event.evidence_status,
+                influence_event.review_status,
+                influence_event.missing_data_flags,
+                influence_event.source_ref,
+                source_document.url AS source_url,
+                source_document.final_url AS source_final_url
+            FROM influence_event
+            LEFT JOIN entity source_entity
+              ON source_entity.id = influence_event.source_entity_id
+            JOIN source_document
+              ON source_document.id = influence_event.source_document_id
+            WHERE influence_event.recipient_person_id = %s
+              AND influence_event.review_status <> 'rejected'
+            ORDER BY
+                influence_event.event_date DESC NULLS LAST,
+                influence_event.date_reported DESC NULLS LAST,
+                influence_event.id DESC
+            LIMIT 50
             """,
             (person_id,),
         )
@@ -1346,6 +1420,8 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
         {
             "person": person_rows[0],
             "office_terms": terms,
+            "event_summary": event_summary,
+            "recent_events": recent_events,
             "influence_by_sector": influence,
             "vote_topics": votes,
             "source_effect_context": context,

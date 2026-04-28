@@ -20,6 +20,9 @@ The first usable screen is the national map explorer:
 - `/api/coverage` supplies whole-database coverage counts and attribution caveats
   so users can distinguish map-linked representative records from broader
   party/entity/return-level money-flow records.
+- `/api/representatives/{person_id}` supplies the side panel's selected
+  representative record feed, including money, benefits, private interests,
+  organisational roles, and other person-linked disclosed records.
 
 ## Local Development
 

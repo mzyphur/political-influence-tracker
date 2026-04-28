@@ -11,7 +11,12 @@ import {
   Search,
   Users
 } from "lucide-react";
-import { fetchCoverage, fetchElectorateMap, searchDatabase } from "./api";
+import {
+  fetchCoverage,
+  fetchElectorateMap,
+  fetchRepresentativeProfile,
+  searchDatabase
+} from "./api";
 import { MapCanvas } from "./components/MapCanvas";
 import { DetailsPanel } from "./components/DetailsPanel";
 import {
@@ -21,7 +26,13 @@ import {
   formatMoney,
   senateRegionColor
 } from "./map";
-import type { CoverageResponse, ElectorateFeature, LoadState, SearchResult } from "./types";
+import type {
+  CoverageResponse,
+  ElectorateFeature,
+  LoadState,
+  RepresentativeProfile,
+  SearchResult
+} from "./types";
 
 const states = ["All", "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"];
 type DataLevel = "federal" | "state" | "council";
@@ -48,6 +59,11 @@ function App() {
   const [pendingSearchResult, setPendingSearchResult] = useState<SearchResult | null>(null);
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
   const [coverageStatus, setCoverageStatus] = useState<LoadState>("idle");
+  const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  const [representativeProfile, setRepresentativeProfile] =
+    useState<RepresentativeProfile | null>(null);
+  const [representativeProfileStatus, setRepresentativeProfileStatus] =
+    useState<LoadState>("idle");
 
   useEffect(() => {
     if (dataLevel !== "federal") {
@@ -107,6 +123,32 @@ function App() {
     setSelectedFeature(feature);
     setPendingSearchResult(null);
   }, [dataLevel, features, pendingSearchResult]);
+
+  useEffect(() => {
+    const firstRepresentative = selectedFeature?.properties.current_representatives[0];
+    setSelectedPersonId(firstRepresentative?.person_id ?? null);
+  }, [selectedFeature]);
+
+  useEffect(() => {
+    if (!selectedPersonId) {
+      setRepresentativeProfile(null);
+      setRepresentativeProfileStatus("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setRepresentativeProfileStatus("loading");
+    fetchRepresentativeProfile(selectedPersonId, controller.signal)
+      .then((payload) => {
+        setRepresentativeProfile(payload);
+        setRepresentativeProfileStatus("ready");
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setRepresentativeProfile(null);
+        setRepresentativeProfileStatus("error");
+      });
+    return () => controller.abort();
+  }, [selectedPersonId]);
 
   useEffect(() => {
     const cleaned = query.trim();
@@ -326,6 +368,10 @@ function App() {
               ? senateRegionColor(selectedFeature.properties.state_or_territory)
               : electorateColor(selectedFeature?.properties.party_name)
           }
+          selectedPersonId={selectedPersonId}
+          representativeProfile={representativeProfile}
+          representativeProfileStatus={representativeProfileStatus}
+          onSelectRepresentative={setSelectedPersonId}
         />
       </section>
     </main>

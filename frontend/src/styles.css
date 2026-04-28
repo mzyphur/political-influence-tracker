@@ -518,6 +518,18 @@ button {
   padding: 10px;
 }
 
+.rep-row {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+}
+
+.rep-row[data-selected="true"] {
+  border-color: rgba(30, 109, 121, 0.52);
+  background: rgba(235, 247, 246, 0.96);
+  box-shadow: inset 3px 0 0 var(--focus);
+}
+
 .rep-row div {
   display: grid;
   gap: 3px;
@@ -537,6 +549,81 @@ button {
 .fact {
   display: grid;
   gap: 5px;
+}
+
+.inline-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.event-family-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.event-family {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 9px;
+}
+
+.event-family small,
+.event-row small {
+  color: var(--ink-muted);
+}
+
+.event-family small {
+  font-size: 11px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.event-family strong {
+  color: #17252b;
+  font-size: 16px;
+}
+
+.event-family span,
+.event-row span,
+.event-row p {
+  color: var(--ink-muted);
+}
+
+.event-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.event-row {
+  display: grid;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.94);
+  padding: 10px;
+}
+
+.event-row div {
+  display: grid;
+  gap: 2px;
+}
+
+.event-row strong {
+  color: #17252b;
+  text-transform: capitalize;
+}
+
+.event-row p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.38;
 }
 
 .party-row span {

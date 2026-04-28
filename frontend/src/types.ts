@@ -34,6 +34,7 @@ export type RepresentativeSummary = {
   party_name: string | null;
   party_short_name: string | null;
   chamber: string;
+  state_or_territory?: string | null;
   term_start: string | null;
 };
 
@@ -94,6 +95,48 @@ export type CoverageResponse = {
   coverage_layers: CoverageLayer[];
   influence_events_by_family: Array<Record<string, number | string | null>>;
   influence_event_totals: Record<string, number | string | null>;
+  caveat: string;
+};
+
+export type RepresentativeEventSummary = {
+  event_family: string;
+  event_count: number;
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  first_event_date: string | null;
+  last_event_date: string | null;
+};
+
+export type RepresentativeEvent = {
+  id: number;
+  event_family: string;
+  event_type: string;
+  event_subtype: string | null;
+  source_raw_name: string | null;
+  source_entity_name: string | null;
+  amount: number | null;
+  currency: string;
+  amount_status: string;
+  event_date: string | null;
+  reporting_period: string | null;
+  date_reported: string | null;
+  description: string;
+  evidence_status: string;
+  review_status: string;
+  missing_data_flags: unknown[];
+  source_ref: string | null;
+  source_url: string | null;
+  source_final_url: string | null;
+};
+
+export type RepresentativeProfile = {
+  person: {
+    id: number;
+    display_name: string;
+    canonical_name: string;
+  };
+  event_summary: RepresentativeEventSummary[];
+  recent_events: RepresentativeEvent[];
   caveat: string;
 };
 
