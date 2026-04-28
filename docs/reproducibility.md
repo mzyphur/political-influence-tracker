@@ -87,6 +87,10 @@ The federal foundation pipeline currently performs:
    is a unique exact cleaned-name match against the reproducible APH roster.
    Titles and postnominals are stripped, but ambiguous/unmatched rows remain
    unlinked with audit metadata rather than being guessed.
+   AEC transaction dates are accepted into the serving date field only when
+   they parse and fall inside the row's declared financial year; source dates
+   outside that window remain preserved in metadata with a
+   `date_validation.status` value instead of being exposed as event dates.
 7. Fetch the current national AEC ESRI federal-boundary ZIP.
 8. Transform AEC federal boundaries from source CRS to GeoJSON/PostGIS SRID 4326.
 9. Extract official APH decision-record indexes for House Votes and
@@ -97,14 +101,27 @@ The federal foundation pipeline currently performs:
     The processed fetch summary stores the APH index-to-document linkage and
     validation result, so existing raw metadata does not need to be rewritten
     when an already-fetched snapshot is reused.
-11. Parse current official APH Senate Journals PDF division blocks into
-    division and senator-vote JSONL records.
+    House Votes and Proceedings index rows link to ParlInfo HTML pages; the
+    fetcher derives and archives the embedded official PDF representation from
+    the HTML so later parsing remains reproducible from public APH/ParlInfo
+    evidence.
+11. Parse current official APH Senate Journals and House Votes and Proceedings
+    PDF division blocks into division and person-vote JSONL records. Official
+    division counts are preserved separately from current-roster matching: a
+    raw official vote name that is not present in the current roster remains in
+    the artifact as an unmatched roster vote instead of being guessed or
+    dropped.
 12. Fetch House interests PDFs.
 13. Extract House interests PDF text.
 14. Split House interests into numbered register sections.
 15. Fetch Senate statement-list JSON and per-senator statement-detail JSON from the official APH-backed API.
 16. Flatten Senate interest categories, gifts, travel/hospitality, liabilities, and alterations into JSONL records.
-17. Optional, when `THEY_VOTE_FOR_YOU_API_KEY` is available: fetch They Vote For
+17. Conservatively extract benefit provider, value, event date, and report date
+    fields from House and Senate interest descriptions when the text uses
+    explicit phrases such as "provided by", "hosted by", "valued at", or a
+    parseable date. Non-disclosed values/dates remain labelled as missing
+    rather than inferred.
+18. Optional, when `THEY_VOTE_FOR_YOU_API_KEY` is available: fetch They Vote For
     You division lists/details, archive raw public JSON with API-key-free
     request metadata, and normalize divisions, votes, linked civic policies,
     and bills into JSONL. Date windows that hit the API's 100-record cap are

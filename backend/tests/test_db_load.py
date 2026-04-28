@@ -13,8 +13,10 @@ from au_politics_money.db.load import (
     normalize_electorate_name,
     normalize_name,
     normalize_representative_return_name,
+    parse_aec_money_flow_date,
     parse_date,
     parse_datetime,
+    parse_financial_year_bounds,
     senate_api_name_to_canonical,
 )
 
@@ -65,6 +67,19 @@ def test_parse_date_accepts_aec_common_formats() -> None:
     assert parse_date("8/14/2025 1:31:50 PM") == date(2025, 8, 14)
     assert parse_date("") is None
     assert parse_date("not supplied") is None
+
+
+def test_parse_aec_money_flow_date_validates_financial_year_bounds() -> None:
+    assert parse_financial_year_bounds("2015-16") == (date(2015, 7, 1), date(2016, 6, 30))
+
+    parsed, validation = parse_aec_money_flow_date("14/04/2016", "2015-16")
+    assert parsed == date(2016, 4, 14)
+    assert validation["status"] == "accepted"
+
+    parsed, validation = parse_aec_money_flow_date("14/04/2106", "2015-16")
+    assert parsed is None
+    assert validation["status"] == "outside_financial_year"
+    assert validation["parsed_date"] == "2106-04-14"
 
 
 def test_senate_api_name_to_canonical() -> None:

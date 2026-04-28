@@ -57,6 +57,12 @@ ENTITY_PROFILE_CAVEAT = (
     "without explicit source evidence."
 )
 
+PARTY_PROFILE_CAVEAT = (
+    "Party profiles aggregate disclosed money records for reviewed party-entity links "
+    "and clearly labelled name-family candidate entities. These records are party/entity "
+    "context, not claims about individual MPs or senators unless separately person-linked."
+)
+
 
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Decimal):
@@ -370,13 +376,16 @@ def _search_entities(conn, pattern: str, limit: int) -> list[dict[str, Any]]:
             entity.id,
             entity.canonical_name,
             entity.entity_type,
-            count(influence_event.id) AS influence_event_count,
+            count(DISTINCT influence_event.id) AS influence_event_count,
             sum(influence_event.amount) FILTER (
                 WHERE influence_event.amount_status = 'reported'
             ) AS reported_amount_total
         FROM entity
         LEFT JOIN influence_event
-          ON influence_event.source_entity_id = entity.id
+          ON (
+                influence_event.source_entity_id = entity.id
+                OR influence_event.recipient_entity_id = entity.id
+             )
          AND influence_event.review_status <> 'rejected'
         WHERE entity.canonical_name ILIKE %s
         GROUP BY entity.id, entity.canonical_name, entity.entity_type
@@ -1770,6 +1779,417 @@ def get_entity_profile(entity_id: int, *, database_url: str | None = None) -> di
             "top_sources": top_sources,
             "recent_events": recent_events,
             "caveat": ENTITY_PROFILE_CAVEAT,
+        }
+    )
+
+
+def _party_entity_name_patterns(party: dict[str, Any]) -> list[str]:
+    name = str(party.get("name") or "")
+    short_name = str(party.get("short_name") or "")
+    normalized = f"{name} {short_name}".lower()
+    patterns: list[str] = []
+    if "alp" in normalized or "labor" in normalized:
+        patterns.extend(
+            [
+                "Australian Labor Party%",
+                "% Labor Party%",
+                "% ALP%",
+            ]
+        )
+    if "liberal national" in normalized or "lnp" in normalized:
+        patterns.append("Liberal National Party%")
+    elif re.search(r"\blp\b", normalized) or "liberal party" in normalized:
+        patterns.extend(["Liberal Party%", "Liberal Party of Australia%"])
+    if "national party" in normalized or "nats" in normalized:
+        patterns.extend(["National Party%", "The Nationals%"])
+    if "greens" in normalized or re.search(r"\bag\b", normalized):
+        patterns.extend(["%Greens%", "Australian Greens%"])
+    if "one nation" in normalized or re.search(r"\bon\b", normalized):
+        patterns.extend(["%One Nation%"])
+    if "united australia" in normalized or "uap" in normalized:
+        patterns.extend(["United Australia Party%"])
+    if "katter" in normalized or "kap" in normalized:
+        patterns.extend(["Katter%"])
+    if "country liberal" in normalized or "clp" in normalized:
+        patterns.extend(["Country Liberal Party%"])
+    if "jacqui lambie" in normalized or "jln" in normalized:
+        patterns.extend(["Jacqui Lambie Network%"])
+    for value in (name, short_name):
+        cleaned = " ".join(value.split())
+        if len(cleaned) >= 4 and cleaned.upper() not in {"IND", "PRES", "DPRES"}:
+            patterns.append(f"{cleaned}%")
+    deduped: list[str] = []
+    for pattern in patterns:
+        if pattern not in deduped:
+            deduped.append(pattern)
+    return deduped
+
+
+def _party_linked_entity_ids(conn, party: dict[str, Any]) -> tuple[list[int], list[dict[str, Any]]]:
+    reviewed_links: list[dict[str, Any]] = []
+    if _table_exists(conn, "party_entity_link"):
+        reviewed_links = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                entity.id AS entity_id,
+                entity.canonical_name,
+                entity.entity_type,
+                party_entity_link.link_type,
+                party_entity_link.method,
+                party_entity_link.confidence,
+                party_entity_link.review_status,
+                party_entity_link.evidence_note
+            FROM party_entity_link
+            JOIN entity ON entity.id = party_entity_link.entity_id
+            WHERE party_entity_link.party_id = %s
+              AND party_entity_link.review_status = 'reviewed'
+            ORDER BY party_entity_link.link_type, entity.canonical_name
+            """,
+            (party["id"],),
+        )
+
+    patterns = _party_entity_name_patterns(party)
+    candidate_rows: list[dict[str, Any]] = []
+    if patterns:
+        pattern_clause = " OR ".join(["entity.canonical_name ILIKE %s" for _ in patterns])
+        candidate_rows = _fetch_dicts(
+            conn,
+            f"""
+            SELECT
+                entity.id AS entity_id,
+                entity.canonical_name,
+                entity.entity_type,
+                'name_family_candidate'::TEXT AS link_type,
+                'rule_based'::TEXT AS method,
+                'unreviewed_candidate'::TEXT AS confidence,
+                'needs_review'::TEXT AS review_status,
+                'Candidate generated from party-name family patterns; requires review before strong claims.'::TEXT
+                    AS evidence_note,
+                count(DISTINCT influence_event.id) AS influence_event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total
+            FROM entity
+            LEFT JOIN influence_event
+              ON (
+                    influence_event.source_entity_id = entity.id
+                    OR influence_event.recipient_entity_id = entity.id
+                 )
+             AND influence_event.review_status <> 'rejected'
+            WHERE {pattern_clause}
+            GROUP BY entity.id, entity.canonical_name, entity.entity_type
+            ORDER BY
+                reported_amount_total DESC NULLS LAST,
+                influence_event_count DESC,
+                entity.canonical_name
+            LIMIT 100
+            """,
+            tuple(patterns),
+        )
+
+    by_id: dict[int, dict[str, Any]] = {}
+    for row in candidate_rows:
+        by_id[int(row["entity_id"])] = row
+    for row in reviewed_links:
+        by_id[int(row["entity_id"])] = row
+    return sorted(by_id), list(by_id.values())
+
+
+def get_party_profile(party_id: int, *, database_url: str | None = None) -> dict[str, Any]:
+    with connect(database_url) as conn:
+        party_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                party.id,
+                party.name,
+                party.short_name,
+                party.party_group,
+                jurisdiction.name AS jurisdiction_name,
+                jurisdiction.level AS jurisdiction_level
+            FROM party
+            LEFT JOIN jurisdiction ON jurisdiction.id = party.jurisdiction_id
+            WHERE party.id = %s
+            """,
+            (party_id,),
+        )
+        if not party_rows:
+            return {}
+
+        party = party_rows[0]
+        linked_entity_ids, linked_entities = _party_linked_entity_ids(conn, party)
+
+        office_summary = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                office_term.chamber,
+                count(DISTINCT office_term.person_id) FILTER (
+                    WHERE office_term.term_end IS NULL
+                ) AS current_representative_count
+            FROM office_term
+            WHERE office_term.party_id = %s
+            GROUP BY office_term.chamber
+            ORDER BY office_term.chamber
+            """,
+            (party_id,),
+        )
+
+        if not linked_entity_ids:
+            return _jsonable(
+                {
+                    "party": party,
+                    "office_summary": office_summary,
+                    "linked_entities": [],
+                    "money_summary": [],
+                    "by_financial_year": [],
+                    "by_return_type": [],
+                    "top_sources": [],
+                    "top_recipients": [],
+                    "associated_entity_returns": [],
+                    "recent_events": [],
+                    "caveat": PARTY_PROFILE_CAVEAT,
+                }
+            )
+
+        entity_array = linked_entity_ids
+        money_summary = _fetch_dicts(
+            conn,
+            """
+            WITH events AS (
+                SELECT DISTINCT
+                    influence_event.id,
+                    CASE
+                        WHEN influence_event.source_entity_id = ANY(%s::bigint[])
+                         AND influence_event.recipient_entity_id = ANY(%s::bigint[])
+                        THEN 'internal_party_entity_flow'
+                        WHEN influence_event.recipient_entity_id = ANY(%s::bigint[])
+                        THEN 'as_recipient'
+                        ELSE 'as_source'
+                    END AS entity_role,
+                    influence_event.event_type,
+                    influence_event.amount,
+                    influence_event.amount_status,
+                    influence_event.event_date
+                FROM influence_event
+                WHERE influence_event.event_family = 'money'
+                  AND influence_event.review_status <> 'rejected'
+                  AND (
+                        influence_event.source_entity_id = ANY(%s::bigint[])
+                        OR influence_event.recipient_entity_id = ANY(%s::bigint[])
+                  )
+            )
+            SELECT
+                entity_role,
+                event_type,
+                count(*) AS event_count,
+                count(*) FILTER (WHERE amount_status = 'reported') AS reported_amount_event_count,
+                sum(amount) FILTER (WHERE amount_status = 'reported') AS reported_amount_total,
+                min(event_date) AS first_event_date,
+                max(event_date) AS last_event_date
+            FROM events
+            GROUP BY entity_role, event_type
+            ORDER BY reported_amount_total DESC NULLS LAST, event_count DESC
+            """,
+            (entity_array, entity_array, entity_array, entity_array, entity_array),
+        )
+
+        by_financial_year = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                influence_event.reporting_period AS financial_year,
+                count(DISTINCT influence_event.id) AS event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total
+            FROM influence_event
+            WHERE influence_event.event_family = 'money'
+              AND influence_event.review_status <> 'rejected'
+              AND (
+                    influence_event.source_entity_id = ANY(%s::bigint[])
+                    OR influence_event.recipient_entity_id = ANY(%s::bigint[])
+              )
+            GROUP BY influence_event.reporting_period
+            ORDER BY influence_event.reporting_period DESC NULLS LAST
+            LIMIT 25
+            """,
+            (entity_array, entity_array),
+        )
+
+        by_return_type = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                influence_event.metadata->>'return_type' AS return_type,
+                count(DISTINCT influence_event.id) AS event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total
+            FROM influence_event
+            WHERE influence_event.event_family = 'money'
+              AND influence_event.review_status <> 'rejected'
+              AND (
+                    influence_event.source_entity_id = ANY(%s::bigint[])
+                    OR influence_event.recipient_entity_id = ANY(%s::bigint[])
+              )
+            GROUP BY influence_event.metadata->>'return_type'
+            ORDER BY reported_amount_total DESC NULLS LAST, event_count DESC
+            LIMIT 25
+            """,
+            (entity_array, entity_array),
+        )
+
+        top_sources = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                COALESCE(source_entity.id::TEXT, influence_event.source_raw_name) AS source_id,
+                COALESCE(source_entity.canonical_name, influence_event.source_raw_name, 'Unknown source')
+                    AS source_label,
+                count(DISTINCT influence_event.id) AS event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total
+            FROM influence_event
+            LEFT JOIN entity source_entity ON source_entity.id = influence_event.source_entity_id
+            WHERE influence_event.event_family = 'money'
+              AND influence_event.review_status <> 'rejected'
+              AND influence_event.recipient_entity_id = ANY(%s::bigint[])
+              AND (
+                    influence_event.source_entity_id IS NULL
+                    OR NOT influence_event.source_entity_id = ANY(%s::bigint[])
+              )
+            GROUP BY source_id, source_label
+            ORDER BY reported_amount_total DESC NULLS LAST, event_count DESC, source_label
+            LIMIT 25
+            """,
+            (entity_array, entity_array),
+        )
+
+        top_recipients = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                COALESCE(recipient_entity.id::TEXT, influence_event.recipient_raw_name)
+                    AS recipient_id,
+                COALESCE(
+                    recipient_entity.canonical_name,
+                    influence_event.recipient_raw_name,
+                    'Unknown recipient'
+                ) AS recipient_label,
+                count(DISTINCT influence_event.id) AS event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total
+            FROM influence_event
+            LEFT JOIN entity recipient_entity
+              ON recipient_entity.id = influence_event.recipient_entity_id
+            WHERE influence_event.event_family = 'money'
+              AND influence_event.review_status <> 'rejected'
+              AND influence_event.source_entity_id = ANY(%s::bigint[])
+              AND (
+                    influence_event.recipient_entity_id IS NULL
+                    OR NOT influence_event.recipient_entity_id = ANY(%s::bigint[])
+              )
+            GROUP BY recipient_id, recipient_label
+            ORDER BY reported_amount_total DESC NULLS LAST, event_count DESC, recipient_label
+            LIMIT 25
+            """,
+            (entity_array, entity_array),
+        )
+
+        associated_entity_returns = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                linked.entity_id,
+                linked.canonical_name,
+                count(DISTINCT influence_event.id) AS event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total
+            FROM (
+                SELECT entity.id AS entity_id, entity.canonical_name
+                FROM entity
+                WHERE entity.id = ANY(%s::bigint[])
+            ) linked
+            JOIN influence_event
+              ON (
+                    influence_event.source_entity_id = linked.entity_id
+                    OR influence_event.recipient_entity_id = linked.entity_id
+                 )
+             AND influence_event.event_family = 'money'
+             AND influence_event.review_status <> 'rejected'
+             AND influence_event.metadata->>'return_type' = 'Associated Entity Return'
+            GROUP BY linked.entity_id, linked.canonical_name
+            ORDER BY reported_amount_total DESC NULLS LAST, event_count DESC, linked.canonical_name
+            LIMIT 25
+            """,
+            (entity_array,),
+        )
+
+        recent_events = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                influence_event.id,
+                CASE
+                    WHEN influence_event.source_entity_id = ANY(%s::bigint[])
+                     AND influence_event.recipient_entity_id = ANY(%s::bigint[])
+                    THEN 'internal_party_entity_flow'
+                    WHEN influence_event.recipient_entity_id = ANY(%s::bigint[])
+                    THEN 'as_recipient'
+                    ELSE 'as_source'
+                END AS entity_role,
+                influence_event.event_type,
+                influence_event.source_raw_name,
+                source_entity.canonical_name AS source_entity_name,
+                influence_event.recipient_raw_name,
+                recipient_entity.canonical_name AS recipient_entity_name,
+                influence_event.amount,
+                influence_event.currency,
+                influence_event.amount_status,
+                influence_event.event_date,
+                influence_event.reporting_period,
+                influence_event.description,
+                influence_event.review_status,
+                source_document.source_id,
+                source_document.source_name,
+                source_document.url AS source_url,
+                source_document.final_url AS source_final_url
+            FROM influence_event
+            LEFT JOIN entity source_entity ON source_entity.id = influence_event.source_entity_id
+            LEFT JOIN entity recipient_entity ON recipient_entity.id = influence_event.recipient_entity_id
+            JOIN source_document ON source_document.id = influence_event.source_document_id
+            WHERE influence_event.event_family = 'money'
+              AND influence_event.review_status <> 'rejected'
+              AND (
+                    influence_event.source_entity_id = ANY(%s::bigint[])
+                    OR influence_event.recipient_entity_id = ANY(%s::bigint[])
+              )
+            ORDER BY
+                influence_event.event_date DESC NULLS LAST,
+                influence_event.id DESC
+            LIMIT 50
+            """,
+            (entity_array, entity_array, entity_array, entity_array, entity_array),
+        )
+
+    return _jsonable(
+        {
+            "party": party,
+            "office_summary": office_summary,
+            "linked_entities": linked_entities,
+            "money_summary": money_summary,
+            "by_financial_year": by_financial_year,
+            "by_return_type": by_return_type,
+            "top_sources": top_sources,
+            "top_recipients": top_recipients,
+            "associated_entity_returns": associated_entity_returns,
+            "recent_events": recent_events,
+            "caveat": PARTY_PROFILE_CAVEAT,
         }
     )
 

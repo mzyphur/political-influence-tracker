@@ -258,6 +258,91 @@ def test_fetch_aph_decision_record_documents_writes_linkage_in_summary(tmp_path)
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["selected_count"] == 1
     assert summary["fetched_count"] == 1
+
+
+def test_fetch_house_decision_record_documents_derives_pdf_from_parlinfo_html(tmp_path) -> None:
+    index_path = tmp_path / "aph_house_votes_and_proceedings" / "index.jsonl"
+    index_path.parent.mkdir(parents=True)
+    record = {
+        "external_key": "aph_house_votes_and_proceedings:test",
+        "source_id": "aph_house_votes_and_proceedings",
+        "source_name": "House Votes and Proceedings",
+        "chamber": "house",
+        "record_type": "votes_and_proceedings",
+        "record_kind": "parlinfo_html",
+        "record_date": "2026-03-11",
+        "title": "House Votes and Proceedings 2026-03-11",
+        "url": "https://parlinfo.aph.gov.au/parlInfo/search/display/display.w3p;query=Id%3A%22chamber/votes/test/0000%22",
+        "source_metadata_path": "/tmp/index-metadata.json",
+        "metadata": {
+            "representations": [
+                {
+                    "url": "https://parlinfo.aph.gov.au/parlInfo/search/display/display.w3p;query=Id%3A%22chamber/votes/test/0000%22",
+                    "record_kind": "parlinfo_html",
+                    "link_text": "11",
+                    "host": "parlinfo.aph.gov.au",
+                    "parent_text": "March 11",
+                }
+            ]
+        },
+    }
+    index_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    def fake_fetcher(source, raw_dir, timeout):
+        if source.expected_format == "pdf":
+            body = b"%PDF-1.7\nfixture\n%%EOF"
+            suffix = ".pdf"
+            content_type = "application/pdf"
+        else:
+            body = b"""
+            <html>
+              <body>
+                <a href="/parlInfo/download/chamber/votes/test/toc_pdf/reps-vp.pdf;fileType=application%2Fpdf#search=x">Download PDF</a>
+              </body>
+            </html>
+            """
+            suffix = ".html"
+            content_type = "text/html"
+        target_dir = raw_dir / source.source_id / "20260427T000000Z"
+        target_dir.mkdir(parents=True)
+        body_path = target_dir / f"body{suffix}"
+        body_path.write_bytes(body)
+        metadata_path = target_dir / "metadata.json"
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "source": source.to_dict(),
+                    "fetched_at": "20260427T000000Z",
+                    "ok": True,
+                    "http_status": 200,
+                    "final_url": source.url,
+                    "content_type": content_type,
+                    "content_length": len(body),
+                    "sha256": hashlib.sha256(body).hexdigest(),
+                    "body_path": str(body_path),
+                    "headers": {},
+                }
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return metadata_path
+
+    summary_path = fetch_aph_decision_record_documents(
+        jsonl_paths=[index_path],
+        raw_dir=tmp_path / "raw",
+        processed_dir=tmp_path / "processed",
+        fetcher=fake_fetcher,
+    )
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["selected_count"] == 2
+    assert summary["derived_representation_count"] == 1
+    assert [row["representation_kind"] for row in summary["documents"]] == [
+        "parlinfo_html",
+        "parlinfo_pdf",
+    ]
+    assert "download/chamber/votes/test" in summary["documents"][1]["representation_url"]
     document = summary["documents"][0]
     assert document["official_decision_record"]["external_key"] == record["external_key"]
     assert document["official_decision_record_representation"]["record_kind"] == "parlinfo_html"

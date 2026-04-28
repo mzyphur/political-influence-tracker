@@ -8,6 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from au_politics_money.config import PROCESSED_DIR
+from au_politics_money.ingest.interest_extraction import (
+    extract_event_date,
+    extract_provider,
+    extract_reported_value,
+)
 
 
 HOUSE_INTEREST_CATEGORIES = {
@@ -211,17 +216,23 @@ def _looks_like_value(value: str) -> bool:
     return bool(normalized) and normalized not in NON_VALUES
 
 
+def extracted_interest_fields(description: str) -> dict[str, Any]:
+    provider = extract_provider(description)
+    reported_value = extract_reported_value(description)
+    event_date = extract_event_date(description)
+    return {
+        "counterparty_raw_name": provider["value"],
+        "counterparty_extraction": provider,
+        "estimated_value": reported_value["value"],
+        "estimated_value_currency": reported_value["currency"],
+        "estimated_value_extraction": reported_value,
+        "event_date": event_date["value"],
+        "event_date_extraction": event_date,
+    }
+
+
 def guess_counterparty(description: str) -> str:
-    match = re.search(
-        r"\bfrom\s+(?P<name>[^.;\n]+?)(?:\s+-|\s+\(|$)",
-        description,
-        flags=re.IGNORECASE,
-    )
-    if not match:
-        return ""
-    name = match.group("name").strip(" -:;,")
-    name = re.sub(r"\s+valued\s+at\s+.*$", "", name, flags=re.IGNORECASE)
-    return name[:250]
+    return str(extracted_interest_fields(description)["counterparty_raw_name"])
 
 
 def _should_append_to_previous(previous: str, value: str) -> bool:
@@ -270,7 +281,7 @@ def records_from_house_section(section: dict[str, Any]) -> list[dict[str, Any]]:
             output[-1]["description"], value
         ):
             output[-1]["description"] = f"{output[-1]['description']} {value}"
-            output[-1]["counterparty_raw_name"] = guess_counterparty(output[-1]["description"])
+            output[-1].update(extracted_interest_fields(output[-1]["description"]))
             continue
 
         digest = hashlib.sha1(
@@ -279,6 +290,7 @@ def records_from_house_section(section: dict[str, Any]) -> list[dict[str, Any]]:
                 f"{current_context}:{len(output)}:{value}"
             ).encode("utf-8")
         ).hexdigest()[:12]
+        extracted = extracted_interest_fields(value)
         output.append(
             {
                 "external_key": f"aph_house_interests:{section['source_id']}:{section_number}:{digest}",
@@ -297,7 +309,7 @@ def records_from_house_section(section: dict[str, Any]) -> list[dict[str, Any]]:
                 "interest_category": category,
                 "owner_context": current_context,
                 "description": value,
-                "counterparty_raw_name": guess_counterparty(value),
+                **extracted,
                 "original_section_text": section["section_text"],
             }
         )

@@ -18,6 +18,8 @@ from au_politics_money.ingest.aph_decision_records import (
 
 PARSER_NAME = "aph_official_divisions_v1"
 PARSER_VERSION = "1"
+HOUSE_VOTE_TITLES = ("Mr", "Ms", "Mrs", "Dr")
+UNMATCHED_VOTE_TITLES = ("Senator", *HOUSE_VOTE_TITLES)
 
 
 def _timestamp() -> str:
@@ -77,12 +79,29 @@ def _roster_vote_labels(
     for person in people:
         surname = str(person.get("surname") or "").strip()
         first = str(person.get("preferred_name") or person.get("first_name") or "").strip()
+        first_name = str(person.get("first_name") or "").strip()
+        other_name = str(person.get("other_name") or "").strip()
+        honorific = str(person.get("honorific") or "").strip()
         canonical_name = str(person.get("canonical_name") or "").strip()
-        for label in (
+        initials = " ".join(part[:1] for part in f"{first_name} {other_name}".split() if part)
+        candidate_labels = [
             surname if surname_counts.get(_normalize_name_key(surname)) == 1 else "",
             f"{surname}, {first}" if surname and first else "",
             canonical_name,
-        ):
+        ]
+        title_prefixes = {honorific} if honorific else set()
+        if chamber == "house":
+            title_prefixes.update(HOUSE_VOTE_TITLES)
+        for title in sorted(title_prefixes):
+            candidate_labels.extend(
+                [
+                    f"{title} {surname}" if title and surname else "",
+                    f"{title} {first} {surname}" if title and first and surname else "",
+                    f"{title} {first[:1]} {surname}" if title and first and surname else "",
+                    f"{title} {initials} {surname}" if title and initials and surname else "",
+                ]
+            )
+        for label in candidate_labels:
             label = _clean_text(label)
             if not label:
                 continue
@@ -122,8 +141,26 @@ def _parse_vote_name_lines(
                 match_text = match.group(0)
                 break
             if match_row is None:
-                warnings.append(f"Unparsed {vote} vote names: {remaining}")
-                break
+                unmatched = _consume_unmatched_vote_name(remaining)
+                if unmatched is None:
+                    warnings.append(f"Unparsed {vote} vote names: {remaining}")
+                    break
+                raw_name, is_teller, remaining = unmatched
+                warnings.append(f"Unmatched roster name in {vote} votes: {raw_name}")
+                votes.append(
+                    {
+                        "vote": vote,
+                        "raw_name": raw_name,
+                        "name_key": _normalize_name_key(raw_name),
+                        "matched_roster_canonical_name": "",
+                        "party": "",
+                        "state": "",
+                        "is_teller": is_teller,
+                        "source_line": line,
+                        "name_match_status": "unmatched_roster",
+                    }
+                )
+                continue
             raw_name = match_text.strip()
             is_teller = raw_name.endswith("*")
             raw_name = raw_name.rstrip("*")
@@ -143,19 +180,47 @@ def _parse_vote_name_lines(
     return votes, warnings
 
 
-def _find_name_lines(lines: list[str], start: int, stop: int) -> list[str]:
+def _consume_unmatched_vote_name(remaining: str) -> tuple[str, bool, str] | None:
+    title_pattern = "|".join(re.escape(title) for title in UNMATCHED_VOTE_TITLES)
+    if not re.match(rf"^(?:{title_pattern})\b", remaining):
+        return None
+    next_title = re.search(rf"\s(?=(?:{title_pattern})\b)", remaining)
+    raw_name = remaining[: next_title.start()].strip() if next_title else remaining.strip()
+    rest = remaining[next_title.start() :].strip() if next_title else ""
+    if not raw_name:
+        return None
+    is_teller = raw_name.endswith("*")
+    raw_name = raw_name.rstrip("*").strip()
+    return raw_name, is_teller, rest
+
+
+def _is_house_page_header(line: str) -> bool:
+    return bool(
+        re.match(r"^(?:\d+\s+)?No\.\s+\d+[—-]\d{1,2}\s+[A-Za-z]+\s+\d{4}(?:\s+\d+)?$", line)
+    )
+
+
+def _find_name_lines(lines: list[str], start: int, stop: int, *, chamber: str) -> list[str]:
     cursor = start
     while cursor < stop and not re.match(r"^(Senators|Members)[—-]?$", lines[cursor]):
+        if chamber == "house" and not re.match(r"^(No\.|\d+\s+No\.)", lines[cursor]):
+            break
         cursor += 1
     if cursor < stop:
-        cursor += 1
+        if re.match(r"^(Senators|Members)[—-]?$", lines[cursor]):
+            cursor += 1
     name_lines = []
     while cursor < stop:
         line = lines[cursor]
         if re.match(r"^(No\.|\d+\s+No\.)", line):
             cursor += 1
             continue
+        if _is_house_page_header(line):
+            cursor += 1
+            continue
         if not line or line.startswith("* Tellers"):
+            break
+        if re.match(r"^(And so it was|Question|Resolved|Ordered|Bill\b)", line):
             break
         name_lines.append(line)
         cursor += 1
@@ -190,7 +255,10 @@ def parse_official_divisions_from_text(
     labels = _roster_vote_labels(roster_path=roster_path, chamber=chamber)
     lines = [_clean_text(line) for line in text.splitlines()]
     lines = [line for line in lines if line]
-    marker_pattern = re.compile(rf"^The {chamber_label} divided[—-]?$", re.IGNORECASE)
+    marker_pattern = re.compile(
+        rf"^The {chamber_label} divided\b(?!\s+and\s+only)",
+        re.IGNORECASE,
+    )
     divisions: list[dict[str, Any]] = []
     marker_indexes = [index for index, line in enumerate(lines) if marker_pattern.match(line)]
     for local_index, marker_index in enumerate(marker_indexes, start=1):
@@ -212,10 +280,14 @@ def parse_official_divisions_from_text(
 
         aye_count = int(re.search(r"\d+", lines[ayes_index]).group(0))  # type: ignore[union-attr]
         no_count = int(re.search(r"\d+", lines[noes_index]).group(0))  # type: ignore[union-attr]
-        aye_lines = _find_name_lines(lines, ayes_index + 1, noes_index)
-        no_lines = _find_name_lines(lines, noes_index + 1, next_marker)
+        aye_lines = _find_name_lines(lines, ayes_index + 1, noes_index, chamber=chamber)
+        no_lines = _find_name_lines(lines, noes_index + 1, next_marker, chamber=chamber)
         aye_votes, aye_warnings = _parse_vote_name_lines(aye_lines, vote="aye", labels=labels)
         no_votes, no_warnings = _parse_vote_name_lines(no_lines, vote="no", labels=labels)
+        all_votes = aye_votes + no_votes
+        unmatched_roster_vote_count = sum(
+            1 for item in all_votes if item.get("name_match_status") == "unmatched_roster"
+        )
 
         motion_text = _context_value(lines, marker_index, r"\bQuestion\b.*\bput\b|Main question put")
         section_heading = _context_value(lines, marker_index, r"^\d+\s+[A-Z].+")
@@ -244,7 +316,7 @@ def parse_official_divisions_from_text(
                 "aye_count": aye_count,
                 "no_count": no_count,
                 "possible_turnout": aye_count + no_count,
-                "votes": aye_votes + no_votes,
+                "votes": all_votes,
                 "source_metadata_path": document.get("metadata_path"),
                 "source_url": document.get("representation_url"),
                 "official_decision_record_external_key": record.get("external_key"),
@@ -262,7 +334,9 @@ def parse_official_divisions_from_text(
                     "aye_name_lines": aye_lines,
                     "no_name_lines": no_lines,
                     "name_parse_warnings": aye_warnings + no_warnings,
-                    "parsed_vote_count": len(aye_votes) + len(no_votes),
+                    "parsed_vote_count": len(all_votes),
+                    "matched_roster_vote_count": len(all_votes) - unmatched_roster_vote_count,
+                    "unmatched_roster_vote_count": unmatched_roster_vote_count,
                     "expected_vote_count": aye_count + no_count,
                     "vote_count_matches": len(aye_votes) == aye_count and len(no_votes) == no_count,
                     "document_source_id": document.get("source_id"),
@@ -318,7 +392,7 @@ def extract_official_aph_divisions(
         if chamber == "senate" and "pdf" not in representation_kind:
             skipped_documents += 1
             continue
-        if chamber == "house" and "html" not in representation_kind:
+        if chamber == "house" and "pdf" not in representation_kind:
             skipped_documents += 1
             continue
         metadata_path = Path(str(document.get("metadata_path") or ""))
@@ -352,6 +426,18 @@ def extract_official_aph_divisions(
         "skipped_documents": skipped_documents,
         "division_count": len(divisions),
         "vote_count": sum(len(division.get("votes") or []) for division in divisions),
+        "matched_roster_vote_count": sum(
+            int((division.get("metadata") or {}).get("matched_roster_vote_count") or 0)
+            for division in divisions
+        ),
+        "unmatched_roster_vote_count": sum(
+            int((division.get("metadata") or {}).get("unmatched_roster_vote_count") or 0)
+            for division in divisions
+        ),
+        "name_parse_warning_count": sum(
+            len((division.get("metadata") or {}).get("name_parse_warnings") or [])
+            for division in divisions
+        ),
         "count_mismatch_divisions": sum(
             1
             for division in divisions

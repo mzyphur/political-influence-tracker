@@ -128,6 +128,15 @@ def test_representative_profile_404(monkeypatch) -> None:
     assert response.status_code == 404
 
 
+def test_party_profile_404(monkeypatch) -> None:
+    monkeypatch.setattr(queries, "get_party_profile", lambda party_id: {})
+    client = TestClient(app)
+
+    response = client.get("/api/parties/999999")
+
+    assert response.status_code == 404
+
+
 def test_representative_contact_payload_does_not_expose_local_source_paths() -> None:
     contact = queries._representative_contact_from_metadata(
         {

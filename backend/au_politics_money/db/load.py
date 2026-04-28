@@ -223,6 +223,64 @@ def parse_date(value: str) -> date | None:
     return None
 
 
+def parse_financial_year_bounds(value: str) -> tuple[date, date] | None:
+    match = re.match(r"^\s*(\d{4})\s*[-/]\s*(\d{2}|\d{4})\s*$", value or "")
+    if not match:
+        return None
+    start_year = int(match.group(1))
+    end_token = match.group(2)
+    if len(end_token) == 2:
+        end_year = (start_year // 100) * 100 + int(end_token)
+        if end_year < start_year:
+            end_year += 100
+    else:
+        end_year = int(end_token)
+    if end_year < start_year:
+        return None
+    return date(start_year, 7, 1), date(end_year, 6, 30)
+
+
+def parse_aec_money_flow_date(
+    value: str,
+    financial_year: str,
+) -> tuple[date | None, dict[str, str]]:
+    cleaned = (value or "").strip()
+    validation = {
+        "raw_date": cleaned,
+        "financial_year": financial_year or "",
+        "status": "not_disclosed" if not cleaned else "unparseable",
+    }
+    parsed = parse_date(cleaned)
+    if parsed is None:
+        return None, validation
+
+    validation["parsed_date"] = parsed.isoformat()
+    bounds = parse_financial_year_bounds(financial_year or "")
+    if bounds is None:
+        validation["status"] = "accepted_without_financial_year_bounds"
+        return parsed, validation
+
+    start_date, end_date = bounds
+    validation["expected_start"] = start_date.isoformat()
+    validation["expected_end"] = end_date.isoformat()
+    if not start_date <= parsed <= end_date:
+        validation["status"] = "outside_financial_year"
+        return None, validation
+
+    validation["status"] = "accepted"
+    return parsed, validation
+
+
+def parse_decimal(value: str) -> Decimal | None:
+    cleaned = (value or "").replace("$", "").replace(",", "").strip()
+    if not cleaned:
+        return None
+    try:
+        return Decimal(cleaned)
+    except Exception:
+        return None
+
+
 def parse_datetime(value: str) -> datetime | None:
     cleaned = (value or "").strip()
     if not cleaned or cleaned.startswith("0001-"):
@@ -823,6 +881,10 @@ def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]
             source_entity_id = get_or_create_entity(conn, record["source_raw_name"])
             recipient_entity_id = get_or_create_entity(conn, record["recipient_raw_name"])
             amount = Decimal(record["amount_aud"]) if record["amount_aud"] else None
+            date_received, date_validation = parse_aec_money_flow_date(
+                record["date"],
+                record["financial_year"],
+            )
             external_key = (
                 f"aec_annual:{record['source_table']}:{record['source_row_number']}:"
                 f"{record['financial_year']}:{normalize_name(record['source_raw_name'])}:"
@@ -859,7 +921,7 @@ def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]
                         record["recipient_raw_name"] or "Unknown",
                         amount,
                         record["financial_year"],
-                        parse_date(record["date"]),
+                        date_received,
                         record["return_type"],
                         record["receipt_type"],
                         record["flow_kind"],
@@ -868,7 +930,7 @@ def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]
                         f"{record['source_table']}:{record['source_row_number']}",
                         json.dumps(record["original"], sort_keys=True),
                         "unresolved",
-                        as_jsonb(record),
+                        as_jsonb({**record, "date_validation": date_validation}),
                     ),
                 )
             count += 1
@@ -1172,22 +1234,28 @@ def load_house_interest_records(conn, jsonl_path: Path | None = None) -> dict[st
 
             counterparty = record.get("counterparty_raw_name") or ""
             source_entity_id = get_or_create_entity(conn, counterparty) if counterparty else None
+            estimated_value = parse_decimal(str(record.get("estimated_value") or ""))
+            date_received = parse_date(str(record.get("event_date") or ""))
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO gift_interest (
                         external_key, person_id, source_entity_id, source_raw_name,
                         interest_category, description, parliament_number, chamber,
+                        estimated_value, currency, date_received,
                         source_document_id, source_page_ref, original_text,
                         extraction_confidence, metadata
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (external_key) DO UPDATE SET
                         person_id = EXCLUDED.person_id,
                         source_entity_id = EXCLUDED.source_entity_id,
                         source_raw_name = EXCLUDED.source_raw_name,
                         interest_category = EXCLUDED.interest_category,
                         description = EXCLUDED.description,
+                        estimated_value = EXCLUDED.estimated_value,
+                        currency = EXCLUDED.currency,
+                        date_received = EXCLUDED.date_received,
                         source_document_id = EXCLUDED.source_document_id,
                         source_page_ref = EXCLUDED.source_page_ref,
                         original_text = EXCLUDED.original_text,
@@ -1203,6 +1271,9 @@ def load_house_interest_records(conn, jsonl_path: Path | None = None) -> dict[st
                         record["description"],
                         "48",
                         "house",
+                        estimated_value,
+                        record.get("estimated_value_currency") or "AUD",
+                        date_received,
                         source_document_id,
                         f"section:{record['section_number']}:owner:{record['owner_context']}",
                         record["original_section_text"],
@@ -1251,22 +1322,31 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
                 record.get("original", {}),
                 sort_keys=True,
             )
+            estimated_value = parse_decimal(str(record.get("estimated_value") or ""))
+            date_received = parse_date(str(record.get("event_date") or ""))
+            date_reported = parse_date(
+                str(record.get("reported_date") or record.get("lodgement_date") or "")
+            )
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO gift_interest (
                         external_key, person_id, source_entity_id, source_raw_name,
-                        interest_category, description, date_reported,
+                        interest_category, description, estimated_value, currency,
+                        date_received, date_reported,
                         parliament_number, chamber, source_document_id, source_page_ref,
                         original_text, extraction_confidence, metadata
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON CONFLICT (external_key) DO UPDATE SET
                         person_id = EXCLUDED.person_id,
                         source_entity_id = EXCLUDED.source_entity_id,
                         source_raw_name = EXCLUDED.source_raw_name,
                         interest_category = EXCLUDED.interest_category,
                         description = EXCLUDED.description,
+                        estimated_value = EXCLUDED.estimated_value,
+                        currency = EXCLUDED.currency,
+                        date_received = EXCLUDED.date_received,
                         date_reported = EXCLUDED.date_reported,
                         source_document_id = EXCLUDED.source_document_id,
                         source_page_ref = EXCLUDED.source_page_ref,
@@ -1281,7 +1361,10 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
                         counterparty or None,
                         record["interest_category_label"],
                         description,
-                        parse_date(record.get("lodgement_date", "")),
+                        estimated_value,
+                        record.get("estimated_value_currency") or "AUD",
+                        date_received,
+                        date_reported,
                         "48",
                         "senate",
                         source_document_id,
@@ -3139,6 +3222,7 @@ def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[st
     votes_seen = 0
     votes_inserted_or_updated = 0
     unmatched_votes = 0
+    stale_official_vote_rows_deleted = 0
     chamber_counts: Counter[str] = Counter()
 
     with jsonl_path.open("r", encoding="utf-8") as handle:
@@ -3206,6 +3290,15 @@ def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[st
                 )
                 division_id = int(cur.fetchone()[0])
                 divisions_inserted_or_updated += 1
+                cur.execute(
+                    """
+                    DELETE FROM person_vote
+                    WHERE division_id = %s
+                      AND metadata->>'source' = 'aph_official_decision_record'
+                    """,
+                    (division_id,),
+                )
+                stale_official_vote_rows_deleted += cur.rowcount
 
             for vote in record.get("votes") or []:
                 votes_seen += 1
@@ -3256,6 +3349,7 @@ def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[st
         "votes_seen": votes_seen,
         "votes_inserted_or_updated": votes_inserted_or_updated,
         "unmatched_votes": unmatched_votes,
+        "stale_official_vote_rows_deleted": stale_official_vote_rows_deleted,
         "chamber_counts": dict(sorted(chamber_counts.items())),
     }
 

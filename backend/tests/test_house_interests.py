@@ -251,3 +251,33 @@ def test_guess_counterparty_from_clear_from_phrase() -> None:
         == "Example Minerals Pty Ltd"
     )
     assert guess_counterparty("Qantas Chairman's Lounge membership") == ""
+
+
+def test_records_from_house_section_extracts_provider_value_and_event_date() -> None:
+    section = {
+        "source_id": "source-1",
+        "source_name": "Example PDF",
+        "source_metadata_path": "/tmp/metadata.json",
+        "body_path": "/tmp/body.pdf",
+        "url": "https://example.test/example.pdf",
+        "member_name": "Basem Abdo",
+        "family_name": "Abdo",
+        "given_names": "Basem",
+        "electorate": "Calwell",
+        "state": "Victoria",
+        "section_number": "11",
+        "section_title": "Gifts",
+        "section_text": """
+11. Gifts
+Self Two tickets to awards dinner on 12 April 2025 provided by Example Association valued at $450.00
+""",
+    }
+
+    records = records_from_house_section(section)
+
+    assert len(records) == 1
+    assert records[0]["counterparty_raw_name"] == "Example Association"
+    assert records[0]["estimated_value"] == "450.00"
+    assert records[0]["estimated_value_currency"] == "AUD"
+    assert records[0]["event_date"] == "2025-04-12"
+    assert records[0]["counterparty_extraction"]["method"] == "explicit_provider_phrase:provided by"

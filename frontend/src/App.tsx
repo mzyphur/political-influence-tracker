@@ -15,12 +15,14 @@ import {
   fetchCoverage,
   fetchElectorateMap,
   fetchEntityProfile,
+  fetchPartyProfile,
   fetchRepresentativeProfile,
   searchDatabase
 } from "./api";
 import { MapCanvas } from "./components/MapCanvas";
 import { DetailsPanel } from "./components/DetailsPanel";
 import { EntityProfilePanel } from "./components/EntityProfilePanel";
+import { PartyProfilePanel } from "./components/PartyProfilePanel";
 import {
   AUSTRALIA_BOUNDS,
   electorateColor,
@@ -33,6 +35,7 @@ import type {
   ElectorateFeature,
   EntityProfile,
   LoadState,
+  PartyProfile,
   RepresentativeProfile,
   SearchResult
 } from "./types";
@@ -73,6 +76,9 @@ function App() {
   const [entityProfile, setEntityProfile] = useState<EntityProfile | null>(null);
   const [entityProfileStatus, setEntityProfileStatus] = useState<LoadState>("idle");
   const [entityProfileError, setEntityProfileError] = useState("");
+  const [partyProfile, setPartyProfile] = useState<PartyProfile | null>(null);
+  const [partyProfileStatus, setPartyProfileStatus] = useState<LoadState>("idle");
+  const [partyProfileError, setPartyProfileError] = useState("");
 
   useEffect(() => {
     if (dataLevel !== "federal") {
@@ -214,6 +220,31 @@ function App() {
     return () => controller.abort();
   }, [selectedSearchResult]);
 
+  useEffect(() => {
+    if (selectedSearchResult?.type !== "party") {
+      setPartyProfile(null);
+      setPartyProfileStatus("idle");
+      setPartyProfileError("");
+      return;
+    }
+    const controller = new AbortController();
+    setPartyProfile(null);
+    setPartyProfileStatus("loading");
+    setPartyProfileError("");
+    fetchPartyProfile(selectedSearchResult.id, controller.signal)
+      .then((payload) => {
+        setPartyProfile(payload);
+        setPartyProfileStatus("ready");
+      })
+      .catch((error: Error) => {
+        if (controller.signal.aborted) return;
+        setPartyProfile(null);
+        setPartyProfileError(error.message);
+        setPartyProfileStatus("error");
+      });
+    return () => controller.abort();
+  }, [selectedSearchResult]);
+
   const totals = useMemo(() => {
     return features.reduce(
       (acc, feature) => {
@@ -237,6 +268,8 @@ function App() {
       setSelectedSearchResult(null);
       setEntityProfile(null);
       setEntityProfileStatus("idle");
+      setPartyProfile(null);
+      setPartyProfileStatus("idle");
       return;
     }
 
@@ -412,6 +445,14 @@ function App() {
                   onClose={() => setSelectedSearchResult(null)}
                 />
               )}
+              {selectedSearchResult?.type === "party" && (
+                <PartyProfilePanel
+                  profile={partyProfile}
+                  status={partyProfileStatus}
+                  error={partyProfileError}
+                  onClose={() => setSelectedSearchResult(null)}
+                />
+              )}
               {searchResults.map((result) => (
                 <button
                   type="button"
@@ -428,7 +469,9 @@ function App() {
                   <small>{result.subtitle || "Source-backed record"}</small>
                 </button>
               ))}
-              {selectedSearchResult && selectedSearchResult.type !== "entity" && (
+              {selectedSearchResult &&
+                selectedSearchResult.type !== "entity" &&
+                selectedSearchResult.type !== "party" && (
                 <div className="search-selection-note">
                   <strong>{selectedSearchResult.label}</strong>
                   <span>

@@ -2,6 +2,7 @@ import type {
   CoverageResponse,
   ElectorateFeatureCollection,
   EntityProfile,
+  PartyProfile,
   RepresentativeProfile,
   SearchResponse
 } from "./types";
@@ -61,6 +62,13 @@ export async function fetchEntityProfile(
   signal?: AbortSignal
 ): Promise<EntityProfile> {
   return fetchJson<EntityProfile>(apiUrl(`/api/entities/${entityId}`), signal);
+}
+
+export async function fetchPartyProfile(
+  partyId: number | string,
+  signal?: AbortSignal
+): Promise<PartyProfile> {
+  return fetchJson<PartyProfile>(apiUrl(`/api/parties/${partyId}`), signal);
 }
 
 export async function searchDatabase(

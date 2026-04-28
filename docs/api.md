@@ -43,6 +43,10 @@ http://127.0.0.1:8008/docs
 - `GET /api/entities/{entity_id}` - source/recipient entity profile with
   sector classifications, identifiers, summary counts, top counterparties, and
   recent source-backed event rows.
+- `GET /api/parties/{party_id}` - party profile with current representatives,
+  reviewed or candidate linked money-flow entities, associated-entity return
+  context, source/recipient summaries, and recent source-backed party/entity
+  money rows.
 - `GET /api/electorates/{electorate_id}` - electorate profile, current
   representatives, boundary availability, and current representative influence
   summary.
@@ -190,6 +194,26 @@ The response includes:
 Entity profiles are discovery context. They do not imply wrongdoing, and
 party/entity-level returns must not be assigned to a representative unless a
 separate source-backed person-linking method supports that assignment.
+
+## Party Profiles
+
+`/api/parties/{party_id}` is the first surface for AEC party and
+associated-entity money that is too broad to assign to one MP or Senator. It
+uses reviewed `party_entity_link` rows when available and also exposes
+transparent name-family candidate entities as `needs_review` candidates. The UI
+must label those candidates as candidate links until reviewed.
+
+Party profiles include:
+
+- Current office holders for the party.
+- Money summaries where linked party entities appear as recipients or sources.
+- Associated-entity return entities detected in AEC metadata.
+- Top sources and recipients for party/entity money flows.
+- Recent source-backed event rows with review and amount-status fields.
+
+These rows are party/entity context. They are not electorate-level or
+representative-level claims unless a separate source-backed attribution method
+supports that narrower claim.
 
 ## Source-To-Effect Context
 

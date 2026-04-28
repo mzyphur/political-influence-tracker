@@ -231,6 +231,93 @@ export type EntityEvent = {
   source_final_url: string | null;
 };
 
+export type PartyProfile = {
+  party: {
+    id: number;
+    name: string;
+    short_name: string | null;
+    party_group: string | null;
+    jurisdiction_name: string | null;
+    jurisdiction_level: string | null;
+  };
+  office_summary: Array<{
+    chamber: string;
+    current_representative_count: number;
+  }>;
+  linked_entities: Array<{
+    entity_id: number;
+    canonical_name: string;
+    entity_type: string | null;
+    link_type: string;
+    method: string;
+    confidence: string;
+    review_status: string;
+    evidence_note: string | null;
+    influence_event_count?: number;
+    reported_amount_total?: number | null;
+  }>;
+  money_summary: Array<{
+    entity_role: string;
+    event_type: string;
+    event_count: number;
+    reported_amount_event_count: number;
+    reported_amount_total: number | null;
+    first_event_date: string | null;
+    last_event_date: string | null;
+  }>;
+  by_financial_year: Array<{
+    financial_year: string | null;
+    event_count: number;
+    reported_amount_total: number | null;
+  }>;
+  by_return_type: Array<{
+    return_type: string | null;
+    event_count: number;
+    reported_amount_total: number | null;
+  }>;
+  top_sources: Array<{
+    source_id: string | null;
+    source_label: string;
+    event_count: number;
+    reported_amount_total: number | null;
+  }>;
+  top_recipients: Array<{
+    recipient_id: string | null;
+    recipient_label: string;
+    event_count: number;
+    reported_amount_total: number | null;
+  }>;
+  associated_entity_returns: Array<{
+    entity_id: number;
+    canonical_name: string;
+    event_count: number;
+    reported_amount_total: number | null;
+  }>;
+  recent_events: PartyEvent[];
+  caveat: string;
+};
+
+export type PartyEvent = {
+  id: number;
+  entity_role: string;
+  event_type: string;
+  source_raw_name: string | null;
+  source_entity_name: string | null;
+  recipient_raw_name: string | null;
+  recipient_entity_name: string | null;
+  amount: number | null;
+  currency: string;
+  amount_status: string;
+  event_date: string | null;
+  reporting_period: string | null;
+  description: string;
+  review_status: string;
+  source_id: string;
+  source_name: string;
+  source_url: string | null;
+  source_final_url: string | null;
+};
+
 export type RepresentativeContact = {
   email: string | null;
   email_source_metadata_path: string | null;

@@ -27,6 +27,10 @@ The first usable screen is the national map explorer:
   donors, companies, party/associated-entity records, and other parsed
   source/recipient entities that should not be forced onto one MP without
   explicit evidence.
+- `/api/parties/{party_id}` supplies party drilldowns with current
+  representatives, reviewed or candidate linked AEC money entities,
+  associated-entity return context, top sources/recipients, and recent
+  source-backed party/entity money rows.
 - Representative record rows can be filtered by record family and expanded to
   show source links, source refs, evidence/review status, amount status, and
   missing-data flags.

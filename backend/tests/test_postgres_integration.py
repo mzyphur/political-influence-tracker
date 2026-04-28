@@ -803,3 +803,102 @@ def test_aec_direct_member_return_rows_link_to_unique_people(
     assert recipient_person_id == integration_db.person_id
     assert confidence == "exact_name_context"
     assert status == "linked"
+
+
+def test_party_profile_aggregates_reviewed_party_entity_money(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
+            jurisdiction_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM party WHERE name = 'Example Party'")
+            party_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity (
+                    canonical_name, normalized_name, entity_type, country, source_document_id
+                )
+                VALUES (
+                    'Example Party Federal Campaign',
+                    'example party federal campaign',
+                    'political_party',
+                    'AU',
+                    %s
+                )
+                RETURNING id
+                """,
+                (source_document_id,),
+            )
+            party_entity_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity (
+                    canonical_name, normalized_name, entity_type, country, source_document_id
+                )
+                VALUES ('Example Donor Pty Ltd', 'example donor pty ltd', 'company', 'AU', %s)
+                RETURNING id
+                """,
+                (source_document_id,),
+            )
+            donor_entity_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO party_entity_link (
+                    party_id, entity_id, link_type, method, confidence, review_status,
+                    evidence_note, reviewer, reviewed_at, source_document_id
+                )
+                VALUES (
+                    %s, %s, 'party_branch', 'manual', 'manual_reviewed', 'reviewed',
+                    'Fixture reviewed link.', 'pytest', now(), %s
+                )
+                """,
+                (party_id, party_entity_id, source_document_id),
+            )
+            for external_key, review_status, amount in (
+                ("party-profile:accepted", "not_required", "3000.00"),
+                ("party-profile:rejected", "rejected", "9999.00"),
+            ):
+                cur.execute(
+                    """
+                    INSERT INTO influence_event (
+                        external_key, event_family, event_type, source_entity_id,
+                        source_raw_name, recipient_entity_id, recipient_raw_name,
+                        jurisdiction_id, amount, amount_status, event_date,
+                        reporting_period, disclosure_system, evidence_status,
+                        extraction_method, review_status, description,
+                        source_document_id, source_ref, missing_data_flags, metadata
+                    )
+                    VALUES (
+                        %s, 'money', 'donation_or_gift', %s, 'Example Donor Pty Ltd',
+                        %s, 'Example Party Federal Campaign', %s, %s, 'reported',
+                        '2024-06-01', '2023-24', 'pytest fixture',
+                        'official_record_parsed', 'fixture_seed', %s,
+                        'Fixture party disclosure.', %s, 'party-row', '[]'::jsonb, %s
+                    )
+                    """,
+                    (
+                        external_key,
+                        donor_entity_id,
+                        party_entity_id,
+                        jurisdiction_id,
+                        amount,
+                        review_status,
+                        source_document_id,
+                        Jsonb({"return_type": "Political Party Return"}),
+                    ),
+                )
+        conn.commit()
+
+    client = TestClient(app)
+    response = client.get(f"/api/parties/{party_id}")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["party"]["name"] == "Example Party"
+    assert payload["linked_entities"][0]["canonical_name"] == "Example Party Federal Campaign"
+    assert payload["money_summary"][0]["reported_amount_total"] == 3000.0
+    assert payload["top_sources"][0]["source_label"] == "Example Donor Pty Ltd"
+    assert payload["recent_events"][0]["review_status"] == "not_required"

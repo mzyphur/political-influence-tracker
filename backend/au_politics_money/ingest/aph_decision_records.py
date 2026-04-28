@@ -7,7 +7,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urljoin, urlparse
+from urllib.parse import unquote, urljoin, urlparse, urlunparse
 
 from bs4 import BeautifulSoup
 
@@ -486,6 +486,51 @@ def _document_summary_row(
     return row
 
 
+def _without_fragment(url: str) -> str:
+    parsed = urlparse(url)
+    return urlunparse(parsed._replace(fragment=""))
+
+
+def _derived_house_pdf_representations_from_html(
+    metadata_path: Path,
+) -> list[dict[str, str]]:
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    body_path = Path(metadata.get("body_path") or "")
+    if not body_path.exists():
+        return []
+    base_url = str(metadata.get("final_url") or (metadata.get("source") or {}).get("url") or "")
+    soup = BeautifulSoup(body_path.read_text(encoding="utf-8", errors="replace"), "html.parser")
+    rows: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for anchor in soup.find_all("a", href=True):
+        href = _without_fragment(_normalize_url(urljoin(base_url, str(anchor["href"]).strip())))
+        lowered = href.lower()
+        if "parlinfo.aph.gov.au" not in urlparse(href).netloc.lower():
+            continue
+        if "download/chamber/votes/" not in lowered:
+            continue
+        if "pdf" not in lowered:
+            continue
+        if href in seen:
+            continue
+        seen.add(href)
+        parent = anchor.find_parent(["p", "li", "div"])
+        rows.append(
+            {
+                "url": href,
+                "record_kind": "parlinfo_pdf",
+                "link_text": _clean_text(anchor.get_text(" ", strip=True)) or "Download PDF",
+                "host": urlparse(href).netloc,
+                "parent_text": _clean_text(
+                    (parent or anchor).get_text(" ", strip=True)
+                ),
+                "derived_from_html_metadata_path": str(metadata_path),
+                "derivation_method": "house_parlinfo_html_download_pdf_anchor",
+            }
+        )
+    return rows
+
+
 def fetch_aph_decision_record_documents(
     *,
     jsonl_paths: list[Path] | None = None,
@@ -507,9 +552,78 @@ def fetch_aph_decision_record_documents(
     documents: list[dict[str, Any]] = []
     fetched_count = 0
     skipped_existing_count = 0
+    derived_representation_count = 0
     skipped_filter_count = 0
     failed_count = 0
     selected_count = 0
+
+    def fetch_document_representation(
+        *,
+        record: dict[str, Any],
+        representation: dict[str, str],
+        index_artifact_path: Path,
+        status_on_existing: str = "skipped_existing",
+    ) -> tuple[dict[str, Any], bool]:
+        nonlocal fetched_count, skipped_existing_count, failed_count
+        source = decision_record_document_source(record, representation)
+        latest_existing_body = latest_body_path(source.source_id, raw_dir=raw_dir)
+        if only_missing and latest_existing_body is not None:
+            metadata_path = latest_existing_body.parent / "metadata.json"
+            try:
+                validation = _validate_decision_document_metadata(
+                    metadata_path=metadata_path,
+                    representation_kind=representation["record_kind"],
+                )
+            except Exception:
+                latest_existing_body = None
+            else:
+                skipped_existing_count += 1
+                return (
+                    _document_summary_row(
+                        status=status_on_existing,
+                        source_id=source.source_id,
+                        record=record,
+                        representation=representation,
+                        index_artifact_path=index_artifact_path,
+                        metadata_path=metadata_path,
+                        validation=validation,
+                    ),
+                    True,
+                )
+
+        try:
+            metadata_path = fetcher(source, raw_dir=raw_dir, timeout=timeout)
+            validation = _validate_decision_document_metadata(
+                metadata_path=metadata_path,
+                representation_kind=representation["record_kind"],
+            )
+        except Exception as exc:  # noqa: BLE001 - summary must preserve partial failures.
+            failed_count += 1
+            return (
+                _document_summary_row(
+                    status="failed",
+                    source_id=source.source_id,
+                    record=record,
+                    representation=representation,
+                    index_artifact_path=index_artifact_path,
+                    error=repr(exc),
+                ),
+                False,
+            )
+
+        fetched_count += 1
+        return (
+            _document_summary_row(
+                status="fetched",
+                source_id=source.source_id,
+                record=record,
+                representation=representation,
+                index_artifact_path=index_artifact_path,
+                metadata_path=metadata_path,
+                validation=validation,
+            ),
+            True,
+        )
 
     for record in records:
         index_artifact_path = next(
@@ -531,64 +645,32 @@ def fetch_aph_decision_record_documents(
                 break
             selected_count += 1
 
-            source = decision_record_document_source(record, representation)
-            latest_existing_body = latest_body_path(source.source_id, raw_dir=raw_dir)
-            if only_missing and latest_existing_body is not None:
-                metadata_path = latest_existing_body.parent / "metadata.json"
-                try:
-                    validation = _validate_decision_document_metadata(
-                        metadata_path=metadata_path,
-                        representation_kind=representation_kind,
-                    )
-                except Exception:
-                    latest_existing_body = None
-                else:
-                    skipped_existing_count += 1
-                    documents.append(
-                        _document_summary_row(
-                            status="skipped_existing",
-                            source_id=source.source_id,
-                            record=record,
-                            representation=representation,
-                            index_artifact_path=index_artifact_path,
-                            metadata_path=metadata_path,
-                            validation=validation,
-                        )
-                    )
-                    continue
-
-            try:
-                metadata_path = fetcher(source, raw_dir=raw_dir, timeout=timeout)
-                validation = _validate_decision_document_metadata(
-                    metadata_path=metadata_path,
-                    representation_kind=representation_kind,
-                )
-            except Exception as exc:  # noqa: BLE001 - summary must preserve partial failures.
-                failed_count += 1
-                documents.append(
-                    _document_summary_row(
-                        status="failed",
-                        source_id=source.source_id,
-                        record=record,
-                        representation=representation,
-                        index_artifact_path=index_artifact_path,
-                        error=repr(exc),
-                    )
-                )
-                continue
-
-            fetched_count += 1
-            documents.append(
-                _document_summary_row(
-                    status="fetched",
-                    source_id=source.source_id,
-                    record=record,
-                    representation=representation,
-                    index_artifact_path=index_artifact_path,
-                    metadata_path=metadata_path,
-                    validation=validation,
-                )
+            document_row, ok = fetch_document_representation(
+                record=record,
+                representation=representation,
+                index_artifact_path=index_artifact_path,
             )
+            documents.append(document_row)
+            if (
+                ok
+                and include_pdf
+                and record.get("chamber") == "house"
+                and "html" in representation_kind
+                and document_row.get("metadata_path")
+            ):
+                for derived_representation in _derived_house_pdf_representations_from_html(
+                    Path(str(document_row["metadata_path"]))
+                ):
+                    if limit is not None and selected_count >= limit:
+                        break
+                    selected_count += 1
+                    derived_representation_count += 1
+                    derived_row, _ = fetch_document_representation(
+                        record=record,
+                        representation=derived_representation,
+                        index_artifact_path=index_artifact_path,
+                    )
+                    documents.append(derived_row)
         if limit is not None and selected_count >= limit:
             break
 
@@ -604,6 +686,7 @@ def fetch_aph_decision_record_documents(
         "selected_count": selected_count,
         "fetched_count": fetched_count,
         "skipped_existing_count": skipped_existing_count,
+        "derived_representation_count": derived_representation_count,
         "skipped_filter_count": skipped_filter_count,
         "failed_count": failed_count,
         "documents": documents,

@@ -33,7 +33,13 @@ def test_flatten_statement_detail(tmp_path) -> None:
                 },
                 "gifts": {
                     "interests": [
-                        {"detailOfGifts": "Conference ticket from Example Ltd", "id": "gift-1"}
+                        {
+                            "detailOfGifts": (
+                                "Conference ticket on 12 April 2025 provided by "
+                                "Example Ltd valued at $500"
+                            ),
+                            "id": "gift-1",
+                        }
                     ],
                     "alterations": [],
                 },
@@ -72,4 +78,54 @@ def test_flatten_statement_detail(tmp_path) -> None:
     assert records[0]["external_key"] == "aph_senate_interests:123:liabilities:interests:liability-1"
     assert records[0]["counterparty_raw_name"] == "Example Bank"
     assert records[1]["interest_category"] == "gifts"
-    assert records[1]["description"] == "Detail Of Gifts: Conference ticket from Example Ltd"
+    assert records[1]["counterparty_raw_name"] == "Example Ltd"
+    assert records[1]["estimated_value"] == "500"
+    assert records[1]["event_date"] == "2025-04-12"
+
+
+def test_flatten_senate_alteration_uses_created_on_as_reported_date(tmp_path) -> None:
+    body_path = tmp_path / "body.json"
+    body_path.write_text(
+        json.dumps(
+            {
+                "senatorInterestStatement": {
+                    "senatorName": "Example, Alex",
+                    "senatorParty": "Example Party",
+                    "electorateState": "Queensland",
+                },
+                "sponsoredTravelOrHospitality": {
+                    "interests": [],
+                    "alterations": [
+                        {
+                            "alterationType": "Addition",
+                            "details": "Ticket as guest of Westpac on 27 August 2025",
+                            "createdOn": "2025-09-18T10:00:00Z",
+                            "id": "travel-1",
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "body_path": str(body_path),
+                "source": {
+                    "source_id": "aph_senators_interests_api_statement__123",
+                    "name": "Senate interests API: statement detail for Example, Alex",
+                    "url": "https://example.test/api/getSenatorStatement?cdapid=123",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    records = _flatten_statement_detail(metadata_path)
+
+    assert len(records) == 1
+    assert records[0]["counterparty_raw_name"] == "Westpac"
+    assert records[0]["event_date"] == "2025-08-27"
+    assert records[0]["reported_date"] == "2025-09-18"

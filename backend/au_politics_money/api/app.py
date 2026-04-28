@@ -120,6 +120,14 @@ def entity_profile(entity_id: int) -> dict:
     return profile
 
 
+@app.get("/api/parties/{party_id}")
+def party_profile(party_id: int) -> dict:
+    profile = queries.get_party_profile(party_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Party not found")
+    return profile
+
+
 @app.get("/api/electorates/{electorate_id}")
 def electorate_profile(electorate_id: int) -> dict:
     profile = queries.get_electorate_profile(electorate_id)

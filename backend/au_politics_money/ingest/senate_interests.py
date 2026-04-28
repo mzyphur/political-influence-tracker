@@ -11,6 +11,12 @@ from au_politics_money.config import PROCESSED_DIR
 from au_politics_money.ingest.discovered_sources import source_from_discovered_link
 from au_politics_money.ingest.discovery import discover_links_from_body, latest_body_path
 from au_politics_money.ingest.fetch import fetch_source
+from au_politics_money.ingest.interest_extraction import (
+    extract_event_date,
+    extract_provider,
+    extract_reported_value,
+    parse_iso_datetime_date,
+)
 from au_politics_money.ingest.sources import get_source
 from au_politics_money.models import DiscoveredLink, SourceRecord
 
@@ -41,6 +47,18 @@ COUNTERPARTY_FIELDS = (
     "nameOfPartnership",
     "nameOfIncome",
     "nameOfInvestment",
+    "provider",
+    "providedBy",
+    "sponsor",
+    "sponsoredBy",
+    "host",
+    "hostedBy",
+)
+BENEFIT_PROVIDER_TEXT_FIELDS = (
+    "detailOfGifts",
+    "detailOfTravelHospitality",
+    "details",
+    "natureOfInterest",
 )
 
 ENV_API_BASE_RE = re.compile(r"SENATORS_API_BASE_URL:\s*['\"](?P<url>[^'\"]+)['\"]")
@@ -196,7 +214,27 @@ def _counterparty_from_item(item: dict[str, Any]) -> str:
         value = str(item.get(key) or "").strip()
         if value:
             return value
-    return ""
+    provider = extract_provider("", fields={key: item.get(key) for key in BENEFIT_PROVIDER_TEXT_FIELDS})
+    return str(provider["value"])
+
+
+def _extracted_item_fields(item: dict[str, Any], description: str) -> dict[str, Any]:
+    provider = extract_provider(
+        description,
+        fields={key: item.get(key) for key in BENEFIT_PROVIDER_TEXT_FIELDS},
+    )
+    reported_value = extract_reported_value(description)
+    event_date = extract_event_date(description)
+    return {
+        "counterparty_raw_name": provider["value"],
+        "counterparty_extraction": provider,
+        "estimated_value": reported_value["value"],
+        "estimated_value_currency": reported_value["currency"],
+        "estimated_value_extraction": reported_value,
+        "event_date": event_date["value"],
+        "event_date_extraction": event_date,
+        "reported_date": parse_iso_datetime_date(str(item.get("createdOn") or "")),
+    }
 
 
 def _flatten_statement_detail(metadata_path: Path) -> list[dict[str, Any]]:
@@ -212,6 +250,8 @@ def _flatten_statement_detail(metadata_path: Path) -> list[dict[str, Any]]:
             items = category_payload.get(record_type) or []
             for index, item in enumerate(items, start=1):
                 item_id = item.get("id") or f"{record_type}_{index}"
+                description = _description_from_item(item)
+                extracted = _extracted_item_fields(item, description)
                 records.append(
                     {
                         "external_key": (
@@ -234,8 +274,16 @@ def _flatten_statement_detail(metadata_path: Path) -> list[dict[str, Any]]:
                         "interest_category_label": category_label,
                         "record_type": record_type.rstrip("s"),
                         "interest_id": item_id,
-                        "counterparty_raw_name": _counterparty_from_item(item),
-                        "description": _description_from_item(item),
+                        "counterparty_raw_name": extracted["counterparty_raw_name"]
+                        or _counterparty_from_item(item),
+                        "description": description,
+                        "counterparty_extraction": extracted["counterparty_extraction"],
+                        "estimated_value": extracted["estimated_value"],
+                        "estimated_value_currency": extracted["estimated_value_currency"],
+                        "estimated_value_extraction": extracted["estimated_value_extraction"],
+                        "event_date": extracted["event_date"],
+                        "event_date_extraction": extracted["event_date_extraction"],
+                        "reported_date": extracted["reported_date"],
                         "original": item,
                     }
                 )
