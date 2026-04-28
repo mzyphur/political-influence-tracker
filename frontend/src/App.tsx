@@ -14,11 +14,13 @@ import {
 import {
   fetchCoverage,
   fetchElectorateMap,
+  fetchEntityProfile,
   fetchRepresentativeProfile,
   searchDatabase
 } from "./api";
 import { MapCanvas } from "./components/MapCanvas";
 import { DetailsPanel } from "./components/DetailsPanel";
+import { EntityProfilePanel } from "./components/EntityProfilePanel";
 import {
   AUSTRALIA_BOUNDS,
   electorateColor,
@@ -29,6 +31,7 @@ import {
 import type {
   CoverageResponse,
   ElectorateFeature,
+  EntityProfile,
   LoadState,
   RepresentativeProfile,
   SearchResult
@@ -67,6 +70,9 @@ function App() {
     useState<RepresentativeProfile | null>(null);
   const [representativeProfileStatus, setRepresentativeProfileStatus] =
     useState<LoadState>("idle");
+  const [entityProfile, setEntityProfile] = useState<EntityProfile | null>(null);
+  const [entityProfileStatus, setEntityProfileStatus] = useState<LoadState>("idle");
+  const [entityProfileError, setEntityProfileError] = useState("");
 
   useEffect(() => {
     if (dataLevel !== "federal") {
@@ -183,6 +189,31 @@ function App() {
     };
   }, [dataLevel, query]);
 
+  useEffect(() => {
+    if (selectedSearchResult?.type !== "entity") {
+      setEntityProfile(null);
+      setEntityProfileStatus("idle");
+      setEntityProfileError("");
+      return;
+    }
+    const controller = new AbortController();
+    setEntityProfile(null);
+    setEntityProfileStatus("loading");
+    setEntityProfileError("");
+    fetchEntityProfile(selectedSearchResult.id, controller.signal)
+      .then((payload) => {
+        setEntityProfile(payload);
+        setEntityProfileStatus("ready");
+      })
+      .catch((error: Error) => {
+        if (controller.signal.aborted) return;
+        setEntityProfile(null);
+        setEntityProfileError(error.message);
+        setEntityProfileStatus("error");
+      });
+    return () => controller.abort();
+  }, [selectedSearchResult]);
+
   const totals = useMemo(() => {
     return features.reduce(
       (acc, feature) => {
@@ -204,6 +235,8 @@ function App() {
       setSelectedFeature(feature);
       setPendingSearchResult(null);
       setSelectedSearchResult(null);
+      setEntityProfile(null);
+      setEntityProfileStatus("idle");
       return;
     }
 
@@ -371,6 +404,14 @@ function App() {
               {searchStatus === "ready" && searchResults.length === 0 && (
                 <p className="muted">No source-backed results matched this search.</p>
               )}
+              {selectedSearchResult?.type === "entity" && (
+                <EntityProfilePanel
+                  profile={entityProfile}
+                  status={entityProfileStatus}
+                  error={entityProfileError}
+                  onClose={() => setSelectedSearchResult(null)}
+                />
+              )}
               {searchResults.map((result) => (
                 <button
                   type="button"
@@ -387,13 +428,13 @@ function App() {
                   <small>{result.subtitle || "Source-backed record"}</small>
                 </button>
               ))}
-              {selectedSearchResult && (
+              {selectedSearchResult && selectedSearchResult.type !== "entity" && (
                 <div className="search-selection-note">
                   <strong>{selectedSearchResult.label}</strong>
                   <span>
                     This {selectedSearchResult.type.replace("_", " ")} result is in the database,
                     but it is not yet a map drilldown target. Use it as a discovery lead while
-                    entity, party, sector, and topic detail panels are built.
+                    party, sector, and topic detail panels are built.
                   </span>
                 </div>
               )}

@@ -23,6 +23,10 @@ The first usable screen is the national map explorer:
 - `/api/representatives/{person_id}` supplies the side panel's selected
   representative record feed, including money, benefits, private interests,
   organisational roles, and other person-linked disclosed records.
+- `/api/entities/{entity_id}` supplies search-result entity drilldowns for
+  donors, companies, party/associated-entity records, and other parsed
+  source/recipient entities that should not be forced onto one MP without
+  explicit evidence.
 - Representative record rows can be filtered by record family and expanded to
   show source links, source refs, evidence/review status, amount status, and
   missing-data flags.

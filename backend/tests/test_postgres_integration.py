@@ -26,6 +26,7 @@ class IntegrationDatabase:
     schema_name: str
     person_id: int
     electorate_id: int
+    entity_id: int
     topic_id: int
 
 
@@ -523,6 +524,7 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
     return {
         "person_id": person_id,
         "electorate_id": electorate_id,
+        "entity_id": entity_id,
         "topic_id": topic_id,
     }
 
@@ -726,6 +728,15 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert representative_payload["source_effect_context"][0][
         "lifetime_reported_amount_total"
     ] == 1250.0
+
+    entity_response = client.get(f"/api/entities/{integration_db.entity_id}")
+    assert entity_response.status_code == 200
+    entity_payload = entity_response.json()
+    assert entity_payload["entity"]["canonical_name"] == "Clean Energy Pty Ltd"
+    assert entity_payload["classifications"][0]["public_sector"] == "renewable_energy"
+    assert entity_payload["as_source_summary"][0]["event_count"] == 1
+    assert entity_payload["top_recipients"][0]["recipient_label"] == "Jane Citizen"
+    assert entity_payload["recent_events"][0]["entity_role"] == "as_source"
 
     context_response = client.get(
         "/api/influence-context",

@@ -50,6 +50,13 @@ CONTACT_CAVEAT = (
     "profile/search link is the electronic contact path."
 )
 
+ENTITY_PROFILE_CAVEAT = (
+    "Entity profiles show disclosed records where the entity appears as parsed source "
+    "or parsed recipient. They are discovery/context records, not findings of improper "
+    "conduct, and party/entity-level records must not be assigned to one representative "
+    "without explicit source evidence."
+)
+
 
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Decimal):
@@ -1495,6 +1502,274 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             "vote_topics": votes,
             "source_effect_context": context,
             "caveat": INFLUENCE_CONTEXT_CAVEAT,
+        }
+    )
+
+
+def get_entity_profile(entity_id: int, *, database_url: str | None = None) -> dict[str, Any]:
+    with connect(database_url) as conn:
+        entity_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                id,
+                canonical_name,
+                normalized_name,
+                entity_type,
+                country,
+                state_or_territory,
+                website
+            FROM entity
+            WHERE id = %s
+            """,
+            (entity_id,),
+        )
+        if not entity_rows:
+            return {}
+
+        classifications = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                public_sector,
+                method,
+                confidence,
+                evidence_note,
+                reviewed_at
+            FROM entity_industry_classification
+            WHERE entity_id = %s
+            ORDER BY
+                CASE method
+                    WHEN 'official' THEN 1
+                    WHEN 'manual' THEN 2
+                    WHEN 'rule_based' THEN 3
+                    WHEN 'model_assisted' THEN 4
+                    ELSE 5
+                END,
+                CASE confidence
+                    WHEN 'exact_identifier' THEN 1
+                    WHEN 'manual_reviewed' THEN 2
+                    WHEN 'exact_name_context' THEN 3
+                    WHEN 'fuzzy_high' THEN 4
+                    WHEN 'fuzzy_low' THEN 5
+                    ELSE 6
+                END,
+                public_sector
+            LIMIT 10
+            """,
+            (entity_id,),
+        )
+
+        identifiers = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                identifier_type,
+                identifier_value,
+                source_document.source_id,
+                source_document.source_name,
+                source_document.url AS source_url,
+                source_document.final_url AS source_final_url
+            FROM entity_identifier
+            LEFT JOIN source_document
+              ON source_document.id = entity_identifier.source_document_id
+            WHERE entity_identifier.entity_id = %s
+            ORDER BY identifier_type, identifier_value
+            LIMIT 20
+            """,
+            (entity_id,),
+        )
+
+        as_source_summary = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                event_family,
+                event_type,
+                count(*) AS event_count,
+                count(*) FILTER (WHERE recipient_person_id IS NOT NULL)
+                    AS person_linked_event_count,
+                count(*) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_event_count,
+                sum(amount) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_total,
+                min(event_date) AS first_event_date,
+                max(event_date) AS last_event_date
+            FROM influence_event
+            WHERE source_entity_id = %s
+              AND review_status <> 'rejected'
+            GROUP BY event_family, event_type
+            ORDER BY event_count DESC, event_family, event_type
+            """,
+            (entity_id,),
+        )
+
+        as_recipient_summary = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                event_family,
+                event_type,
+                count(*) AS event_count,
+                count(*) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_event_count,
+                sum(amount) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_total,
+                min(event_date) AS first_event_date,
+                max(event_date) AS last_event_date
+            FROM influence_event
+            WHERE recipient_entity_id = %s
+              AND review_status <> 'rejected'
+            GROUP BY event_family, event_type
+            ORDER BY event_count DESC, event_family, event_type
+            """,
+            (entity_id,),
+        )
+
+        top_recipients = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                COALESCE(person.id, recipient_entity.id) AS recipient_id,
+                CASE
+                    WHEN person.id IS NOT NULL THEN 'representative'
+                    WHEN recipient_entity.id IS NOT NULL THEN 'entity'
+                    ELSE 'raw_name'
+                END AS recipient_type,
+                COALESCE(
+                    person.display_name,
+                    recipient_entity.canonical_name,
+                    influence_event.recipient_raw_name,
+                    'Unknown recipient'
+                ) AS recipient_label,
+                count(*) AS event_count,
+                count(*) FILTER (WHERE influence_event.amount_status = 'reported')
+                    AS reported_amount_event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total
+            FROM influence_event
+            LEFT JOIN person ON person.id = influence_event.recipient_person_id
+            LEFT JOIN entity recipient_entity
+              ON recipient_entity.id = influence_event.recipient_entity_id
+            WHERE influence_event.source_entity_id = %s
+              AND influence_event.review_status <> 'rejected'
+            GROUP BY
+                recipient_id,
+                recipient_type,
+                recipient_label
+            ORDER BY
+                reported_amount_total DESC NULLS LAST,
+                event_count DESC,
+                recipient_label
+            LIMIT 25
+            """,
+            (entity_id,),
+        )
+
+        top_sources = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                COALESCE(source_entity.id::text, influence_event.source_raw_name) AS source_id,
+                CASE WHEN source_entity.id IS NOT NULL THEN 'entity' ELSE 'raw_name' END
+                    AS source_type,
+                COALESCE(
+                    source_entity.canonical_name,
+                    influence_event.source_raw_name,
+                    'Unknown source'
+                ) AS source_label,
+                count(*) AS event_count,
+                count(*) FILTER (WHERE influence_event.amount_status = 'reported')
+                    AS reported_amount_event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total
+            FROM influence_event
+            LEFT JOIN entity source_entity
+              ON source_entity.id = influence_event.source_entity_id
+            WHERE influence_event.recipient_entity_id = %s
+              AND influence_event.review_status <> 'rejected'
+            GROUP BY
+                source_id,
+                source_type,
+                source_label
+            ORDER BY
+                reported_amount_total DESC NULLS LAST,
+                event_count DESC,
+                source_label
+            LIMIT 25
+            """,
+            (entity_id,),
+        )
+
+        recent_events = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                influence_event.id,
+                CASE
+                    WHEN influence_event.source_entity_id = %s THEN 'as_source'
+                    ELSE 'as_recipient'
+                END AS entity_role,
+                influence_event.event_family,
+                influence_event.event_type,
+                influence_event.event_subtype,
+                influence_event.source_raw_name,
+                source_entity.canonical_name AS source_entity_name,
+                influence_event.recipient_raw_name,
+                recipient_person.display_name AS recipient_person_name,
+                recipient_entity.canonical_name AS recipient_entity_name,
+                influence_event.amount,
+                influence_event.currency,
+                influence_event.amount_status,
+                influence_event.event_date,
+                influence_event.reporting_period,
+                influence_event.date_reported,
+                influence_event.description,
+                influence_event.evidence_status,
+                influence_event.review_status,
+                influence_event.missing_data_flags,
+                influence_event.source_ref,
+                source_document.source_id,
+                source_document.source_name,
+                source_document.source_type,
+                source_document.url AS source_url,
+                source_document.final_url AS source_final_url
+            FROM influence_event
+            LEFT JOIN entity source_entity
+              ON source_entity.id = influence_event.source_entity_id
+            LEFT JOIN person recipient_person
+              ON recipient_person.id = influence_event.recipient_person_id
+            LEFT JOIN entity recipient_entity
+              ON recipient_entity.id = influence_event.recipient_entity_id
+            JOIN source_document
+              ON source_document.id = influence_event.source_document_id
+            WHERE (
+                influence_event.source_entity_id = %s
+                OR influence_event.recipient_entity_id = %s
+            )
+              AND influence_event.review_status <> 'rejected'
+            ORDER BY
+                influence_event.event_date DESC NULLS LAST,
+                influence_event.date_reported DESC NULLS LAST,
+                influence_event.id DESC
+            LIMIT 50
+            """,
+            (entity_id, entity_id, entity_id),
+        )
+
+    return _jsonable(
+        {
+            "entity": entity_rows[0],
+            "classifications": classifications,
+            "identifiers": identifiers,
+            "as_source_summary": as_source_summary,
+            "as_recipient_summary": as_recipient_summary,
+            "top_recipients": top_recipients,
+            "top_sources": top_sources,
+            "recent_events": recent_events,
+            "caveat": ENTITY_PROFILE_CAVEAT,
         }
     )
 

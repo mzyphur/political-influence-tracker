@@ -40,6 +40,9 @@ http://127.0.0.1:8008/docs
 - `GET /api/representatives/{person_id}` - current profile with office terms,
   influence-by-sector summaries, vote-topic summaries, and reviewed
   source-to-policy context.
+- `GET /api/entities/{entity_id}` - source/recipient entity profile with
+  sector classifications, identifiers, summary counts, top counterparties, and
+  recent source-backed event rows.
 - `GET /api/electorates/{electorate_id}` - electorate profile, current
   representatives, boundary availability, and current representative influence
   summary.
@@ -162,6 +165,31 @@ returns the official APH profile/search URL as the electronic contact path.
 These are still person-linked records only. Party/entity/candidate-return money
 flows remain in the whole database and should be surfaced through party/entity
 and attribution-method views rather than forced onto a person without evidence.
+
+## Entity Profiles
+
+`/api/entities/{entity_id}` returns a read-only profile for parsed source or
+recipient entities: donors, companies, people-as-donors, parties-as-entities,
+associated entities, unions, lobbyist clients, and other named organisations.
+It is the first API surface for records that are too broad to attach honestly to
+one MP or electorate.
+
+The response includes:
+
+- `classifications` and `identifiers`, when official/manual/rule-based evidence
+  exists.
+- `as_source_summary`, counting non-rejected events where the entity is the
+  parsed source.
+- `as_recipient_summary`, counting non-rejected events where the entity is the
+  parsed recipient.
+- `top_recipients` and `top_sources`, so entity pages can show who money or
+  benefits flowed to or from.
+- `recent_events`, with source-document labels/URLs, source refs, amount status,
+  review status, and missing-data flags.
+
+Entity profiles are discovery context. They do not imply wrongdoing, and
+party/entity-level returns must not be assigned to a representative unless a
+separate source-backed person-linking method supports that assignment.
 
 ## Source-To-Effect Context
 

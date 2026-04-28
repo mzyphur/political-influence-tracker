@@ -144,6 +144,93 @@ export type RepresentativeProfile = {
   caveat: string;
 };
 
+export type EntityProfile = {
+  entity: {
+    id: number;
+    canonical_name: string;
+    normalized_name: string;
+    entity_type: string;
+    country: string | null;
+    state_or_territory: string | null;
+    website: string | null;
+  };
+  classifications: Array<{
+    public_sector: string;
+    method: string;
+    confidence: string;
+    evidence_note: string | null;
+    reviewed_at: string | null;
+  }>;
+  identifiers: Array<{
+    identifier_type: string;
+    identifier_value: string;
+    source_id: string | null;
+    source_name: string | null;
+    source_url: string | null;
+    source_final_url: string | null;
+  }>;
+  as_source_summary: EntityEventSummary[];
+  as_recipient_summary: EntityEventSummary[];
+  top_recipients: Array<{
+    recipient_id: number | null;
+    recipient_type: string;
+    recipient_label: string;
+    event_count: number;
+    reported_amount_event_count: number;
+    reported_amount_total: number | null;
+  }>;
+  top_sources: Array<{
+    source_id: string | null;
+    source_type: string;
+    source_label: string;
+    event_count: number;
+    reported_amount_event_count: number;
+    reported_amount_total: number | null;
+  }>;
+  recent_events: EntityEvent[];
+  caveat: string;
+};
+
+export type EntityEventSummary = {
+  event_family: string;
+  event_type: string;
+  event_count: number;
+  person_linked_event_count?: number;
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  first_event_date: string | null;
+  last_event_date: string | null;
+};
+
+export type EntityEvent = {
+  id: number;
+  entity_role: "as_source" | "as_recipient";
+  event_family: string;
+  event_type: string;
+  event_subtype: string | null;
+  source_raw_name: string | null;
+  source_entity_name: string | null;
+  recipient_raw_name: string | null;
+  recipient_person_name: string | null;
+  recipient_entity_name: string | null;
+  amount: number | null;
+  currency: string;
+  amount_status: string;
+  event_date: string | null;
+  reporting_period: string | null;
+  date_reported: string | null;
+  description: string;
+  evidence_status: string;
+  review_status: string;
+  missing_data_flags: unknown[];
+  source_ref: string | null;
+  source_id: string;
+  source_name: string;
+  source_type: string;
+  source_url: string | null;
+  source_final_url: string | null;
+};
+
 export type RepresentativeContact = {
   email: string | null;
   email_source_metadata_path: string | null;

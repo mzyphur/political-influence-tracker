@@ -27,6 +27,11 @@ Completed:
   `term_end IS NULL` public representatives.
 - Extended the weekly runner so scheduled runs now execute the pipeline, apply
   migrations, reload PostgreSQL with vote divisions, and then run tests.
+- Added `/api/entities/{entity_id}` and the first frontend entity drilldown for
+  search results. Source/recipient entity profiles show sector classifications,
+  identifiers, source/recipient summaries, top counterparties, recent
+  source-backed events, and caveats that party/entity-level records are not
+  person-level claims.
 - Added `official_parliamentary_decision_record_document` plus a loader that
   links each archived raw ParlInfo snapshot back to its APH index row without
   overwriting original raw evidence.
