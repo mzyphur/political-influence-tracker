@@ -1,5 +1,36 @@
 # Build Log
 
+## 2026-04-29
+
+Completed:
+
+- Compact laptop map layout pass: narrowed the left controls and right details
+  overlays, reduced panel spacing, made both overlays independently scrollable,
+  and collapsed the long coverage caveat behind a disclosure control so map
+  geography remains visible on smaller screens.
+- Added collapsible map controls and selection-details panels. Collapsed panels
+  leave compact "Controls" and "Details" reopen buttons; focus is explicitly
+  restored between collapse/reopen controls for keyboard users, and the map
+  zoom controls plus influence graph reclaim right-side space when details are
+  collapsed.
+- Improved party search semantics. Public searches such as "Labor", "Liberal",
+  and "Greens" now map to active parliamentary party abbreviations like `ALP`,
+  `LP`/`LNP`, and `AG`, sort active parliamentary parties above zero-seat
+  disclosure-name rows, and display public-friendly labels such as
+  "Australian Labor Party (ALP)".
+- Made party breakdowns actionable from selected map regions. Clicking a party
+  in the selection details opens that party/entity money profile directly,
+  helping users move from representative-level context to aggregate
+  party-channelled money without manual search.
+
+Verification:
+
+- Frontend production build passed after each UI change.
+- Focused API tests passed: `backend/tests/test_api.py`.
+- Focused `ruff check` passed for the party-search API changes.
+- Live local API smoke checks confirmed `labor` and `liberal` search results now
+  prioritize active parliamentary party records.
+
 ## 2026-04-28
 
 Completed:
