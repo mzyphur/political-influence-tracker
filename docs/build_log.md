@@ -299,9 +299,8 @@ Verification:
 - Added display-safe map geometry. Official AEC boundary polygons remain
   preserved in `electorate_boundary.geom`; the API now defaults to
   `geometry_role=display`, backed by `land_clipped_display` geometry derived
-  from Natural Earth Admin 0 Australia intersected with Natural Earth physical
-  land. Source geometry remains requestable for audit via
-  `geometry_role=source`.
+  from AIMS/eAtlas/AODN Australian Coastline 50K land-area polygons. Source
+  geometry remains requestable for audit via `geometry_role=source`.
 
 Notable data observations:
 

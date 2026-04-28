@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import tempfile
 import zipfile
@@ -16,9 +17,19 @@ from au_politics_money.ingest.sources import get_source
 
 SOURCE_ID = "natural_earth_admin0_countries_10m"
 PHYSICAL_LAND_SOURCE_ID = "natural_earth_physical_land_10m"
+AIMS_COASTLINE_SOURCE_ID = "aims_australian_coastline_50k_2024_simp"
 PARSER_NAME = "natural_earth_admin0_country_land_mask_pyshp_v1"
 PARSER_VERSION = "1"
+AIMS_COASTLINE_PARSER_NAME = "aims_australian_coastline_50k_land_mask_pyshp_v1"
+AIMS_COASTLINE_PARSER_VERSION = "1"
 OUTPUT_CRS = "EPSG:4326"
+AIMS_COASTLINE_LIMITATIONS = (
+    "Catalogue licence is currently listed as Not Specified; do not redistribute "
+    "raw or processed coastline files publicly until reuse terms are confirmed. "
+    "Known source limitations include possible false land from turbid water, "
+    "breaking waves, shallow water, jetties, oil rigs, and bridges, plus some "
+    "version 1-1 ocean-connected rivers and water bodies being filled or bridged."
+)
 
 
 def _timestamp() -> str:
@@ -60,10 +71,18 @@ def fetch_natural_earth_physical_land_zip(*, refetch: bool = False) -> Path:
     return fetch_source(get_source(PHYSICAL_LAND_SOURCE_ID), timeout=120)
 
 
+def fetch_aims_australian_coastline_zip(*, refetch: bool = False) -> Path:
+    if not refetch:
+        latest = _latest_metadata_path(AIMS_COASTLINE_SOURCE_ID)
+        if latest is not None:
+            return latest
+    return fetch_source(get_source(AIMS_COASTLINE_SOURCE_ID), timeout=180)
+
+
 def _find_single_shapefile(extract_dir: Path) -> Path:
-    shapefiles = sorted(extract_dir.glob("*.shp"))
+    shapefiles = sorted(extract_dir.glob("**/*.shp"))
     if len(shapefiles) != 1:
-        raise RuntimeError(f"Expected exactly one shapefile in Natural Earth ZIP; found {len(shapefiles)}.")
+        raise RuntimeError(f"Expected exactly one shapefile in ZIP; found {len(shapefiles)}.")
     return shapefiles[0]
 
 
@@ -72,6 +91,19 @@ def _read_prj(shp_path: Path) -> str:
     if not prj_path.exists():
         raise FileNotFoundError(f"Missing projection file for shapefile: {prj_path}")
     return prj_path.read_text(encoding="utf-8")
+
+
+def _stable_shapefile_component_hash(shp_path: Path) -> str:
+    digest = hashlib.sha256()
+    for suffix in (".cpg", ".dbf", ".prj", ".shp", ".shx"):
+        component_path = shp_path.with_suffix(suffix)
+        if not component_path.exists():
+            continue
+        digest.update(component_path.name.encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(component_path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _transform_position(position: tuple[float, ...], transformer: Transformer | None) -> list[float]:
@@ -300,6 +332,98 @@ def extract_natural_earth_physical_land_mask(
     return summary_path
 
 
+def extract_aims_australian_coastline_land_mask(
+    *,
+    country_name: str = "Australia",
+    metadata_path: Path | None = None,
+    processed_dir: Path = PROCESSED_DIR,
+) -> Path:
+    if country_name.casefold() != "australia":
+        raise ValueError("AIMS Australian coastline land mask only supports country_name='Australia'.")
+    country_name = "Australia"
+    metadata_path = metadata_path or fetch_aims_australian_coastline_zip(refetch=False)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    zip_path = Path(metadata["body_path"])
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        extract_dir = Path(tmp_dir)
+        with zipfile.ZipFile(zip_path) as archive:
+            archive.extractall(extract_dir)
+        shp_path = _find_single_shapefile(extract_dir)
+        stable_component_sha256 = _stable_shapefile_component_hash(shp_path)
+        source_crs = CRS.from_wkt(_read_prj(shp_path))
+        output_crs = CRS.from_user_input(OUTPUT_CRS)
+        transformer = None
+        if source_crs != output_crs:
+            transformer = Transformer.from_crs(source_crs, output_crs, always_xy=True)
+
+        reader = shapefile.Reader(str(shp_path))
+        field_names = _field_names(reader)
+        features = []
+        for shape_record in reader.iterShapeRecords():
+            geometry = shape_record.shape.__geo_interface__
+            if geometry["type"] not in {"Polygon", "MultiPolygon"}:
+                raise RuntimeError(f"Unexpected AIMS coastline geometry type: {geometry['type']}")
+            raw = _record_dict(field_names, shape_record)
+            features.append(
+                {
+                    "type": "Feature",
+                    "properties": {
+                        "country_name": country_name,
+                        "source_id": AIMS_COASTLINE_SOURCE_ID,
+                        "source_metadata_path": str(metadata_path.resolve()),
+                        "source_crs": source_crs.to_string(),
+                        "output_crs": OUTPUT_CRS,
+                        "parser_name": AIMS_COASTLINE_PARSER_NAME,
+                        "parser_version": AIMS_COASTLINE_PARSER_VERSION,
+                        "source_limitations": AIMS_COASTLINE_LIMITATIONS,
+                        "source_row": raw,
+                    },
+                    "geometry": {
+                        "type": geometry["type"],
+                        "coordinates": _transform_coordinates(geometry["coordinates"], transformer),
+                    },
+                }
+            )
+
+    if not features:
+        raise RuntimeError("No AIMS Australian coastline features found.")
+
+    timestamp = _timestamp()
+    output_dir = processed_dir / "aims_australian_coastline_land_mask"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    country_slug = country_name.lower().replace(" ", "_")
+    geojson_path = output_dir / f"{timestamp}.{country_slug}.geojson"
+    feature_collection = {
+        "type": "FeatureCollection",
+        "name": f"aims_australian_coastline_50k_{country_slug}",
+        "crs": {"type": "name", "properties": {"name": OUTPUT_CRS}},
+        "features": features,
+    }
+    geojson_path.write_text(
+        json.dumps(feature_collection, separators=(",", ":"), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    summary = {
+        "country_name": country_name,
+        "feature_count": len(features),
+        "generated_at": timestamp,
+        "geojson_path": str(geojson_path.resolve()),
+        "parser_name": AIMS_COASTLINE_PARSER_NAME,
+        "parser_version": AIMS_COASTLINE_PARSER_VERSION,
+        "raw_metadata_path": str(metadata_path.resolve()),
+        "raw_sha256": metadata.get("sha256"),
+        "extracted_component_sha256": stable_component_sha256,
+        "source_id": AIMS_COASTLINE_SOURCE_ID,
+        "source_url": metadata["source"]["url"],
+        "source_limitations": AIMS_COASTLINE_LIMITATIONS,
+    }
+    summary_path = output_dir / f"{timestamp}.{country_slug}.summary.json"
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return summary_path
+
+
 def latest_country_land_mask_geojson(
     *,
     country_name: str = "Australia",
@@ -319,6 +443,19 @@ def latest_physical_land_mask_geojson(
     processed_dir: Path = PROCESSED_DIR,
 ) -> Path | None:
     mask_dir = processed_dir / "natural_earth_physical_land_mask"
+    if not mask_dir.exists():
+        return None
+    country_slug = country_name.lower().replace(" ", "_")
+    candidates = sorted(mask_dir.glob(f"*.{country_slug}.geojson"), reverse=True)
+    return candidates[0] if candidates else None
+
+
+def latest_aims_australian_coastline_land_mask_geojson(
+    *,
+    country_name: str = "Australia",
+    processed_dir: Path = PROCESSED_DIR,
+) -> Path | None:
+    mask_dir = processed_dir / "aims_australian_coastline_land_mask"
     if not mask_dir.exists():
         return None
     country_slug = country_name.lower().replace(" ", "_")

@@ -215,6 +215,29 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="aims_australian_coastline_50k_2024_simp",
+        name="Australian Coastline 50K 2024 Simplified",
+        jurisdiction="Australia",
+        level="national",
+        source_type="display_land_mask",
+        url=(
+            "https://nextcloud.eatlas.org.au/s/DcGmpS3F5KZjgAG/download"
+            "?path=%2FV1-1%2F&files=Simp"
+        ),
+        expected_format="zip_shapefile",
+        update_frequency="rare",
+        priority="high",
+        notes=(
+            "Australian coastline and surrounding-island land-area polygons from "
+            "AIMS/eAtlas/AODN, derived from 2022-2024 Sentinel-2 imagery. Used as "
+            "the preferred display-only land mask for Australian electorate maps; "
+            "official electoral boundary geometries remain preserved separately. "
+            "Catalogue licence currently shows Not Specified, so raw/processed "
+            "coastline files must not be publicly redistributed until reuse terms "
+            "are confirmed; metadata carries source limitation caveats."
+        ),
+    ),
+    SourceRecord(
         source_id="they_vote_for_you_api",
         name="They Vote For You API",
         jurisdiction="Commonwealth",

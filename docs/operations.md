@@ -168,20 +168,28 @@ cd backend
 The canonical boundary layer uses the full AEC national ESRI shapefile. The
 processed GeoJSON and PostGIS rows are SRID 4326; the raw AEC shapefile source
 CRS and DBF attributes remain in metadata. The serving API defaults to a
-separate `land_clipped_display` derivative produced from Natural Earth Admin 0
-Australia intersected with Natural Earth physical land, plus a local coastline
+separate `land_clipped_display` derivative produced from AIMS/eAtlas/AODN
+Australian Coastline 50K land-area polygons, plus a small local coastline
 repair buffer inside each official AEC boundary. The buffer is applied in
-EPSG:3577 Australian Albers metres, documented in metadata, and prevents the
-coarser display mask from cutting away shoreline land relative to the basemap
-while still suppressing broad coastal and maritime AEC extents. The official
-AEC geometry remains preserved for audit.
+EPSG:3577 Australian Albers metres, documented in metadata, and handles minor
+mask/basemap alignment differences while avoiding the broad sea fill caused by
+coarser global masks. Natural Earth land masks remain available as fallback
+inputs for non-Australian/generalised display work. The official AEC geometry
+remains preserved for audit.
+The AIMS/eAtlas/AODN catalogue currently lists the licence as "Not Specified",
+so raw and processed coastline files must not be redistributed in public
+releases until reuse terms are confirmed. The source page also documents known
+failure modes, including occasional false land from turbid water, shallow water,
+breaking waves, jetties, oil rigs, bridges, and some filled ocean-connected
+rivers/water bodies. Treat this geometry as a display aid only, never as a legal
+or electoral boundary.
 
 ```bash
 cd backend
-.venv/bin/au-politics-money fetch-natural-earth-land-mask
-.venv/bin/au-politics-money extract-natural-earth-land-mask
+.venv/bin/au-politics-money fetch-aims-coastline-land-mask
+.venv/bin/au-politics-money extract-aims-coastline-land-mask
 .venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money load-display-geometries \
-  --coastline-repair-buffer-meters 3000
+  --coastline-repair-buffer-meters 100
 ```
 
 They Vote For You division/vote ingestion:

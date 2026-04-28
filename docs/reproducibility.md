@@ -93,12 +93,16 @@ The federal foundation pipeline currently performs:
    `date_validation.status` value instead of being exposed as event dates.
 7. Fetch the current national AEC ESRI federal-boundary ZIP.
 8. Transform AEC federal boundaries from source CRS to GeoJSON/PostGIS SRID 4326.
-9. Fetch/extract Natural Earth Admin 0 and physical land masks, then derive
-   `land_clipped_display` geometry for interactive maps. The display geometry
-   uses a documented local coastline repair buffer applied in EPSG:3577
-   Australian Albers metres so a coarser Natural Earth coastline does not cut
-   away shoreline land relative to the basemap. This is display-only; official
-   AEC boundary geometry remains unchanged.
+9. Fetch/extract the AIMS/eAtlas/AODN Australian Coastline 50K land-area
+   polygons, with Natural Earth retained as a fallback/general-country mask,
+   then derive `land_clipped_display` geometry for interactive maps. The
+   display geometry uses a documented local coastline repair buffer applied in
+   EPSG:3577 Australian Albers metres so minor mask/basemap offsets do not cut
+   away shoreline land. This is display-only; official AEC boundary geometry
+   remains unchanged. Because the AIMS/eAtlas/AODN catalogue currently lists
+   the licence as "Not Specified", raw/processed coastline files are not public
+   release artifacts until reuse terms are confirmed; source limitations are
+   carried in loader metadata.
 10. Extract official APH decision-record indexes for House Votes and
    Proceedings and Senate Journals.
 11. Archive linked ParlInfo HTML/PDF decision-record representations as raw

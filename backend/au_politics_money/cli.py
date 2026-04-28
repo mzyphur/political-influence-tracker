@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from au_politics_money.db.load import (
+    DEFAULT_COASTLINE_REPAIR_BUFFER_METERS,
     MAX_COASTLINE_REPAIR_BUFFER_METERS,
     apply_migrations,
     connect,
@@ -55,8 +56,10 @@ from au_politics_money.ingest.fetch import fetch_source
 from au_politics_money.ingest.house_interests import extract_house_interest_sections
 from au_politics_money.ingest.house_interest_records import extract_house_interest_records
 from au_politics_money.ingest.land_mask import (
+    extract_aims_australian_coastline_land_mask,
     extract_natural_earth_country_land_mask,
     extract_natural_earth_physical_land_mask,
+    fetch_aims_australian_coastline_zip,
     fetch_natural_earth_admin0_zip,
     fetch_natural_earth_physical_land_zip,
 )
@@ -303,6 +306,17 @@ def extract_natural_earth_land_mask_command(country_name: str) -> int:
         extract_natural_earth_physical_land_mask(country_name=country_name),
     ):
         print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def fetch_aims_coastline_land_mask_command(refetch: bool) -> int:
+    print(str(fetch_aims_australian_coastline_zip(refetch=refetch).resolve()))
+    return 0
+
+
+def extract_aims_coastline_land_mask_command(country_name: str) -> int:
+    summary_path = extract_aims_australian_coastline_land_mask(country_name=country_name)
+    print(str(Path(summary_path).resolve()))
     return 0
 
 
@@ -589,8 +603,14 @@ def build_parser() -> argparse.ArgumentParser:
     display_geometry_parser.add_argument(
         "--coastline-repair-buffer-meters",
         type=coastline_repair_buffer_arg,
-        default=3000,
+        default=DEFAULT_COASTLINE_REPAIR_BUFFER_METERS,
     )
+
+    aims_land_mask_fetch_parser = subparsers.add_parser("fetch-aims-coastline-land-mask")
+    aims_land_mask_fetch_parser.add_argument("--refetch", action="store_true")
+
+    aims_land_mask_extract_parser = subparsers.add_parser("extract-aims-coastline-land-mask")
+    aims_land_mask_extract_parser.add_argument("--country-name", default="Australia")
 
     aph_decision_parser = subparsers.add_parser("extract-aph-decision-record-index")
     aph_decision_parser.add_argument("source_id", choices=DECISION_RECORD_SOURCE_IDS, nargs="?")
@@ -758,6 +778,10 @@ def main() -> int:
             args.country_name,
             args.coastline_repair_buffer_meters,
         )
+    if args.command == "fetch-aims-coastline-land-mask":
+        return fetch_aims_coastline_land_mask_command(args.refetch)
+    if args.command == "extract-aims-coastline-land-mask":
+        return extract_aims_coastline_land_mask_command(args.country_name)
     if args.command == "extract-aph-decision-record-index":
         return extract_aph_decision_record_index_command(args.source_id, args.all)
     if args.command == "fetch-aph-decision-record-documents":

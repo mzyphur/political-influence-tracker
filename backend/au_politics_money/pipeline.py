@@ -43,8 +43,10 @@ from au_politics_money.ingest.fetch import fetch_source
 from au_politics_money.ingest.house_interests import extract_house_interest_sections
 from au_politics_money.ingest.house_interest_records import extract_house_interest_records
 from au_politics_money.ingest.land_mask import (
+    extract_aims_australian_coastline_land_mask,
     extract_natural_earth_country_land_mask,
     extract_natural_earth_physical_land_mask,
+    fetch_aims_australian_coastline_zip,
     fetch_natural_earth_admin0_zip,
     fetch_natural_earth_physical_land_zip,
 )
@@ -267,6 +269,7 @@ def run_federal_foundation_pipeline(
                     "aec_federal_boundaries_gis",
                     "aec_download_all_annual_data",
                     "aec_download_all_election_data",
+                    "aims_australian_coastline_50k_2024_simp",
                     "natural_earth_admin0_countries_10m",
                     "natural_earth_physical_land_10m",
                     "aph_house_votes_and_proceedings",
@@ -297,6 +300,11 @@ def run_federal_foundation_pipeline(
         ("normalize_aec_election_money_flows", normalize_aec_election_money_flows),
         ("fetch_current_aec_boundaries_zip", fetch_current_aec_boundary_zip),
         ("extract_aec_federal_boundaries", extract_current_aec_boundaries),
+        ("fetch_aims_australian_coastline_zip", fetch_aims_australian_coastline_zip),
+        (
+            "extract_aims_australian_coastline_land_mask",
+            extract_aims_australian_coastline_land_mask,
+        ),
         ("fetch_natural_earth_admin0_zip", fetch_natural_earth_admin0_zip),
         ("fetch_natural_earth_physical_land_zip", fetch_natural_earth_physical_land_zip),
         ("extract_natural_earth_australia_land_mask", extract_natural_earth_country_land_mask),

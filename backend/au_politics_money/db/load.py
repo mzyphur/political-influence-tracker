@@ -27,10 +27,16 @@ from au_politics_money.ingest.entity_classification import (
     latest_entity_classifications_jsonl,
 )
 from au_politics_money.ingest.land_mask import (
+    AIMS_COASTLINE_PARSER_NAME,
+    AIMS_COASTLINE_PARSER_VERSION,
+    AIMS_COASTLINE_LIMITATIONS,
+    AIMS_COASTLINE_SOURCE_ID,
     PARSER_NAME as LAND_MASK_PARSER_NAME,
     PARSER_VERSION as LAND_MASK_PARSER_VERSION,
+    extract_aims_australian_coastline_land_mask,
     extract_natural_earth_country_land_mask,
     extract_natural_earth_physical_land_mask,
+    latest_aims_australian_coastline_land_mask_geojson,
     latest_country_land_mask_geojson,
     latest_physical_land_mask_geojson,
 )
@@ -63,6 +69,7 @@ STATE_CODES = {
 INFLUENCE_EVENT_LOADER_NAME = "load_influence_events_v1"
 DISPLAY_GEOMETRY_REPAIR_PROJECTION_SRID = 3577
 MAX_COASTLINE_REPAIR_BUFFER_METERS = 10_000
+DEFAULT_COASTLINE_REPAIR_BUFFER_METERS = 100
 
 REPRESENTATIVE_RETURN_TITLE_TOKENS = {
     "dr",
@@ -2583,6 +2590,13 @@ def load_display_land_mask(
     country_name: str = "Australia",
     geojson_path: Path | None = None,
 ) -> dict[str, Any]:
+    if country_name.casefold() == "australia":
+        return load_aims_display_land_mask(
+            conn,
+            country_name="Australia",
+            geojson_path=geojson_path,
+        )
+
     geojson_path = geojson_path or latest_country_land_mask_geojson(country_name=country_name)
     if geojson_path is None:
         extract_natural_earth_country_land_mask(country_name=country_name)
@@ -2694,12 +2708,111 @@ def load_display_land_mask(
     }
 
 
+def load_aims_display_land_mask(
+    conn,
+    *,
+    country_name: str = "Australia",
+    geojson_path: Path | None = None,
+) -> dict[str, Any]:
+    geojson_path = geojson_path or latest_aims_australian_coastline_land_mask_geojson(
+        country_name=country_name
+    )
+    if geojson_path is None:
+        extract_aims_australian_coastline_land_mask(country_name=country_name)
+        geojson_path = latest_aims_australian_coastline_land_mask_geojson(
+            country_name=country_name
+        )
+    if geojson_path is None:
+        raise FileNotFoundError(f"No processed AIMS coastline land mask found for {country_name}.")
+
+    geojson = json.loads(geojson_path.read_text(encoding="utf-8"))
+    summary_path = geojson_path.with_suffix(".summary.json")
+    summary = {}
+    if summary_path.exists():
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    source_metadata_path = _source_metadata_path_from_land_mask_geojson(geojson)
+    source_document_id = upsert_source_document(conn, source_metadata_path)
+    source_key = f"{AIMS_COASTLINE_SOURCE_ID}:{normalize_name(country_name)}"
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO display_land_mask (
+                source_key, country_name, geometry_role, geom, source_document_id, metadata
+            )
+            WITH features AS (
+                SELECT value AS feature
+                FROM jsonb_array_elements(%s::jsonb->'features')
+            ),
+            geoms AS (
+                SELECT ST_MakeValid(
+                    ST_SetSRID(ST_GeomFromGeoJSON(feature->>'geometry'), 4326)
+                ) AS geom
+                FROM features
+            ),
+            unioned AS (
+                SELECT ST_Multi(
+                    ST_CollectionExtract(
+                        ST_MakeValid(ST_UnaryUnion(ST_Collect(geom))),
+                        3
+                    )
+                ) AS geom
+                FROM geoms
+            )
+            SELECT %s, %s, 'country_high_resolution_land_display_mask', geom, %s, %s
+            FROM unioned
+            ON CONFLICT (source_key) DO UPDATE SET
+                country_name = EXCLUDED.country_name,
+                geometry_role = EXCLUDED.geometry_role,
+                geom = EXCLUDED.geom,
+                source_document_id = EXCLUDED.source_document_id,
+                metadata = EXCLUDED.metadata
+            RETURNING id
+            """,
+            (
+                as_jsonb(geojson),
+                source_key,
+                country_name,
+                source_document_id,
+                as_jsonb(
+                    {
+                        "geojson_path": str(geojson_path.resolve()),
+                        "summary_path": str(summary_path.resolve()) if summary_path.exists() else "",
+                        "parser_name": AIMS_COASTLINE_PARSER_NAME,
+                        "parser_version": AIMS_COASTLINE_PARSER_VERSION,
+                        "source_metadata_path": str(source_metadata_path.resolve()),
+                        "source_limitations": AIMS_COASTLINE_LIMITATIONS,
+                        "licence_status": "not_specified_confirm_before_public_redistribution",
+                        "extracted_component_sha256": summary.get(
+                            "extracted_component_sha256"
+                        ),
+                        "mask_method": "postgis_union_aims_australian_coastline_50k_land_polygons",
+                        "source_description": (
+                            "AIMS/eAtlas/AODN Australian Coastline 50K 2024 simplified "
+                            "land-area polygons from 2022-2024 Sentinel-2 imagery. "
+                            "Display-only derivative; not used as a legal/electoral boundary."
+                        ),
+                    }
+                ),
+            ),
+        )
+        land_mask_id = cur.fetchone()[0]
+    conn.commit()
+    return {
+        "land_mask_id": land_mask_id,
+        "source_key": source_key,
+        "country_name": country_name,
+        "geojson_path": str(geojson_path.resolve()),
+        "source_document_id": source_document_id,
+    }
+
+
 def load_electorate_boundary_display_geometries(
     conn,
     *,
     boundary_set: str = BOUNDARY_SET,
     country_name: str = "Australia",
-    coastline_repair_buffer_meters: int = 3000,
+    coastline_repair_buffer_meters: int = DEFAULT_COASTLINE_REPAIR_BUFFER_METERS,
 ) -> dict[str, Any]:
     if coastline_repair_buffer_meters < 0:
         raise ValueError("coastline_repair_buffer_meters must be non-negative.")

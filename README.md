@@ -150,8 +150,8 @@ The pipeline currently archives and normalizes:
   source disclosure observations, with cross-table duplicate observations
   retained for audit but excluded from reported-total sums.
 - AEC current national federal electorate boundary shapefile and GeoJSON/PostGIS
-  source boundary layer, plus Natural Earth-backed land-clipped display
-  geometry for the web map.
+  source boundary layer, plus AIMS/eAtlas/AODN Coastline 50K-backed land-clipped
+  display geometry for the web map.
 - Senate register JSON records from the official APH-backed Senate interests API.
 - House register PDF text/OCR, numbered sections, and structured interest records.
 - Official APH House Votes and Proceedings and Senate Journals current
