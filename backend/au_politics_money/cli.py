@@ -291,12 +291,17 @@ def extract_natural_earth_land_mask_command(country_name: str) -> int:
     return 0
 
 
-def load_display_geometries_command(boundary_set: str | None, country_name: str) -> int:
+def load_display_geometries_command(
+    boundary_set: str | None,
+    country_name: str,
+    coastline_repair_buffer_meters: int,
+) -> int:
     with connect() as conn:
         summary = load_electorate_boundary_display_geometries(
             conn,
             boundary_set=boundary_set or "aec_federal_2025_current",
             country_name=country_name,
+            coastline_repair_buffer_meters=coastline_repair_buffer_meters,
         )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
@@ -566,6 +571,7 @@ def build_parser() -> argparse.ArgumentParser:
     display_geometry_parser = subparsers.add_parser("load-display-geometries")
     display_geometry_parser.add_argument("--boundary-set")
     display_geometry_parser.add_argument("--country-name", default="Australia")
+    display_geometry_parser.add_argument("--coastline-repair-buffer-meters", type=int, default=3000)
 
     aph_decision_parser = subparsers.add_parser("extract-aph-decision-record-index")
     aph_decision_parser.add_argument("source_id", choices=DECISION_RECORD_SOURCE_IDS, nargs="?")
@@ -728,7 +734,11 @@ def main() -> int:
     if args.command == "extract-natural-earth-land-mask":
         return extract_natural_earth_land_mask_command(args.country_name)
     if args.command == "load-display-geometries":
-        return load_display_geometries_command(args.boundary_set, args.country_name)
+        return load_display_geometries_command(
+            args.boundary_set,
+            args.country_name,
+            args.coastline_repair_buffer_meters,
+        )
     if args.command == "extract-aph-decision-record-index":
         return extract_aph_decision_record_index_command(args.source_id, args.all)
     if args.command == "fetch-aph-decision-record-documents":

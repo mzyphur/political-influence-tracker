@@ -2697,7 +2697,9 @@ def load_electorate_boundary_display_geometries(
     *,
     boundary_set: str = BOUNDARY_SET,
     country_name: str = "Australia",
+    coastline_repair_buffer_meters: int = 3000,
 ) -> dict[str, Any]:
+    coastline_repair_buffer_degrees = coastline_repair_buffer_meters / 111_320
     land_summary = load_display_land_mask(conn, country_name=country_name)
     with conn.cursor() as cur:
         cur.execute(
@@ -2708,6 +2710,7 @@ def load_electorate_boundary_display_geometries(
             WITH clipped AS (
                 SELECT
                     boundary.id AS electorate_boundary_id,
+                    boundary.geom AS source_geom,
                     ST_Multi(
                         ST_CollectionExtract(
                             ST_MakeValid(ST_Intersection(boundary.geom, mask.geom)),
@@ -2719,6 +2722,24 @@ def load_electorate_boundary_display_geometries(
                 JOIN display_land_mask mask
                   ON mask.source_key = %s
                 WHERE boundary.boundary_set = %s
+            ),
+            repaired AS (
+                SELECT
+                    electorate_boundary_id,
+                    ST_Multi(
+                        ST_CollectionExtract(
+                            ST_MakeValid(
+                                ST_Intersection(
+                                    source_geom,
+                                    ST_Buffer(geom, %s, 'quad_segs=2')
+                                )
+                            ),
+                            3
+                        )
+                    ) AS geom,
+                    clip_source_document_id
+                FROM clipped
+                WHERE NOT ST_IsEmpty(geom)
             )
             SELECT
                 electorate_boundary_id,
@@ -2726,7 +2747,7 @@ def load_electorate_boundary_display_geometries(
                 geom,
                 clip_source_document_id,
                 %s
-            FROM clipped
+            FROM repaired
             WHERE NOT ST_IsEmpty(geom)
             ON CONFLICT (electorate_boundary_id, geometry_role) DO UPDATE SET
                 geom = EXCLUDED.geom,
@@ -2736,13 +2757,16 @@ def load_electorate_boundary_display_geometries(
             (
                 land_summary["source_key"],
                 boundary_set,
+                coastline_repair_buffer_degrees,
                 as_jsonb(
                     {
-                        "clip_method": "postgis_intersection",
+                        "clip_method": "postgis_intersection_with_local_coastline_repair_buffer",
                         "geometry_role": "land_clipped_display",
                         "source_boundary_policy": "official_aec_geometry_preserved_in_electorate_boundary.geom",
                         "land_mask_source_key": land_summary["source_key"],
                         "land_mask_country_name": country_name,
+                        "coastline_repair_buffer_meters": coastline_repair_buffer_meters,
+                        "coastline_repair_buffer_degrees": coastline_repair_buffer_degrees,
                     }
                 ),
             ),

@@ -94,8 +94,10 @@ The federal foundation pipeline currently performs:
 7. Fetch the current national AEC ESRI federal-boundary ZIP.
 8. Transform AEC federal boundaries from source CRS to GeoJSON/PostGIS SRID 4326.
 9. Fetch/extract Natural Earth Admin 0 and physical land masks, then derive
-   `land_clipped_display` geometry for interactive maps. This is display-only;
-   official AEC boundary geometry remains unchanged.
+   `land_clipped_display` geometry for interactive maps. The display geometry
+   uses a documented local coastline repair buffer so a coarser Natural Earth
+   coastline does not cut away shoreline land relative to the basemap. This is
+   display-only; official AEC boundary geometry remains unchanged.
 10. Extract official APH decision-record indexes for House Votes and
    Proceedings and Senate Journals.
 11. Archive linked ParlInfo HTML/PDF decision-record representations as raw
