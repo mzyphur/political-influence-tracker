@@ -673,6 +673,10 @@ def latest_money_flows_jsonl(processed_dir: Path = PROCESSED_DIR) -> Path | None
     return _latest_file(processed_dir / "aec_annual_money_flows", "*.jsonl")
 
 
+def latest_election_money_flows_jsonl(processed_dir: Path = PROCESSED_DIR) -> Path | None:
+    return _latest_file(processed_dir / "aec_election_money_flows", "*.jsonl")
+
+
 def latest_house_interest_records_jsonl(processed_dir: Path = PROCESSED_DIR) -> Path | None:
     return _latest_file(processed_dir / "house_interest_records", "*.jsonl")
 
@@ -839,13 +843,15 @@ def _add_name(
 def aggregate_entity_names(processed_dir: Path = PROCESSED_DIR) -> dict[str, dict[str, Any]]:
     aggregates: dict[str, dict[str, Any]] = defaultdict(_empty_aggregate)
 
-    money_path = latest_money_flows_jsonl(processed_dir=processed_dir)
-    if money_path is not None:
+    for money_path_getter in (latest_money_flows_jsonl, latest_election_money_flows_jsonl):
+        money_path = money_path_getter(processed_dir=processed_dir)
+        if money_path is None:
+            continue
         with money_path.open("r", encoding="utf-8") as handle:
             for line in handle:
                 record = json.loads(line)
                 amount = _amount(record.get("amount_aud", ""))
-                source_id = record.get("source_id", "")
+                source_id = record.get("source_id") or record.get("source_dataset", "")
                 _add_name(
                     aggregates,
                     record.get("source_raw_name", ""),

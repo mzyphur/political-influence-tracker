@@ -93,9 +93,12 @@ The federal foundation pipeline currently performs:
    `date_validation.status` value instead of being exposed as event dates.
 7. Fetch the current national AEC ESRI federal-boundary ZIP.
 8. Transform AEC federal boundaries from source CRS to GeoJSON/PostGIS SRID 4326.
-9. Extract official APH decision-record indexes for House Votes and
+9. Fetch/extract Natural Earth Admin 0 and physical land masks, then derive
+   `land_clipped_display` geometry for interactive maps. This is display-only;
+   official AEC boundary geometry remains unchanged.
+10. Extract official APH decision-record indexes for House Votes and
    Proceedings and Senate Journals.
-10. Archive linked ParlInfo HTML/PDF decision-record representations as raw
+11. Archive linked ParlInfo HTML/PDF decision-record representations as raw
     source snapshots, using source-specific transparent request headers where a
     public source requires browser-compatible access.
     The processed fetch summary stores the APH index-to-document linkage and

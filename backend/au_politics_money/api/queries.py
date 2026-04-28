@@ -610,11 +610,15 @@ def get_electorate_map(
     boundary_set: str | None = None,
     include_geometry: bool = True,
     simplify_tolerance: float = 0.0005,
+    geometry_role: str = "display",
     database_url: str | None = None,
 ) -> dict[str, Any]:
     chamber = chamber.strip().lower()
     if chamber not in {"house", "senate"}:
         raise ValueError("chamber must be 'house' or 'senate'.")
+    geometry_role = geometry_role.strip().lower()
+    if geometry_role not in {"display", "source"}:
+        raise ValueError("geometry_role must be 'display' or 'source'.")
     state = state.strip().upper() if state else None
     simplify_tolerance = max(0.0, min(float(simplify_tolerance), 0.25))
     if chamber == "senate":
@@ -623,15 +627,26 @@ def get_electorate_map(
             boundary_set=boundary_set,
             include_geometry=include_geometry,
             simplify_tolerance=simplify_tolerance,
+            geometry_role=geometry_role,
             database_url=database_url,
         )
+    geometry_column = (
+        "COALESCE(display_boundary.geom, boundary.geom)"
+        if geometry_role == "display"
+        else "boundary.geom"
+    )
+    display_join_filter = (
+        "AND display_boundary.geometry_role = 'land_clipped_display'"
+        if geometry_role == "display"
+        else "AND FALSE"
+    )
     geometry_expression = (
         """
         ST_AsGeoJSON(
-            ST_Multi(ST_SimplifyPreserveTopology(boundary.geom, %s)),
+            ST_Multi(ST_SimplifyPreserveTopology({geometry_column}, %s)),
             6
         ) AS geometry_geojson
-        """
+        """.format(geometry_column=geometry_column)
         if include_geometry
         else "NULL::TEXT AS geometry_geojson"
     )
@@ -664,6 +679,10 @@ def get_electorate_map(
                 boundary.valid_from AS boundary_valid_from,
                 boundary.valid_to AS boundary_valid_to,
                 boundary.id IS NOT NULL AS has_boundary,
+                CASE
+                    WHEN display_boundary.id IS NOT NULL THEN 'display'
+                    ELSE 'source'
+                END AS map_geometry_role,
                 CASE
                     WHEN reps.current_representative_count = 1 THEN reps.representative_id
                     ELSE NULL
@@ -719,6 +738,9 @@ def get_electorate_map(
                 ORDER BY boundary_row.valid_from DESC NULLS LAST, boundary_row.id DESC
                 LIMIT 1
             ) boundary ON TRUE
+            LEFT JOIN electorate_boundary_display_geometry display_boundary
+              ON display_boundary.electorate_boundary_id = boundary.id
+             {display_join_filter}
             LEFT JOIN LATERAL (
                 SELECT
                     (array_agg(person.id ORDER BY person.display_name))[1] AS representative_id,
@@ -853,6 +875,7 @@ def get_electorate_map(
             "boundary_set": boundary_set,
             "include_geometry": include_geometry,
             "simplify_tolerance": simplify_tolerance,
+            "geometry_role": geometry_role,
         },
         "caveat": MAP_CAVEAT,
     }
@@ -1099,6 +1122,7 @@ def _get_senate_map(
     boundary_set: str | None = None,
     include_geometry: bool = True,
     simplify_tolerance: float = 0.01,
+    geometry_role: str = "display",
     database_url: str | None = None,
 ) -> dict[str, Any]:
     geometry_expression = (
@@ -1110,6 +1134,16 @@ def _get_senate_map(
         """
         if include_geometry
         else "NULL::TEXT AS geometry_geojson"
+    )
+    geometry_column = (
+        "COALESCE(display_boundary.geom, boundary.geom)"
+        if geometry_role == "display"
+        else "boundary.geom"
+    )
+    display_join_filter = (
+        "AND display_boundary.geometry_role = 'land_clipped_display'"
+        if geometry_role == "display"
+        else "AND FALSE"
     )
     state_geometry_aggregate = (
         """
@@ -1152,11 +1186,15 @@ def _get_senate_map(
                     boundary.boundary_set,
                     boundary.valid_from,
                     boundary.valid_to,
-                    boundary.geom
+                    {geometry_column} AS geom,
+                    display_boundary.id IS NOT NULL AS has_display_geometry
                 FROM electorate_boundary boundary
                 JOIN electorate house_electorate
                   ON house_electorate.id = boundary.electorate_id
                  AND house_electorate.chamber = 'house'
+                LEFT JOIN electorate_boundary_display_geometry display_boundary
+                  ON display_boundary.electorate_boundary_id = boundary.id
+                 {display_join_filter}
                 LEFT JOIN office_term house_term
                   ON house_term.electorate_id = house_electorate.id
                  AND house_term.term_end IS NULL
@@ -1180,6 +1218,7 @@ def _get_senate_map(
                     min(valid_from) AS valid_from,
                     max(valid_to) AS valid_to,
                     count(*) AS boundary_count,
+                    bool_or(has_display_geometry) AS has_display_geometry,
                     {state_geometry_aggregate}
                 FROM boundary_rows
                 WHERE state_code IS NOT NULL
@@ -1192,6 +1231,7 @@ def _get_senate_map(
                     valid_from,
                     valid_to,
                     boundary_count,
+                    has_display_geometry,
                     geom
                 FROM state_boundaries
                 ORDER BY state_code, valid_from DESC NULLS LAST, boundary_set
@@ -1205,6 +1245,10 @@ def _get_senate_map(
                 state_boundary.valid_from AS boundary_valid_from,
                 state_boundary.valid_to AS boundary_valid_to,
                 COALESCE(state_boundary.boundary_count, 0) > 0 AS has_boundary,
+                CASE
+                    WHEN COALESCE(state_boundary.has_display_geometry, FALSE) THEN 'display'
+                    ELSE 'source'
+                END AS map_geometry_role,
                 NULL::BIGINT AS representative_id,
                 NULL::TEXT AS representative_name,
                 NULL::BIGINT AS party_id,
@@ -1352,6 +1396,7 @@ def _get_senate_map(
             "boundary_set": boundary_set,
             "include_geometry": include_geometry,
             "simplify_tolerance": simplify_tolerance,
+            "geometry_role": geometry_role,
             "map_geometry_scope": "state_territory_composite_from_house_boundaries",
         },
         "caveat": (

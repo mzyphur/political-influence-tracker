@@ -130,6 +130,10 @@ def test_apply_schema_loads_backend_schema() -> None:
 
 def test_money_event_classifier_keeps_donations_visible() -> None:
     assert classify_money_event_type("gift", "receipts") == "donation_or_gift"
+    assert classify_money_event_type("election_media_advertising_expenditure", "") == (
+        "campaign_expenditure"
+    )
+    assert classify_money_event_type("", "Discretionary Benefit") == "discretionary_benefit"
     assert classify_money_event_type("loan", "") == "loan"
     assert classify_money_event_type("", "") == "money_flow"
 

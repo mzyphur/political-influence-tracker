@@ -20,6 +20,10 @@ from au_politics_money.ingest.aec_annual import (
     normalize_aec_annual_money_flows,
     summarize_aec_annual_zip,
 )
+from au_politics_money.ingest.aec_election import (
+    normalize_aec_election_money_flows,
+    summarize_aec_election_zip,
+)
 from au_politics_money.ingest.aph_decision_records import (
     extract_aph_decision_record_index,
     fetch_aph_decision_record_documents,
@@ -38,6 +42,12 @@ from au_politics_money.ingest.entity_classification import classify_entity_names
 from au_politics_money.ingest.fetch import fetch_source
 from au_politics_money.ingest.house_interests import extract_house_interest_sections
 from au_politics_money.ingest.house_interest_records import extract_house_interest_records
+from au_politics_money.ingest.land_mask import (
+    extract_natural_earth_country_land_mask,
+    extract_natural_earth_physical_land_mask,
+    fetch_natural_earth_admin0_zip,
+    fetch_natural_earth_physical_land_zip,
+)
 from au_politics_money.ingest.official_identifiers import (
     discover_official_identifier_sources,
     fetch_lobbyist_register_snapshot,
@@ -256,6 +266,9 @@ def run_federal_foundation_pipeline(
                     "aph_senators_interests",
                     "aec_federal_boundaries_gis",
                     "aec_download_all_annual_data",
+                    "aec_download_all_election_data",
+                    "natural_earth_admin0_countries_10m",
+                    "natural_earth_physical_land_10m",
                     "aph_house_votes_and_proceedings",
                     "aph_senate_journals",
                 )
@@ -280,8 +293,17 @@ def run_federal_foundation_pipeline(
         ("build_current_parliament_roster", build_current_parliament_roster),
         ("summarize_aec_annual_zip", summarize_aec_annual_zip),
         ("normalize_aec_annual_money_flows", normalize_aec_annual_money_flows),
+        ("summarize_aec_election_zip", summarize_aec_election_zip),
+        ("normalize_aec_election_money_flows", normalize_aec_election_money_flows),
         ("fetch_current_aec_boundaries_zip", fetch_current_aec_boundary_zip),
         ("extract_aec_federal_boundaries", extract_current_aec_boundaries),
+        ("fetch_natural_earth_admin0_zip", fetch_natural_earth_admin0_zip),
+        ("fetch_natural_earth_physical_land_zip", fetch_natural_earth_physical_land_zip),
+        ("extract_natural_earth_australia_land_mask", extract_natural_earth_country_land_mask),
+        (
+            "extract_natural_earth_australia_physical_land_mask",
+            extract_natural_earth_physical_land_mask,
+        ),
         (
             "extract_house_votes_and_proceedings_index",
             lambda: extract_aph_decision_record_index("aph_house_votes_and_proceedings"),

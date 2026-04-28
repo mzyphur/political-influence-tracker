@@ -289,14 +289,40 @@ Verification:
   source refs, evidence status, review status, amount status, and missing-data
   flags. Search now shows empty/error states and flags database results that are
   not yet implemented as map drilldowns.
+- Added AEC election-disclosure ingestion for seven detail tables: donor
+  donations made/received, Senate group/candidate donations and discretionary
+  benefits, third-party donations made/received, and media advertisement
+  details. The normalizer emits disclosure observations, preserves original
+  rows, excludes aggregate-only return summary tables, and annotates canonical
+  transaction keys so cross-table duplicate observations are retained as
+  evidence without inflating reported-total sums.
+- Added display-safe map geometry. Official AEC boundary polygons remain
+  preserved in `electorate_boundary.geom`; the API now defaults to
+  `geometry_role=display`, backed by `land_clipped_display` geometry derived
+  from Natural Earth Admin 0 Australia intersected with Natural Earth physical
+  land. Source geometry remains requestable for audit via
+  `geometry_role=source`.
 
 Notable data observations:
 
 - APH current contact CSV returned 149 House members and 76 Senators, while the official House interests register included Sussan Ley for Farrer. The loader now creates `Sussan Ley (Farrer)` from the House register with metadata source `derived_from_house_interest_register` so records are not dropped; this should be monitored in future APH CSV refreshes.
 - AEC annual disclosure ZIP contains 13 CSV tables and is small enough for routine weekly ingestion.
-- The first money-flow normalizer covers Detailed Receipts, Donations Made, Donor Donations Received, and Third Party Donations Received. It does not yet normalize debts, discretionary benefits, capital contributions, or return summary tables.
+- The annual money-flow normalizer covers Detailed Receipts, Donations Made,
+  Donor Donations Received, and Third Party Donations Received. It does not yet
+  normalize annual debts, discretionary benefits, capital contributions, or
+  return summary tables.
+- The AEC election normalizer produced 19,994 detail observations from the
+  current election bulk ZIP. It identified 17,972 canonical transaction keys,
+  965 duplicate transaction groups, and 971 duplicate observations. Duplicate
+  observations and campaign-expenditure rows remain available as records but
+  use `amount_status=not_applicable` in the unified event layer so donation-like
+  reported totals are not overstated.
 - House interests text extraction needed OCR fallback for scanned/low-text pages, including `Gosling_48P.pdf` and `Katter_48P.pdf`; OCR artifacts are handled in the metadata extractor and record filters.
 - The Senate register currently exposes structured JSON through a public API used by the official APH React app; this is preferable to PDF scraping for current Senate interests, but the API should be monitored for schema changes.
 - `public_interest_sector_rules_v1` is useful for exploratory filtering but remains inferred. Any public claim about an entity's sector should retain the classifier/method/confidence caveat until ABN/ASIC/ANZSIC or manual-review evidence is added.
 - Most benefit events do not disclose a value or a parsed provider. The new `missing_data_flags` field makes those limitations queryable instead of hiding them.
 - The AEC national boundary file does not include a state/territory column, so state remains sourced from the APH roster/electorate table rather than the shapefile.
+- AEC source boundary polygons include legitimate offshore/maritime extents
+  that are unsuitable as filled web-map polygons. Display geometry is now a
+  derived land-clipped layer; never overwrite the official source geometry with
+  display geometry.

@@ -26,6 +26,14 @@ from au_politics_money.ingest.entity_classification import (
     PUBLIC_INTEREST_SECTORS,
     latest_entity_classifications_jsonl,
 )
+from au_politics_money.ingest.land_mask import (
+    PARSER_NAME as LAND_MASK_PARSER_NAME,
+    PARSER_VERSION as LAND_MASK_PARSER_VERSION,
+    extract_natural_earth_country_land_mask,
+    extract_natural_earth_physical_land_mask,
+    latest_country_land_mask_geojson,
+    latest_physical_land_mask_geojson,
+)
 from au_politics_money.ingest.official_identifiers import (
     ANZSIC_SECTIONS,
     OFFICIAL_IDENTIFIER_PARSER_NAME,
@@ -331,6 +339,10 @@ def classify_money_event_type(disclosure_category: str, receipt_type: str) -> st
     category = normalize_name(disclosure_category)
     receipt = normalize_name(receipt_type)
     combined = f"{category} {receipt}".strip()
+    if "discretionary benefit" in combined:
+        return "discretionary_benefit"
+    if "advertis" in combined or "broadcast" in combined or "campaign material" in combined:
+        return "campaign_expenditure"
     if "gift" in combined or "donation" in combined:
         return "donation_or_gift"
     if "receipt" in combined:
@@ -547,9 +559,32 @@ def get_or_create_jurisdiction(conn, name: str, level: str, code: str) -> int:
     with conn.cursor() as cur:
         cur.execute(
             """
+            SELECT id
+            FROM jurisdiction
+            WHERE name = %s
+               OR code = %s
+            ORDER BY CASE WHEN code = %s THEN 0 ELSE 1 END, id
+            LIMIT 1
+            """,
+            (name, code, code),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            cur.execute(
+                """
+                UPDATE jurisdiction
+                SET level = %s,
+                    code = COALESCE(code, %s)
+                WHERE id = %s
+                RETURNING id
+                """,
+                (level, code, row[0]),
+            )
+            return int(cur.fetchone()[0])
+        cur.execute(
+            """
             INSERT INTO jurisdiction (name, level, code)
             VALUES (%s, %s, %s)
-            ON CONFLICT (name) DO UPDATE SET level = EXCLUDED.level, code = EXCLUDED.code
             RETURNING id
             """,
             (name, level, code),
@@ -864,8 +899,12 @@ def load_roster(conn, roster_path: Path | None = None) -> dict[str, int]:
     }
 
 
-def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]:
-    path = jsonl_path or latest_file(PROCESSED_DIR / "aec_annual_money_flows", "*.jsonl")
+def _load_aec_money_flow_jsonl(
+    conn,
+    path: Path,
+    *,
+    default_source_dataset: str,
+) -> dict[str, int]:
     source_doc_cache: dict[str, int] = {}
     jurisdiction_id = get_or_create_jurisdiction(conn, "Commonwealth", "federal", "CWLTH")
 
@@ -878,17 +917,20 @@ def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]
                 source_doc_cache[metadata_path] = upsert_source_document(conn, Path(metadata_path))
             source_document_id = source_doc_cache[metadata_path]
 
-            source_entity_id = get_or_create_entity(conn, record["source_raw_name"])
-            recipient_entity_id = get_or_create_entity(conn, record["recipient_raw_name"])
+            source_entity_id = get_or_create_entity(conn, record.get("source_raw_name") or "")
+            recipient_entity_id = get_or_create_entity(conn, record.get("recipient_raw_name") or "")
             amount = Decimal(record["amount_aud"]) if record["amount_aud"] else None
             date_received, date_validation = parse_aec_money_flow_date(
-                record["date"],
-                record["financial_year"],
+                record.get("date") or "",
+                record.get("financial_year") or "",
             )
+            source_dataset = record.get("source_dataset") or default_source_dataset
             external_key = (
-                f"aec_annual:{record['source_table']}:{record['source_row_number']}:"
-                f"{record['financial_year']}:{normalize_name(record['source_raw_name'])}:"
-                f"{normalize_name(record['recipient_raw_name'])}:{record['amount_aud']}"
+                f"{source_dataset}:{record['source_table']}:{record['source_row_number']}:"
+                f"{record.get('financial_year') or record.get('event_name') or ''}:"
+                f"{normalize_name(record.get('source_raw_name') or '')}:"
+                f"{normalize_name(record.get('recipient_raw_name') or '')}:"
+                f"{record['amount_aud']}"
             )
 
             with conn.cursor() as cur:
@@ -916,15 +958,15 @@ def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]
                     (
                         external_key,
                         source_entity_id,
-                        record["source_raw_name"] or "Unknown",
+                        record.get("source_raw_name") or "Unknown",
                         recipient_entity_id,
-                        record["recipient_raw_name"] or "Unknown",
+                        record.get("recipient_raw_name") or "Unknown",
                         amount,
-                        record["financial_year"],
+                        record.get("financial_year") or None,
                         date_received,
-                        record["return_type"],
-                        record["receipt_type"],
-                        record["flow_kind"],
+                        record.get("return_type") or None,
+                        record.get("receipt_type") or None,
+                        record.get("flow_kind") or source_dataset,
                         jurisdiction_id,
                         source_document_id,
                         f"{record['source_table']}:{record['source_row_number']}",
@@ -938,6 +980,22 @@ def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]
     conn.commit()
     link_summary = link_aec_direct_representative_money_flows(conn)
     return {"money_flows": count, **link_summary}
+
+
+def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]:
+    path = jsonl_path or latest_file(PROCESSED_DIR / "aec_annual_money_flows", "*.jsonl")
+    return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="aec_annual")
+
+
+def load_aec_election_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(PROCESSED_DIR / "aec_election_money_flows", "*.jsonl")
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_aec_election_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="aec_election")
 
 
 def _person_lookup(conn) -> dict[str, int]:
@@ -1534,21 +1592,39 @@ def load_influence_events(conn) -> dict[str, Any]:
             confidence,
             metadata,
         ) = row
+        base_metadata = metadata or {}
         event_type = classify_money_event_type(disclosure_category or "", receipt_type or "")
+        event_family = "benefit" if event_type == "discretionary_benefit" else "money"
+        public_amount_counting_role = base_metadata.get("public_amount_counting_role")
+        duplicate_observation = public_amount_counting_role == "duplicate_observation"
+        campaign_expenditure = event_type == "campaign_expenditure"
         flags = missing_money_flags(
             source_raw_name=source_raw_name or "",
             recipient_raw_name=recipient_raw_name or "",
             amount=amount,
             date_received=date_received,
         )
+        if duplicate_observation:
+            flags.append("duplicate_disclosure_observation_not_counted_in_reported_total")
+        if campaign_expenditure:
+            flags.append("campaign_expenditure_not_counted_in_reported_total")
         description_amount = f"{amount} {currency}" if amount is not None else "amount not disclosed"
         description = (
             f"{source_raw_name or 'Unknown'} to {recipient_raw_name or 'Unknown'}: "
             f"{description_amount}"
         )
+        extraction_method = base_metadata.get("normalizer_name") or "aec_annual_money_flow_normalizer"
+        disclosure_system = base_metadata.get("disclosure_system") or "aec_financial_disclosure"
+        amount_status = (
+            "not_applicable"
+            if amount is not None and (duplicate_observation or campaign_expenditure)
+            else "reported"
+            if amount is not None
+            else "unknown"
+        )
         event = {
             "external_key": f"money_flow:{external_key or money_flow_id}",
-            "event_family": "money",
+            "event_family": event_family,
             "event_type": event_type,
             "event_subtype": slugify(disclosure_category or receipt_type or "", "unspecified"),
             "source_entity_id": source_entity_id,
@@ -1562,15 +1638,15 @@ def load_influence_events(conn) -> dict[str, Any]:
             "gift_interest_id": None,
             "amount": amount,
             "currency": currency or "AUD",
-            "amount_status": "reported" if amount is not None else "unknown",
+            "amount_status": amount_status,
             "event_date": date_received,
-            "reporting_period": financial_year,
+            "reporting_period": financial_year or base_metadata.get("event_name"),
             "date_reported": date_reported,
             "chamber": None,
-            "disclosure_system": "aec_financial_disclosure",
+            "disclosure_system": disclosure_system,
             "disclosure_threshold": "AEC financial disclosure threshold for the reporting period.",
             "evidence_status": "official_record_parsed",
-            "extraction_method": "aec_annual_money_flow_normalizer",
+            "extraction_method": extraction_method,
             "review_status": "not_required",
             "description": description,
             "source_document_id": source_document_id,
@@ -1586,7 +1662,7 @@ def load_influence_events(conn) -> dict[str, Any]:
                     "receipt_type": receipt_type,
                     "disclosure_category": disclosure_category,
                     "source_confidence": confidence,
-                    "base_metadata": metadata or {},
+                    "base_metadata": base_metadata,
                 }
             ),
         }
@@ -2491,6 +2567,205 @@ def _delete_stale_boundary_only_electorates(conn, *, jurisdiction_id: int, bound
         return cur.rowcount
 
 
+def _source_metadata_path_from_land_mask_geojson(geojson: dict[str, Any]) -> Path:
+    for feature in geojson.get("features", []):
+        metadata_path = feature.get("properties", {}).get("source_metadata_path")
+        if metadata_path:
+            return Path(metadata_path)
+    raise RuntimeError("Land-mask GeoJSON is missing source_metadata_path in feature properties.")
+
+
+def load_display_land_mask(
+    conn,
+    *,
+    country_name: str = "Australia",
+    geojson_path: Path | None = None,
+) -> dict[str, Any]:
+    geojson_path = geojson_path or latest_country_land_mask_geojson(country_name=country_name)
+    if geojson_path is None:
+        extract_natural_earth_country_land_mask(country_name=country_name)
+        geojson_path = latest_country_land_mask_geojson(country_name=country_name)
+    if geojson_path is None:
+        raise FileNotFoundError(f"No processed Natural Earth land mask found for {country_name}.")
+    physical_geojson_path = latest_physical_land_mask_geojson(country_name=country_name)
+    if physical_geojson_path is None:
+        extract_natural_earth_physical_land_mask(country_name=country_name)
+        physical_geojson_path = latest_physical_land_mask_geojson(country_name=country_name)
+    if physical_geojson_path is None:
+        raise FileNotFoundError(
+            f"No processed Natural Earth physical land mask found for {country_name}."
+        )
+
+    admin_geojson = json.loads(geojson_path.read_text(encoding="utf-8"))
+    physical_geojson = json.loads(physical_geojson_path.read_text(encoding="utf-8"))
+    admin_source_metadata_path = _source_metadata_path_from_land_mask_geojson(admin_geojson)
+    physical_source_metadata_path = _source_metadata_path_from_land_mask_geojson(physical_geojson)
+    admin_source_document_id = upsert_source_document(conn, admin_source_metadata_path)
+    physical_source_document_id = upsert_source_document(conn, physical_source_metadata_path)
+    source_key = f"natural_earth_admin0_physical_land_10m:{normalize_name(country_name)}"
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO display_land_mask (
+                source_key, country_name, geometry_role, geom, source_document_id, metadata
+            )
+            WITH admin_features AS (
+                SELECT value AS feature
+                FROM jsonb_array_elements(%s::jsonb->'features')
+            ),
+            admin_geoms AS (
+                SELECT ST_MakeValid(
+                    ST_SetSRID(ST_GeomFromGeoJSON(feature->>'geometry'), 4326)
+                ) AS geom
+                FROM admin_features
+            ),
+            admin_unioned AS (
+                SELECT ST_MakeValid(ST_UnaryUnion(ST_Collect(geom))) AS geom
+                FROM admin_geoms
+            ),
+            physical_features AS (
+                SELECT value AS feature
+                FROM jsonb_array_elements(%s::jsonb->'features')
+            ),
+            physical_geoms AS (
+                SELECT ST_MakeValid(
+                    ST_SetSRID(ST_GeomFromGeoJSON(feature->>'geometry'), 4326)
+                ) AS geom
+                FROM physical_features
+            ),
+            physical_unioned AS (
+                SELECT ST_MakeValid(ST_UnaryUnion(ST_Collect(geom))) AS geom
+                FROM physical_geoms
+            ),
+            intersected AS (
+                SELECT ST_Multi(
+                    ST_CollectionExtract(
+                        ST_MakeValid(ST_Intersection(admin_unioned.geom, physical_unioned.geom)),
+                        3
+                    )
+                ) AS geom
+                FROM admin_unioned, physical_unioned
+            )
+            SELECT %s, %s, 'country_physical_land_display_mask', geom, %s, %s
+            FROM intersected
+            ON CONFLICT (source_key) DO UPDATE SET
+                country_name = EXCLUDED.country_name,
+                geometry_role = EXCLUDED.geometry_role,
+                geom = EXCLUDED.geom,
+                source_document_id = EXCLUDED.source_document_id,
+                metadata = EXCLUDED.metadata
+            RETURNING id
+            """,
+            (
+                as_jsonb(admin_geojson),
+                as_jsonb(physical_geojson),
+                source_key,
+                country_name,
+                admin_source_document_id,
+                as_jsonb(
+                    {
+                        "admin0_geojson_path": str(geojson_path.resolve()),
+                        "physical_land_geojson_path": str(physical_geojson_path.resolve()),
+                        "parser_name": LAND_MASK_PARSER_NAME,
+                        "parser_version": LAND_MASK_PARSER_VERSION,
+                        "admin0_source_metadata_path": str(admin_source_metadata_path.resolve()),
+                        "physical_land_source_metadata_path": str(
+                            physical_source_metadata_path.resolve()
+                        ),
+                        "physical_land_source_document_id": physical_source_document_id,
+                        "mask_method": "postgis_intersection_admin0_with_physical_land",
+                    }
+                ),
+            ),
+        )
+        land_mask_id = cur.fetchone()[0]
+    conn.commit()
+    return {
+        "land_mask_id": land_mask_id,
+        "source_key": source_key,
+        "country_name": country_name,
+        "geojson_path": str(geojson_path.resolve()),
+        "physical_geojson_path": str(physical_geojson_path.resolve()),
+        "source_document_id": admin_source_document_id,
+        "physical_source_document_id": physical_source_document_id,
+    }
+
+
+def load_electorate_boundary_display_geometries(
+    conn,
+    *,
+    boundary_set: str = BOUNDARY_SET,
+    country_name: str = "Australia",
+) -> dict[str, Any]:
+    land_summary = load_display_land_mask(conn, country_name=country_name)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO electorate_boundary_display_geometry (
+                electorate_boundary_id, geometry_role, geom, clip_source_document_id, metadata
+            )
+            WITH clipped AS (
+                SELECT
+                    boundary.id AS electorate_boundary_id,
+                    ST_Multi(
+                        ST_CollectionExtract(
+                            ST_MakeValid(ST_Intersection(boundary.geom, mask.geom)),
+                            3
+                        )
+                    ) AS geom,
+                    mask.source_document_id AS clip_source_document_id
+                FROM electorate_boundary boundary
+                JOIN display_land_mask mask
+                  ON mask.source_key = %s
+                WHERE boundary.boundary_set = %s
+            )
+            SELECT
+                electorate_boundary_id,
+                'land_clipped_display',
+                geom,
+                clip_source_document_id,
+                %s
+            FROM clipped
+            WHERE NOT ST_IsEmpty(geom)
+            ON CONFLICT (electorate_boundary_id, geometry_role) DO UPDATE SET
+                geom = EXCLUDED.geom,
+                clip_source_document_id = EXCLUDED.clip_source_document_id,
+                metadata = EXCLUDED.metadata
+            """,
+            (
+                land_summary["source_key"],
+                boundary_set,
+                as_jsonb(
+                    {
+                        "clip_method": "postgis_intersection",
+                        "geometry_role": "land_clipped_display",
+                        "source_boundary_policy": "official_aec_geometry_preserved_in_electorate_boundary.geom",
+                        "land_mask_source_key": land_summary["source_key"],
+                        "land_mask_country_name": country_name,
+                    }
+                ),
+            ),
+        )
+        display_geometries_upserted = cur.rowcount
+        cur.execute(
+            """
+            SELECT count(*)
+            FROM electorate_boundary
+            WHERE boundary_set = %s
+            """,
+            (boundary_set,),
+        )
+        source_boundary_count = cur.fetchone()[0]
+    conn.commit()
+    return {
+        "boundary_set": boundary_set,
+        "source_boundary_count": source_boundary_count,
+        "display_geometries_upserted": display_geometries_upserted,
+        "land_mask": land_summary,
+    }
+
+
 def load_electorate_boundaries(conn, geojson_path: Path | None = None) -> dict[str, Any]:
     geojson_path = geojson_path or latest_aec_boundaries_geojson()
     if geojson_path is None:
@@ -2586,6 +2861,10 @@ def load_electorate_boundaries(conn, geojson_path: Path | None = None) -> dict[s
         jurisdiction_id=jurisdiction_id,
         boundary_set=boundary_set,
     )
+    display_geometry_summary = load_electorate_boundary_display_geometries(
+        conn,
+        boundary_set=boundary_set,
+    )
     conn.commit()
     return {
         "boundary_set": boundary_set,
@@ -2596,6 +2875,7 @@ def load_electorate_boundaries(conn, geojson_path: Path | None = None) -> dict[s
         "boundaries_without_current_house_office": boundaries_without_current_office,
         "stale_boundary_only_electorates_deleted": stale_electorates_deleted,
         "source_document_id": source_document_id,
+        "display_geometry": display_geometry_summary,
     }
 
 
@@ -3621,6 +3901,7 @@ def load_processed_artifacts(
             summary["roster"] = load_roster(conn)
         if include_money_flows:
             summary["money_flows"] = load_aec_money_flows(conn)
+            summary["election_money_flows"] = load_aec_election_money_flows(conn)
         if include_house_interests:
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:

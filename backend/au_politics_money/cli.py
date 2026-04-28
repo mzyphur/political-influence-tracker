@@ -4,7 +4,12 @@ import argparse
 import json
 from pathlib import Path
 
-from au_politics_money.db.load import apply_migrations, connect, load_processed_artifacts
+from au_politics_money.db.load import (
+    apply_migrations,
+    connect,
+    load_electorate_boundary_display_geometries,
+    load_processed_artifacts,
+)
 from au_politics_money.db.review import (
     REVIEW_SUBJECT_TYPES,
     export_review_queue,
@@ -34,6 +39,10 @@ from au_politics_money.ingest.aec_annual import (
     normalize_aec_annual_money_flows,
     summarize_aec_annual_zip,
 )
+from au_politics_money.ingest.aec_election import (
+    normalize_aec_election_money_flows,
+    summarize_aec_election_zip,
+)
 from au_politics_money.ingest.aph_decision_records import (
     DECISION_RECORD_SOURCE_IDS,
     extract_aph_decision_record_index,
@@ -44,6 +53,12 @@ from au_politics_money.ingest.aph_roster import build_current_parliament_roster
 from au_politics_money.ingest.fetch import fetch_source
 from au_politics_money.ingest.house_interests import extract_house_interest_sections
 from au_politics_money.ingest.house_interest_records import extract_house_interest_records
+from au_politics_money.ingest.land_mask import (
+    extract_natural_earth_country_land_mask,
+    extract_natural_earth_physical_land_mask,
+    fetch_natural_earth_admin0_zip,
+    fetch_natural_earth_physical_land_zip,
+)
 from au_politics_money.ingest.official_identifiers import (
     AbnLookupWebServiceError,
     MissingAbnLookupGuid,
@@ -162,6 +177,18 @@ def normalize_aec_annual_command() -> int:
     return 0
 
 
+def summarize_aec_election_command(sample_size: int) -> int:
+    summary_path = summarize_aec_election_zip(sample_size=sample_size)
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def normalize_aec_election_command() -> int:
+    summary_path = normalize_aec_election_money_flows()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
 def extract_house_interest_sections_command() -> int:
     summary_path = extract_house_interest_sections()
     print(str(Path(summary_path).resolve()))
@@ -243,6 +270,35 @@ def extract_aec_boundaries_command(metadata_path: str | None) -> int:
         metadata_path=Path(metadata_path) if metadata_path else None,
     )
     print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def fetch_natural_earth_land_mask_command(refetch: bool) -> int:
+    for metadata_path in (
+        fetch_natural_earth_admin0_zip(refetch=refetch),
+        fetch_natural_earth_physical_land_zip(refetch=refetch),
+    ):
+        print(str(Path(metadata_path).resolve()))
+    return 0
+
+
+def extract_natural_earth_land_mask_command(country_name: str) -> int:
+    for summary_path in (
+        extract_natural_earth_country_land_mask(country_name=country_name),
+        extract_natural_earth_physical_land_mask(country_name=country_name),
+    ):
+        print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def load_display_geometries_command(boundary_set: str | None, country_name: str) -> int:
+    with connect() as conn:
+        summary = load_electorate_boundary_display_geometries(
+            conn,
+            boundary_set=boundary_set or "aec_federal_2025_current",
+            country_name=country_name,
+        )
+    print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
@@ -463,6 +519,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("normalize-aec-annual-money-flows")
 
+    aec_election_parser = subparsers.add_parser("summarize-aec-election")
+    aec_election_parser.add_argument("--sample-size", type=int, default=3)
+
+    subparsers.add_parser("normalize-aec-election-money-flows")
+
     subparsers.add_parser("extract-house-interest-sections")
 
     subparsers.add_parser("extract-house-interest-records")
@@ -495,6 +556,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     boundary_extract_parser = subparsers.add_parser("extract-aec-boundaries")
     boundary_extract_parser.add_argument("--metadata-path")
+
+    land_mask_fetch_parser = subparsers.add_parser("fetch-natural-earth-land-mask")
+    land_mask_fetch_parser.add_argument("--refetch", action="store_true")
+
+    land_mask_extract_parser = subparsers.add_parser("extract-natural-earth-land-mask")
+    land_mask_extract_parser.add_argument("--country-name", default="Australia")
+
+    display_geometry_parser = subparsers.add_parser("load-display-geometries")
+    display_geometry_parser.add_argument("--boundary-set")
+    display_geometry_parser.add_argument("--country-name", default="Australia")
 
     aph_decision_parser = subparsers.add_parser("extract-aph-decision-record-index")
     aph_decision_parser.add_argument("source_id", choices=DECISION_RECORD_SOURCE_IDS, nargs="?")
@@ -622,6 +693,10 @@ def main() -> int:
         return summarize_aec_annual_command(args.sample_size)
     if args.command == "normalize-aec-annual-money-flows":
         return normalize_aec_annual_command()
+    if args.command == "summarize-aec-election":
+        return summarize_aec_election_command(args.sample_size)
+    if args.command == "normalize-aec-election-money-flows":
+        return normalize_aec_election_command()
     if args.command == "extract-house-interest-sections":
         return extract_house_interest_sections_command()
     if args.command == "extract-house-interest-records":
@@ -648,6 +723,12 @@ def main() -> int:
         return fetch_current_aec_boundaries_command(args.refetch)
     if args.command == "extract-aec-boundaries":
         return extract_aec_boundaries_command(args.metadata_path)
+    if args.command == "fetch-natural-earth-land-mask":
+        return fetch_natural_earth_land_mask_command(args.refetch)
+    if args.command == "extract-natural-earth-land-mask":
+        return extract_natural_earth_land_mask_command(args.country_name)
+    if args.command == "load-display-geometries":
+        return load_display_geometries_command(args.boundary_set, args.country_name)
     if args.command == "extract-aph-decision-record-index":
         return extract_aph_decision_record_index_command(args.source_id, args.all)
     if args.command == "fetch-aph-decision-record-documents":

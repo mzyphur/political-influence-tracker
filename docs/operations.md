@@ -167,8 +167,18 @@ cd backend
 
 The canonical boundary layer uses the full AEC national ESRI shapefile. The
 processed GeoJSON and PostGIS rows are SRID 4326; the raw AEC shapefile source
-CRS and DBF attributes remain in metadata. Frontend map tiles should use a later
-simplified derivative, not the full 49 MB canonical GeoJSON.
+CRS and DBF attributes remain in metadata. The serving API defaults to a
+separate `land_clipped_display` derivative produced from Natural Earth Admin 0
+Australia intersected with Natural Earth physical land. This prevents coastal
+and maritime AEC extents from rendering as filled ocean while preserving the
+official AEC geometry for audit.
+
+```bash
+cd backend
+.venv/bin/au-politics-money fetch-natural-earth-land-mask
+.venv/bin/au-politics-money extract-natural-earth-land-mask
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money load-display-geometries
+```
 
 They Vote For You division/vote ingestion:
 
@@ -405,11 +415,13 @@ Current local baseline after the 2026-04-28 federal load:
 
 - `person`: 226, including one House-register-derived fallback person for Sussan Ley/Farrer because the APH contact CSV omitted that seat.
 - `office_term`: 226.
-- `money_flow`: 192,201 AEC annual rows.
+- `money_flow`: 212,195 rows: 192,201 AEC annual rows plus 19,994 AEC
+  election disclosure observations.
 - `gift_interest`: 7,605 total rows: 5,853 House and 1,752 Senate.
 - `gift_interest` gift/travel subset: House gifts 538, House sponsored travel/hospitality 317, Senate gifts 227, Senate sponsored travel/hospitality 263.
-- `electorate_boundary`: 150 current federal House boundaries in `aec_federal_2025_current`; all geometries are SRID 4326, valid, and non-empty.
-- `influence_event`: 199,806 derived rows: 192,201 money events, 1,390 benefit events, 4,700 private-interest events, 1,413 organisational-role events, and 102 other declared interests.
+- `electorate_boundary`: 150 current federal House boundaries in `aec_federal_2025_current`; all canonical source geometries are SRID 4326, valid, and non-empty.
+- `electorate_boundary_display_geometry`: 150 `land_clipped_display` rows for web-map use.
+- `influence_event`: 219,800 derived rows: 212,191 money events, 1,394 benefit events, 4,700 private-interest events, 1,413 organisational-role events, and 102 other declared interests.
 - `influence_event` benefit subtypes include 389 membership/lounge access rows, 225 event ticket/pass rows, 67 private-aircraft/flight rows, 43 meal/reception rows, 24 accommodation rows, and 83 subscription/service rows; most benefit records do not disclose value.
 - `entity_industry_classification`: 35,874 generated rows from `public_interest_sector_rules_v1`.
 - `official_identifier_observation`: 3,591 unique official observations: 3,590 current lobbyist-register observations from 3,602 parsed rows plus one ABN Lookup web-service smoke record for BHP Group Limited.
@@ -482,9 +494,10 @@ After each scheduled run, check:
 - Senate interests API ingestion is implemented; House interests rely on PDF text/OCR extraction.
 - Entity/industry classification is currently rule-based unless a row is explicitly `method = 'official'`. The first official lobbyist-register observations are loaded, but exact-name-only matches remain in a manual-review queue.
 - Local data.gov.au CKAN access for ASIC, ACNC, and ABN Bulk Extract returned HTTP 403 in this environment on 2026-04-27. Discovery now fails closed after writing the failure artifact so weekly runs do not silently proceed without those sources.
-- AEC boundary ingestion currently loads the full-resolution canonical boundary
-  layer only; simplified web-map derivatives/vector tiles still need to be
-  generated for frontend use.
+- AEC boundary ingestion preserves the full-resolution canonical boundary layer
+  and now also derives a `land_clipped_display` map geometry. Future vector-tile
+  work should use the display role by default and expose source geometry only
+  through explicit QA/research controls.
 - They Vote For You is a civic data source, not the official parliamentary
   source of record. The importer preserves that caveat and should later be
   cross-checked against official Hansard, Votes and Proceedings, and Senate

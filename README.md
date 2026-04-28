@@ -146,9 +146,12 @@ It writes a run manifest under `data/audit/pipeline_runs/`.
 The pipeline currently archives and normalizes:
 
 - APH current MP/Senator roster CSVs.
-- AEC annual disclosure bulk data.
+- AEC annual and election disclosure bulk data. Election rows are treated as
+  source disclosure observations, with cross-table duplicate observations
+  retained for audit but excluded from reported-total sums.
 - AEC current national federal electorate boundary shapefile and GeoJSON/PostGIS
-  boundary layer.
+  source boundary layer, plus Natural Earth-backed land-clipped display
+  geometry for the web map.
 - Senate register JSON records from the official APH-backed Senate interests API.
 - House register PDF text/OCR, numbered sections, and structured interest records.
 - Official APH House Votes and Proceedings and Senate Journals current

@@ -19,6 +19,7 @@ from au_politics_money.db.load import (
     apply_schema,
     connect,
     link_aec_direct_representative_money_flows,
+    load_influence_events,
 )
 from au_politics_money.db.party_entity_suggestions import (
     materialize_party_entity_link_candidates,
@@ -844,6 +845,138 @@ def test_aec_direct_member_return_rows_link_to_unique_people(
     assert recipient_person_id == integration_db.person_id
     assert confidence == "exact_name_context"
     assert status == "linked"
+
+
+def test_election_disclosure_observations_do_not_inflate_reported_totals(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
+            jurisdiction_id = cur.fetchone()[0]
+            rows = [
+                (
+                    "election-primary-donation",
+                    "Example Donor Pty Ltd",
+                    "Example Candidate",
+                    "election_candidate_or_senate_group_donation_received",
+                    "Donation Received",
+                    Jsonb(
+                        {
+                            "source_dataset": "aec_election",
+                            "event_name": "2025 Federal Election",
+                            "public_amount_counting_role": "primary_transaction",
+                            "normalizer_name": "aec_election_money_flow_normalizer",
+                            "disclosure_system": "aec_election_financial_disclosure",
+                        }
+                    ),
+                ),
+                (
+                    "election-duplicate-donation",
+                    "Example Donor Pty Ltd",
+                    "Example Candidate",
+                    "election_donor_donation_made",
+                    "Donation Made",
+                    Jsonb(
+                        {
+                            "source_dataset": "aec_election",
+                            "event_name": "2025 Federal Election",
+                            "public_amount_counting_role": "duplicate_observation",
+                            "normalizer_name": "aec_election_money_flow_normalizer",
+                            "disclosure_system": "aec_election_financial_disclosure",
+                        }
+                    ),
+                ),
+                (
+                    "election-campaign-ad",
+                    "Example Party",
+                    "Example Media Pty Ltd",
+                    "election_media_advertising_expenditure",
+                    "Media Advertisement",
+                    Jsonb(
+                        {
+                            "source_dataset": "aec_election",
+                            "event_name": "2025 Federal Election",
+                            "public_amount_counting_role": "single_observation",
+                            "normalizer_name": "aec_election_money_flow_normalizer",
+                            "disclosure_system": "aec_election_financial_disclosure",
+                        }
+                    ),
+                ),
+            ]
+            cur.executemany(
+                """
+                INSERT INTO money_flow (
+                    external_key, source_raw_name, recipient_raw_name, amount,
+                    financial_year, date_received, return_type, receipt_type,
+                    disclosure_category, jurisdiction_id, source_document_id,
+                    source_row_ref, confidence, metadata
+                )
+                VALUES (
+                    %s, %s, %s, 1200.00, NULL, '2025-04-14',
+                    'Election Candidate Return', %s, %s, %s, %s,
+                    'fixture.csv:1', 'unresolved', %s
+                )
+                """,
+                [
+                    (
+                        external_key,
+                        source_raw_name,
+                        recipient_raw_name,
+                        receipt_type,
+                        disclosure_category,
+                        jurisdiction_id,
+                        source_document_id,
+                        metadata,
+                    )
+                    for (
+                        external_key,
+                        source_raw_name,
+                        recipient_raw_name,
+                        disclosure_category,
+                        receipt_type,
+                        metadata,
+                    ) in rows
+                ],
+            )
+        conn.commit()
+
+        load_influence_events(conn)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    money_flow.external_key,
+                    influence_event.event_type,
+                    influence_event.amount_status,
+                    influence_event.reporting_period,
+                    influence_event.missing_data_flags
+                FROM influence_event
+                JOIN money_flow ON money_flow.id = influence_event.money_flow_id
+                WHERE money_flow.external_key LIKE 'election-%'
+                ORDER BY money_flow.external_key
+                """
+            )
+            loaded_rows = {row[0]: row[1:] for row in cur.fetchall()}
+
+    assert loaded_rows["election-primary-donation"][:3] == (
+        "donation_or_gift",
+        "reported",
+        "2025 Federal Election",
+    )
+    assert loaded_rows["election-duplicate-donation"][1] == "not_applicable"
+    assert (
+        "duplicate_disclosure_observation_not_counted_in_reported_total"
+        in loaded_rows["election-duplicate-donation"][3]
+    )
+    assert loaded_rows["election-campaign-ad"][0] == "campaign_expenditure"
+    assert loaded_rows["election-campaign-ad"][1] == "not_applicable"
+    assert "campaign_expenditure_not_counted_in_reported_total" in loaded_rows[
+        "election-campaign-ad"
+    ][3]
 
 
 def test_party_profile_aggregates_reviewed_party_entity_money(

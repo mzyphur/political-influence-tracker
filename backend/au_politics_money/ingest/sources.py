@@ -185,6 +185,36 @@ SOURCES: tuple[SourceRecord, ...] = (
         notes="Current and superseded federal electoral boundary downloads.",
     ),
     SourceRecord(
+        source_id="natural_earth_admin0_countries_10m",
+        name="Natural Earth 1:10m Admin 0 Countries",
+        jurisdiction="Global",
+        level="national",
+        source_type="display_land_mask",
+        url="https://naturalearth.s3.amazonaws.com/10m_cultural/ne_10m_admin_0_countries.zip",
+        expected_format="zip_shapefile",
+        update_frequency="rare",
+        priority="medium",
+        notes=(
+            "Public-domain country land polygons used only for display clipping. "
+            "Official electoral boundary geometries remain preserved separately."
+        ),
+    ),
+    SourceRecord(
+        source_id="natural_earth_physical_land_10m",
+        name="Natural Earth 1:10m Physical Land",
+        jurisdiction="Global",
+        level="national",
+        source_type="display_land_mask",
+        url="https://naturalearth.s3.amazonaws.com/10m_physical/ne_10m_land.zip",
+        expected_format="zip_shapefile",
+        update_frequency="rare",
+        priority="medium",
+        notes=(
+            "Public-domain physical land polygons used with Admin 0 countries to clip "
+            "display-only electorate geometry to actual land."
+        ),
+    ),
+    SourceRecord(
         source_id="they_vote_for_you_api",
         name="They Vote For You API",
         jurisdiction="Commonwealth",

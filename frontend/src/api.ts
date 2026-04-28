@@ -43,7 +43,8 @@ export async function fetchElectorateMap(options: {
 }): Promise<ElectorateFeatureCollection> {
   const params = new URLSearchParams({
     chamber: options.chamber,
-    simplify_tolerance: "0.0005"
+    simplify_tolerance: "0.0005",
+    geometry_role: "display"
   });
   if (options.state) params.set("state", options.state);
   if (options.boundarySet) params.set("boundary_set", options.boundarySet);

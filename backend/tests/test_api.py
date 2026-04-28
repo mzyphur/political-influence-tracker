@@ -64,12 +64,14 @@ def test_electorate_map_endpoint_delegates_to_query_layer(monkeypatch) -> None:
         boundary_set=None,
         include_geometry=True,
         simplify_tolerance=0.01,
+        geometry_role="display",
     ):
         assert chamber == "house"
         assert state == "VIC"
         assert boundary_set == "aec_federal_2025_current"
         assert include_geometry is False
         assert simplify_tolerance == 0.05
+        assert geometry_role == "display"
         return {
             "type": "FeatureCollection",
             "features": [],
