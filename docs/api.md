@@ -53,6 +53,11 @@ http://127.0.0.1:8008/docs
 - `GET /api/influence-context` - source-to-policy context rows from
   `person_policy_influence_context`, filterable by `person_id`, `topic_id`, and
   `public_sector`.
+- `GET /api/graph/influence` - source-backed network payload for exactly one
+  root (`person_id`, `party_id`, or `entity_id`). Nodes and edges are suitable
+  for frontend graph views. Party graph money edges use reviewed
+  `party_entity_link` rows only; `include_candidates=true` adds candidate
+  party/entity link edges with `evidence_status="candidate_requires_review"`.
 
 ## Search Behaviour
 

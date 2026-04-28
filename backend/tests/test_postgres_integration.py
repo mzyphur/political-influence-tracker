@@ -741,6 +741,21 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
         "lifetime_reported_amount_total"
     ] == 1250.0
 
+    graph_response = client.get(
+        "/api/graph/influence",
+        params={"person_id": integration_db.person_id, "limit": "10"},
+    )
+    assert graph_response.status_code == 200
+    graph_payload = graph_response.json()
+    assert graph_payload["root_id"] == f"person:{integration_db.person_id}"
+    assert graph_payload["edge_count"] == 1
+    assert graph_payload["edges"][0]["type"] == "disclosed_to_representative"
+    assert graph_payload["edges"][0]["reported_amount_total"] == 1250.0
+    assert {node["label"] for node in graph_payload["nodes"]} >= {
+        "Jane Citizen",
+        "Clean Energy Pty Ltd",
+    }
+
     entity_response = client.get(f"/api/entities/{integration_db.entity_id}")
     assert entity_response.status_code == 200
     entity_payload = entity_response.json()
@@ -1130,3 +1145,16 @@ def test_party_entity_link_review_accepts_and_rejects_candidates(
     candidate_names = {entity["canonical_name"] for entity in payload["candidate_entities"]}
     assert "Example Party Rejected Campaign" not in candidate_names
     assert payload["money_summary"][0]["reported_amount_total"] == 3000.0
+
+    graph_response = client.get(
+        "/api/graph/influence",
+        params={"party_id": party_id, "include_candidates": "true", "limit": "20"},
+    )
+    assert graph_response.status_code == 200
+    graph_payload = graph_response.json()
+    edge_types = {edge["type"] for edge in graph_payload["edges"]}
+    assert "reviewed_party_entity_link" in edge_types
+    assert "money_to_reviewed_party_entities" in edge_types
+    graph_labels = {node["label"] for node in graph_payload["nodes"]}
+    assert "Example Party Federal Campaign" in graph_labels
+    assert "Example Party Rejected Campaign" not in graph_labels

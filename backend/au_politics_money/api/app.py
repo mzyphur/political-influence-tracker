@@ -151,6 +151,29 @@ def influence_context(
     )
 
 
+@app.get("/api/graph/influence")
+def influence_graph(
+    person_id: int | None = None,
+    party_id: int | None = None,
+    entity_id: int | None = None,
+    include_candidates: bool = False,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> dict:
+    try:
+        graph = queries.get_influence_graph(
+            person_id=person_id,
+            party_id=party_id,
+            entity_id=entity_id,
+            include_candidates=include_candidates,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not graph:
+        raise HTTPException(status_code=404, detail="Graph root not found")
+    return graph
+
+
 def main() -> None:
     import uvicorn
 

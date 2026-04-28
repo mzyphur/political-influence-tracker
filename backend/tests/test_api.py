@@ -119,6 +119,50 @@ def test_coverage_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     assert response.json()["active_country"] == "AU"
 
 
+def test_influence_graph_endpoint_delegates_to_query_layer(monkeypatch) -> None:
+    def fake_get_influence_graph(
+        *,
+        person_id=None,
+        party_id=None,
+        entity_id=None,
+        include_candidates=False,
+        limit=100,
+    ):
+        assert person_id == 123
+        assert party_id is None
+        assert entity_id is None
+        assert include_candidates is True
+        assert limit == 25
+        return {
+            "root_id": "person:123",
+            "nodes": [{"id": "person:123", "type": "person", "label": "Jane Citizen"}],
+            "edges": [],
+            "node_count": 1,
+            "edge_count": 0,
+            "filters": {},
+            "caveat": queries.GRAPH_CAVEAT,
+        }
+
+    monkeypatch.setattr(queries, "get_influence_graph", fake_get_influence_graph)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/graph/influence",
+        params={"person_id": "123", "include_candidates": "true", "limit": "25"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["root_id"] == "person:123"
+
+
+def test_influence_graph_requires_one_root() -> None:
+    client = TestClient(app)
+
+    response = client.get("/api/graph/influence")
+
+    assert response.status_code == 400
+
+
 def test_representative_profile_404(monkeypatch) -> None:
     monkeypatch.setattr(queries, "get_representative_profile", lambda person_id: {})
     client = TestClient(app)
