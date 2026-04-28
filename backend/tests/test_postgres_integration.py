@@ -158,6 +158,23 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
 
         cur.execute(
             """
+            INSERT INTO electorate_boundary (
+                electorate_id, boundary_set, valid_from, geom, source_document_id, metadata
+            )
+            VALUES (
+                %s, 'pytest_boundary_set', '2025-01-01',
+                ST_Multi(ST_GeomFromText(
+                    'POLYGON((144.90 -37.85,145.00 -37.85,145.00 -37.75,144.90 -37.75,144.90 -37.85))',
+                    4326
+                )),
+                %s, %s
+            )
+            """,
+            (electorate_id, source_document_id, Jsonb({"fixture": True})),
+        )
+
+        cur.execute(
+            """
             INSERT INTO person (
                 external_key, display_name, canonical_name, first_name, last_name,
                 source_document_id, metadata
@@ -322,6 +339,46 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     health_response = client.get("/api/health")
     assert health_response.status_code == 200
     assert health_response.json()["database"] == "ok"
+
+    map_response = client.get(
+        "/api/map/electorates",
+        params={"state": "VIC", "boundary_set": "pytest_boundary_set"},
+    )
+    assert map_response.status_code == 200
+    map_payload = map_response.json()
+    assert map_payload["type"] == "FeatureCollection"
+    assert map_payload["feature_count"] == 1
+    map_feature = map_payload["features"][0]
+    assert map_feature["geometry"]["type"] == "MultiPolygon"
+    assert map_feature["geometry"]["coordinates"][0][0][0] == [144.9, -37.85]
+    assert map_feature["properties"]["boundary_set"] == "pytest_boundary_set"
+    assert map_feature["properties"]["has_boundary"] is True
+    assert map_feature["properties"]["representative_name"] == "Jane Citizen"
+    assert map_feature["properties"]["current_representative_count"] == 1
+    assert map_feature["properties"]["current_representatives"][0]["display_name"] == "Jane Citizen"
+    assert map_feature["properties"]["party_breakdown"][0]["party_name"] == "Example Party"
+    assert (
+        map_feature["properties"]["current_representative_lifetime_influence_event_count"] == 1
+    )
+    assert map_feature["properties"]["current_representative_official_record_event_count"] == 1
+
+    missing_boundary_response = client.get(
+        "/api/map/electorates",
+        params={"state": "VIC", "boundary_set": "missing_boundary_set"},
+    )
+    assert missing_boundary_response.status_code == 200
+    assert missing_boundary_response.json()["feature_count"] == 0
+
+    no_geometry_response = client.get(
+        "/api/map/electorates",
+        params={
+            "state": "VIC",
+            "boundary_set": "pytest_boundary_set",
+            "include_geometry": "false",
+        },
+    )
+    assert no_geometry_response.status_code == 200
+    assert no_geometry_response.json()["features"][0]["geometry"] is None
 
     search_response = client.get(
         "/api/search",

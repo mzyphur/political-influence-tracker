@@ -76,6 +76,29 @@ def search(
     return queries.search_database(q, result_types=set(types) if types else None, limit=limit)
 
 
+@app.get("/api/map/electorates")
+def electorate_map(
+    chamber: Annotated[str, Query(pattern="^(house|senate)$")] = "house",
+    state: Annotated[str | None, Query(min_length=2, max_length=3)] = None,
+    boundary_set: Annotated[
+        str | None,
+        Query(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$"),
+    ] = None,
+    include_geometry: bool = True,
+    simplify_tolerance: Annotated[float, Query(ge=0.0, le=0.25)] = 0.01,
+) -> dict:
+    try:
+        return queries.get_electorate_map(
+            chamber=chamber,
+            state=state,
+            boundary_set=boundary_set,
+            include_geometry=include_geometry,
+            simplify_tolerance=simplify_tolerance,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/representatives/{person_id}")
 def representative_profile(person_id: int) -> dict:
     profile = queries.get_representative_profile(person_id)

@@ -56,6 +56,46 @@ def test_search_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     assert response.json()["result_count"] == 1
 
 
+def test_electorate_map_endpoint_delegates_to_query_layer(monkeypatch) -> None:
+    def fake_get_electorate_map(
+        *,
+        chamber="house",
+        state=None,
+        boundary_set=None,
+        include_geometry=True,
+        simplify_tolerance=0.01,
+    ):
+        assert chamber == "house"
+        assert state == "VIC"
+        assert boundary_set == "aec_federal_2025_current"
+        assert include_geometry is False
+        assert simplify_tolerance == 0.05
+        return {
+            "type": "FeatureCollection",
+            "features": [],
+            "feature_count": 0,
+            "filters": {},
+            "caveat": queries.MAP_CAVEAT,
+        }
+
+    monkeypatch.setattr(queries, "get_electorate_map", fake_get_electorate_map)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/map/electorates",
+        params={
+            "chamber": "house",
+            "state": "VIC",
+            "boundary_set": "aec_federal_2025_current",
+            "include_geometry": "false",
+            "simplify_tolerance": "0.05",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["type"] == "FeatureCollection"
+
+
 def test_representative_profile_404(monkeypatch) -> None:
     monkeypatch.setattr(queries, "get_representative_profile", lambda person_id: {})
     client = TestClient(app)

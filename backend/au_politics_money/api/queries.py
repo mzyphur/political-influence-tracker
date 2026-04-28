@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from datetime import date, datetime
 from decimal import Decimal
 from typing import Any
@@ -34,6 +35,12 @@ POSTCODE_CAVEAT = (
     "Australian postcodes can overlap multiple federal electorates. Postcode "
     "lookup will be enabled only after a source-backed postcode/locality to "
     "electorate crosswalk is ingested and caveated."
+)
+
+MAP_CAVEAT = (
+    "Map features are derived from source-backed electorate boundary records and "
+    "current office-term joins. Influence-event counts are non-rejected disclosed-record "
+    "counts for current representatives, not electorate-level allegations or causal claims."
 )
 
 
@@ -86,6 +93,14 @@ def _table_exists(conn, table_name: str) -> bool:
     with conn.cursor() as cur:
         cur.execute("SELECT to_regclass(%s)", (table_name,))
         return cur.fetchone()[0] is not None
+
+
+def _geometry_from_geojson(value: str | dict | None) -> dict[str, Any] | None:
+    if value is None:
+        return None
+    if isinstance(value, dict):
+        return value
+    return json.loads(value)
 
 
 def _search_representatives(conn, pattern: str, limit: int) -> list[dict[str, Any]]:
@@ -439,6 +454,244 @@ def search_database(
         "result_count": len(results),
         "limitations": limitations,
         "caveat": SEARCH_CAVEAT,
+    }
+
+
+def get_electorate_map(
+    *,
+    chamber: str = "house",
+    state: str | None = None,
+    boundary_set: str | None = None,
+    include_geometry: bool = True,
+    simplify_tolerance: float = 0.01,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    chamber = chamber.strip().lower()
+    if chamber not in {"house", "senate"}:
+        raise ValueError("chamber must be 'house' or 'senate'.")
+    state = state.strip().upper() if state else None
+    simplify_tolerance = max(0.0, min(float(simplify_tolerance), 0.25))
+    geometry_expression = (
+        """
+        ST_AsGeoJSON(
+            ST_Multi(ST_SimplifyPreserveTopology(boundary.geom, %s)),
+            6
+        ) AS geometry_geojson
+        """
+        if include_geometry
+        else "NULL::TEXT AS geometry_geojson"
+    )
+    params: list[Any] = [simplify_tolerance] if include_geometry else []
+    boundary_filter = ""
+    if boundary_set:
+        boundary_filter = "AND boundary.boundary_set = %s"
+        params.append(boundary_set)
+    params.extend([boundary_set, boundary_set])
+    params.append(chamber)
+    state_filter = ""
+    if state:
+        state_filter = "AND upper(electorate.state_or_territory) = %s"
+        params.append(state)
+    boundary_required_filter = "AND boundary.id IS NOT NULL" if boundary_set else ""
+
+    with connect(database_url) as conn:
+        rows = _fetch_dicts(
+            conn,
+            f"""
+            SELECT
+                electorate.id AS electorate_id,
+                electorate.name AS electorate_name,
+                electorate.chamber,
+                electorate.state_or_territory,
+                boundary.boundary_set,
+                boundary.valid_from AS boundary_valid_from,
+                boundary.valid_to AS boundary_valid_to,
+                boundary.id IS NOT NULL AS has_boundary,
+                CASE
+                    WHEN reps.current_representative_count = 1 THEN reps.representative_id
+                    ELSE NULL
+                END AS representative_id,
+                CASE
+                    WHEN reps.current_representative_count = 1 THEN reps.representative_name
+                    ELSE NULL
+                END AS representative_name,
+                CASE
+                    WHEN reps.current_representative_count = 1 THEN reps.party_id
+                    ELSE NULL
+                END AS party_id,
+                CASE
+                    WHEN reps.current_representative_count = 1 THEN reps.party_name
+                    ELSE NULL
+                END AS party_name,
+                CASE
+                    WHEN reps.current_representative_count = 1 THEN reps.party_short_name
+                    ELSE NULL
+                END AS party_short_name,
+                reps.current_representative_count,
+                reps.current_representatives,
+                reps.party_breakdown,
+                COALESCE(influence_summary.influence_event_count, 0)
+                    AS current_representative_lifetime_influence_event_count,
+                COALESCE(influence_summary.money_event_count, 0)
+                    AS current_representative_lifetime_money_event_count,
+                COALESCE(influence_summary.benefit_event_count, 0)
+                    AS current_representative_lifetime_benefit_event_count,
+                COALESCE(influence_summary.needs_review_event_count, 0)
+                    AS current_representative_needs_review_event_count,
+                COALESCE(influence_summary.official_record_event_count, 0)
+                    AS current_representative_official_record_event_count,
+                influence_summary.reported_amount_total
+                    AS current_representative_lifetime_reported_amount_total,
+                {geometry_expression}
+            FROM electorate
+            LEFT JOIN LATERAL (
+                SELECT boundary_row.*
+                FROM electorate_boundary boundary_row
+                WHERE boundary_row.electorate_id = electorate.id
+                {boundary_filter.replace("boundary.", "boundary_row.")}
+                  AND (
+                    %s::text IS NOT NULL
+                    OR boundary_row.valid_from IS NULL
+                    OR boundary_row.valid_from <= CURRENT_DATE
+                  )
+                  AND (
+                    %s::text IS NOT NULL
+                    OR boundary_row.valid_to IS NULL
+                    OR boundary_row.valid_to >= CURRENT_DATE
+                  )
+                ORDER BY boundary_row.valid_from DESC NULLS LAST, boundary_row.id DESC
+                LIMIT 1
+            ) boundary ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT
+                    (array_agg(person.id ORDER BY person.display_name))[1] AS representative_id,
+                    (array_agg(person.display_name ORDER BY person.display_name))[1]
+                        AS representative_name,
+                    (array_agg(party.id ORDER BY person.display_name))[1] AS party_id,
+                    (array_agg(party.name ORDER BY person.display_name))[1] AS party_name,
+                    (array_agg(party.short_name ORDER BY person.display_name))[1]
+                        AS party_short_name,
+                    count(person.id) AS current_representative_count,
+                    COALESCE(
+                        jsonb_agg(
+                            jsonb_build_object(
+                                'person_id', person.id,
+                                'display_name', person.display_name,
+                                'party_id', party.id,
+                                'party_name', party.name,
+                                'party_short_name', party.short_name,
+                                'chamber', office_term.chamber,
+                                'term_start', office_term.term_start
+                            )
+                            ORDER BY person.display_name
+                        ) FILTER (WHERE person.id IS NOT NULL),
+                        '[]'::jsonb
+                    ) AS current_representatives,
+                    COALESCE(
+                        (
+                            SELECT jsonb_agg(
+                                jsonb_build_object(
+                                    'party_id', party_counts.party_id,
+                                    'party_name', party_counts.party_name,
+                                    'party_short_name', party_counts.party_short_name,
+                                    'representative_count', party_counts.representative_count
+                                )
+                                ORDER BY party_counts.representative_count DESC,
+                                    party_counts.party_name
+                            )
+                            FROM (
+                                SELECT
+                                    party.id AS party_id,
+                                    party.name AS party_name,
+                                    party.short_name AS party_short_name,
+                                    count(DISTINCT person.id) AS representative_count
+                                FROM office_term
+                                JOIN person ON person.id = office_term.person_id
+                                LEFT JOIN party ON party.id = office_term.party_id
+                                WHERE office_term.electorate_id = electorate.id
+                                  AND office_term.term_end IS NULL
+                                GROUP BY party.id, party.name, party.short_name
+                            ) party_counts
+                        ),
+                        '[]'::jsonb
+                    ) AS party_breakdown
+                FROM office_term
+                JOIN person ON person.id = office_term.person_id
+                LEFT JOIN party ON party.id = office_term.party_id
+                WHERE office_term.electorate_id = electorate.id
+                  AND office_term.term_end IS NULL
+            ) reps ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT
+                    count(influence_event.id) AS influence_event_count,
+                    count(influence_event.id) FILTER (
+                        WHERE influence_event.event_family = 'money'
+                    ) AS money_event_count,
+                    count(influence_event.id) FILTER (
+                        WHERE influence_event.event_family = 'benefit'
+                    ) AS benefit_event_count,
+                    count(influence_event.id) FILTER (
+                        WHERE influence_event.review_status = 'needs_review'
+                    ) AS needs_review_event_count,
+                    count(influence_event.id) FILTER (
+                        WHERE influence_event.evidence_status IN (
+                            'official_record',
+                            'official_record_parsed'
+                        )
+                    ) AS official_record_event_count,
+                    sum(influence_event.amount) FILTER (
+                        WHERE influence_event.amount_status = 'reported'
+                    ) AS reported_amount_total
+                FROM (
+                    SELECT DISTINCT office_term.person_id
+                    FROM office_term
+                    WHERE office_term.electorate_id = electorate.id
+                      AND office_term.term_end IS NULL
+                ) current_people
+                JOIN influence_event
+                  ON influence_event.recipient_person_id = current_people.person_id
+                WHERE influence_event.review_status <> 'rejected'
+            ) influence_summary ON TRUE
+            WHERE electorate.chamber = %s
+            {state_filter}
+            {boundary_required_filter}
+            ORDER BY electorate.state_or_territory, electorate.name
+            """,
+            tuple(params),
+        )
+
+    features = []
+    for row in rows:
+        geometry = _geometry_from_geojson(row.pop("geometry_geojson"))
+        electorate_id = row.pop("electorate_id")
+        electorate_name = row.pop("electorate_name")
+        features.append(
+            {
+                "type": "Feature",
+                "id": electorate_id,
+                "geometry": geometry,
+                "properties": _jsonable(
+                    {
+                        "electorate_id": electorate_id,
+                        "electorate_name": electorate_name,
+                        **row,
+                    }
+                ),
+            }
+        )
+
+    return {
+        "type": "FeatureCollection",
+        "features": features,
+        "feature_count": len(features),
+        "filters": {
+            "chamber": chamber,
+            "state": state,
+            "boundary_set": boundary_set,
+            "include_geometry": include_geometry,
+            "simplify_tolerance": simplify_tolerance,
+        },
+        "caveat": MAP_CAVEAT,
     }
 
 

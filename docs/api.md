@@ -33,6 +33,10 @@ http://127.0.0.1:8008/docs
 - `GET /api/search?q=...` - global search across representatives,
   electorates, parties, entities/donors, sectors, policy topics, and postcode
   lookups where a postcode crosswalk has been loaded.
+- `GET /api/map/electorates` - GeoJSON-style FeatureCollection for the national
+  map, filterable by `chamber`, `state`, and `boundary_set`, with optional
+  simplified boundary geometry and current representative/party/influence-event
+  summary properties.
 - `GET /api/representatives/{person_id}` - current profile with office terms,
   influence-by-sector summaries, vote-topic summaries, and reviewed
   source-to-policy context.
@@ -78,6 +82,34 @@ Preferred implementation path:
    same as Australia Post delivery postcodes.
 3. Store ambiguous postcode results as multiple electorate candidates with
    method, confidence, source document, and caveat metadata.
+
+## Map Features
+
+`/api/map/electorates` returns a GeoJSON-style `FeatureCollection` for the
+frontend map. By default it emits House electorates with simplified geometry
+from `electorate_boundary`, current representative and party fields from
+`office_term`, and non-rejected disclosed influence-event counts for the current
+representative or representatives.
+
+Useful parameters:
+
+- `chamber=house|senate`
+- `state=VIC`, `NSW`, etc.
+- `boundary_set=aec_federal_2025_current`
+- `include_geometry=false` for sidebar/list loading.
+- `simplify_tolerance=0.01` for lighter map payloads during development.
+
+When `boundary_set` is supplied, only electorates with that boundary set are
+returned. When it is omitted, the endpoint selects the latest currently valid
+boundary per electorate. The singular `representative_*` and `party_*` fields
+are populated only when exactly one current representative is attached; use
+`current_representatives` and `party_breakdown` for multi-member chambers.
+Influence summary fields are explicitly named
+`current_representative_lifetime_*` because they summarize publishable records
+for the current representative(s), not the electorate itself.
+
+Map counts are discovery context only. They are not claims about misconduct,
+causation, or whether any money/gift/interest affected a vote or policy action.
 
 ## Source-To-Effect Context
 

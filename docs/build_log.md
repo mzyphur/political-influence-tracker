@@ -215,6 +215,16 @@ Verification:
   This test exposed and fixed migration `009` view replay behavior by dropping
   dependent views before recreating them. Local DB-backed test runs require the
   explicit `AUPOL_RUN_POSTGRES_INTEGRATION=1` opt-in.
+- Added the first map-facing API slice for the future web app:
+  `/api/map/electorates` returns a GeoJSON-style FeatureCollection with
+  optional simplified electorate geometry, current representative and party
+  properties, and non-rejected disclosed influence-event summary counts. The
+  endpoint filters explicit boundary-set requests to matching boundaries, uses
+  currently valid boundaries by default, avoids singular representative labels
+  for multi-member electorates, and names map counts as current-representative
+  lifetime context rather than electorate-level totals. The integration test now
+  seeds a PostGIS boundary and verifies this endpoint through the real
+  FastAPI/PostgreSQL path.
 
 Notable data observations:
 
