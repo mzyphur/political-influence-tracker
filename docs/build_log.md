@@ -230,6 +230,12 @@ Verification:
   `/api/search`. The initial interface is a real national explorer screen with
   a map, compact search/filter controls, current map totals, selectable
   electorates, and an evidence/caveat-aware side panel.
+- Extended the frontend/backend map path for Senate and future jurisdiction
+  levels. The UI now exposes Federal, State, and Council scopes, with
+  Federal/Commonwealth active and State/Council clearly reserved for planned
+  ingestion layers. The Senate map now returns state/territory features derived
+  from source-backed House boundaries, while senator lists and influence
+  summaries come from Senate office terms.
 
 Notable data observations:
 

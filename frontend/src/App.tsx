@@ -18,16 +18,25 @@ import {
   AUSTRALIA_BOUNDS,
   electorateColor,
   findFeatureByResult,
-  formatMoney
+  formatMoney,
+  senateRegionColor
 } from "./map";
 import type { ElectorateFeature, LoadState, SearchResult } from "./types";
 
 const states = ["All", "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"];
+type DataLevel = "federal" | "state" | "council";
+
+const levelLabels: Record<DataLevel, string> = {
+  federal: "Federal",
+  state: "State",
+  council: "Council"
+};
 
 function App() {
   const [features, setFeatures] = useState<ElectorateFeature[]>([]);
   const [selectedFeature, setSelectedFeature] = useState<ElectorateFeature | null>(null);
   const [mapCaveat, setMapCaveat] = useState("");
+  const [dataLevel, setDataLevel] = useState<DataLevel>("federal");
   const [stateFilter, setStateFilter] = useState("All");
   const [chamber, setChamber] = useState<"house" | "senate">("house");
   const [mapStatus, setMapStatus] = useState<LoadState>("idle");
@@ -36,8 +45,19 @@ function App() {
   const [searchStatus, setSearchStatus] = useState<LoadState>("idle");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchCaveat, setSearchCaveat] = useState("");
+  const [pendingSearchResult, setPendingSearchResult] = useState<SearchResult | null>(null);
 
   useEffect(() => {
+    if (dataLevel !== "federal") {
+      setFeatures([]);
+      setSelectedFeature(null);
+      setMapStatus("ready");
+      setMapError("");
+      setMapCaveat(
+        `${levelLabels[dataLevel]} data is part of the planned expansion. The current loaded dataset is Commonwealth/federal.`
+      );
+      return;
+    }
     const controller = new AbortController();
     setMapStatus("loading");
     setMapError("");
@@ -62,11 +82,19 @@ function App() {
         setMapError(error.message);
       });
     return () => controller.abort();
-  }, [chamber, stateFilter]);
+  }, [chamber, dataLevel, stateFilter]);
+
+  useEffect(() => {
+    if (!pendingSearchResult || dataLevel !== "federal") return;
+    const feature = findFeatureByResult(pendingSearchResult.id, pendingSearchResult.type, features);
+    if (!feature) return;
+    setSelectedFeature(feature);
+    setPendingSearchResult(null);
+  }, [dataLevel, features, pendingSearchResult]);
 
   useEffect(() => {
     const cleaned = query.trim();
-    if (cleaned.length < 3) {
+    if (dataLevel !== "federal" || cleaned.length < 3) {
       setSearchResults([]);
       setSearchStatus("idle");
       return;
@@ -90,7 +118,7 @@ function App() {
       controller.abort();
       window.clearTimeout(handle);
     };
-  }, [query]);
+  }, [dataLevel, query]);
 
   const totals = useMemo(() => {
     return features.reduce(
@@ -109,7 +137,22 @@ function App() {
 
   function selectSearchResult(result: SearchResult) {
     const feature = findFeatureByResult(result.id, result.type, features);
-    if (feature) setSelectedFeature(feature);
+    if (feature) {
+      setSelectedFeature(feature);
+      setPendingSearchResult(null);
+      return;
+    }
+
+    const resultChamber = stringMetadata(result, "chamber")?.toLowerCase();
+    const resultState = stringMetadata(result, "state_or_territory")?.toUpperCase();
+    if (resultChamber === "house" || resultChamber === "senate") {
+      setDataLevel("federal");
+      setChamber(resultChamber);
+      if (resultState && states.includes(resultState)) {
+        setStateFilter(resultState);
+      }
+      setPendingSearchResult(result);
+    }
   }
 
   return (
@@ -125,23 +168,51 @@ function App() {
           <div className="brand-block">
             <Landmark size={24} aria-hidden="true" />
             <div>
-              <p className="eyebrow">Commonwealth beta</p>
+              <p className="eyebrow">
+                {dataLevel === "federal"
+                  ? `${chamber === "senate" ? "Federal Senate" : "Federal House"} beta`
+                  : `${levelLabels[dataLevel]} pipeline planned`}
+              </p>
               <h1>Political Influence Explorer</h1>
             </div>
           </div>
           <div className="status-pill" data-state={mapStatus}>
             {mapStatus === "loading" ? <Loader2 size={16} className="spin" /> : <CircleDot size={16} />}
-            <span>{mapStatus === "loading" ? "Loading records" : `${features.length} map features`}</span>
+            <span>
+              {mapStatus === "loading"
+                ? "Loading records"
+                : dataLevel === "federal"
+                  ? `${features.length} map features`
+                  : "Expansion scope"}
+            </span>
           </div>
         </div>
 
         <aside className="control-panel" aria-label="Map controls and search">
+          <div className="level-control" role="group" aria-label="Government level">
+            {(["federal", "state", "council"] as DataLevel[]).map((level) => (
+              <button
+                key={level}
+                type="button"
+                className={dataLevel === level ? "active" : ""}
+                onClick={() => setDataLevel(level)}
+              >
+                {levelLabels[level]}
+              </button>
+            ))}
+          </div>
+
           <div className="search-box">
             <Search size={18} aria-hidden="true" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search representatives, electorates, parties, entities, sectors"
+              disabled={dataLevel !== "federal"}
+              placeholder={
+                dataLevel === "federal"
+                  ? "Search representatives, electorates, parties, entities, sectors"
+                  : `${levelLabels[dataLevel]} search will activate after ingestion`
+              }
               aria-label="Search the political influence database"
             />
             {searchStatus === "loading" && <Loader2 size={16} className="spin" aria-hidden="true" />}
@@ -152,6 +223,7 @@ function App() {
               <button
                 type="button"
                 className={chamber === "house" ? "active" : ""}
+                disabled={dataLevel !== "federal"}
                 onClick={() => setChamber("house")}
               >
                 House
@@ -159,6 +231,7 @@ function App() {
               <button
                 type="button"
                 className={chamber === "senate" ? "active" : ""}
+                disabled={dataLevel !== "federal"}
                 onClick={() => setChamber("senate")}
               >
                 Senate
@@ -166,7 +239,11 @@ function App() {
             </div>
             <label className="select-label">
               <Layers size={16} aria-hidden="true" />
-              <select value={stateFilter} onChange={(event) => setStateFilter(event.target.value)}>
+              <select
+                value={stateFilter}
+                disabled={dataLevel !== "federal"}
+                onChange={(event) => setStateFilter(event.target.value)}
+              >
                 {states.map((state) => (
                   <option key={state} value={state}>
                     {state}
@@ -176,8 +253,22 @@ function App() {
             </label>
           </div>
 
+          {dataLevel !== "federal" && (
+            <div className="scope-notice">
+              <strong>{levelLabels[dataLevel]} scope is reserved.</strong>
+              <span>
+                The interface is ready for this level, but the source pipelines and
+                database layers are not loaded yet.
+              </span>
+            </div>
+          )}
+
           <div className="metric-grid" aria-label="Current map totals">
-            <Metric icon={<MapPin size={17} />} label="Electorates" value={totals.electorates.toLocaleString("en-AU")} />
+            <Metric
+              icon={<MapPin size={17} />}
+              label={chamber === "senate" ? "Regions" : "Electorates"}
+              value={totals.electorates.toLocaleString("en-AU")}
+            />
             <Metric icon={<Users size={17} />} label="Reps" value={totals.representatives.toLocaleString("en-AU")} />
             <Metric icon={<Building2 size={17} />} label="Events" value={totals.events.toLocaleString("en-AU")} />
             <Metric icon={<Banknote size={17} />} label="Reported" value={formatMoney(totals.reported)} />
@@ -212,7 +303,11 @@ function App() {
         <DetailsPanel
           feature={selectedFeature}
           caveat={mapCaveat}
-          partyColor={electorateColor(selectedFeature?.properties.party_name)}
+          partyColor={
+            selectedFeature?.properties.chamber === "senate"
+              ? senateRegionColor(selectedFeature.properties.state_or_territory)
+              : electorateColor(selectedFeature?.properties.party_name)
+          }
         />
       </section>
     </main>
@@ -238,3 +333,8 @@ function Metric({
 }
 
 export default App;
+
+function stringMetadata(result: SearchResult, key: string): string | null {
+  const value = result.metadata[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}

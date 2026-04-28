@@ -7,6 +7,12 @@ The first usable screen is the national map explorer:
 - `/api/map/electorates` supplies electorate GeoJSON-style features.
 - `/api/search` supplies global search results.
 - MapTiler supplies the basemap through `VITE_MAPTILER_API_KEY`.
+- The government-level selector includes Federal, State, and Council scopes.
+  Federal/Commonwealth is active now; State and Council are visible planned
+  expansion scopes until their ingestion layers are built.
+- Federal House maps use electorate geometries. Federal Senate maps use
+  state/territory composite geometries derived from source-backed House
+  boundaries, with senator data from Senate office records.
 
 ## Local Development
 

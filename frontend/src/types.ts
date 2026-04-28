@@ -18,6 +18,7 @@ export type MapProperties = {
   current_representative_count: number;
   current_representatives: RepresentativeSummary[];
   party_breakdown: PartyBreakdown[];
+  map_geometry_scope?: string;
   current_representative_lifetime_influence_event_count: number;
   current_representative_lifetime_money_event_count: number;
   current_representative_lifetime_benefit_event_count: number;

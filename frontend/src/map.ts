@@ -37,6 +37,29 @@ export function electorateColor(partyName?: string | null): string {
   return "#78828c";
 }
 
+export function senateRegionColor(state?: string | null): string {
+  switch ((state || "").toUpperCase()) {
+    case "ACT":
+      return "#6b8fcf";
+    case "NSW":
+      return "#5e9fc0";
+    case "NT":
+      return "#d48952";
+    case "QLD":
+      return "#b96969";
+    case "SA":
+      return "#7d79bf";
+    case "TAS":
+      return "#4c9b82";
+    case "VIC":
+      return "#687ec3";
+    case "WA":
+      return "#c49a4c";
+    default:
+      return "#78828c";
+  }
+}
+
 export function formatMoney(value?: number | null): string {
   if (value === null || value === undefined) return "Not disclosed";
   return new Intl.NumberFormat("en-AU", {

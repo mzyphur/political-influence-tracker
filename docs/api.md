@@ -108,6 +108,13 @@ Influence summary fields are explicitly named
 `current_representative_lifetime_*` because they summarize publishable records
 for the current representative(s), not the electorate itself.
 
+For `chamber=senate`, the endpoint returns one current Senate delegation feature
+per state or territory. Senate geometries are composite state/territory features
+derived from source-backed federal House electorate boundaries for the same
+state or territory, while senator lists and influence counts come from Senate
+office terms. Features expose `map_geometry_scope` so the frontend can label
+that geometry provenance.
+
 Map counts are discovery context only. They are not claims about misconduct,
 causation, or whether any money/gift/interest affected a vote or policy action.
 

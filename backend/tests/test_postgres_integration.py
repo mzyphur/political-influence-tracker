@@ -158,6 +158,18 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
 
         cur.execute(
             """
+            INSERT INTO electorate (
+                name, jurisdiction_id, chamber, state_or_territory, source_document_id
+            )
+            VALUES ('Senate - VIC', %s, 'senate', 'VIC', %s)
+            RETURNING id
+            """,
+            (jurisdiction_id, source_document_id),
+        )
+        senate_electorate_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
             INSERT INTO electorate_boundary (
                 electorate_id, boundary_set, valid_from, geom, source_document_id, metadata
             )
@@ -191,6 +203,22 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
 
         cur.execute(
             """
+            INSERT INTO person (
+                external_key, display_name, canonical_name, first_name, last_name,
+                source_document_id, metadata
+            )
+            VALUES (
+                'person:alex-senator', 'Alex Senator', 'Alex Senator', 'Alex',
+                'Senator', %s, %s
+            )
+            RETURNING id
+            """,
+            (source_document_id, Jsonb({"fixture": True})),
+        )
+        senator_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
             INSERT INTO office_term (
                 external_key, person_id, chamber, electorate_id, party_id, role_title,
                 term_start, source_document_id
@@ -201,6 +229,26 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
             )
             """,
             (person_id, electorate_id, party_id, source_document_id),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO office_term (
+                external_key, person_id, chamber, electorate_id, party_id, role_title,
+                term_start, source_document_id, metadata
+            )
+            VALUES (
+                'term:alex-senator-current', %s, 'senate', %s, %s, 'Senator',
+                '2022-07-01', %s, %s
+            )
+            """,
+            (
+                senator_id,
+                senate_electorate_id,
+                party_id,
+                source_document_id,
+                Jsonb({"state": "VIC"}),
+            ),
         )
 
         cur.execute(
@@ -380,6 +428,27 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert no_geometry_response.status_code == 200
     assert no_geometry_response.json()["features"][0]["geometry"] is None
 
+    senate_map_response = client.get(
+        "/api/map/electorates",
+        params={
+            "chamber": "senate",
+            "state": "VIC",
+            "boundary_set": "pytest_boundary_set",
+        },
+    )
+    assert senate_map_response.status_code == 200
+    senate_payload = senate_map_response.json()
+    assert senate_payload["feature_count"] == 1
+    senate_feature = senate_payload["features"][0]
+    assert senate_feature["geometry"]["type"] == "MultiPolygon"
+    assert senate_feature["properties"]["electorate_name"] == "Senate - VIC"
+    assert senate_feature["properties"]["current_representative_count"] == 1
+    assert senate_feature["properties"]["representative_name"] is None
+    assert (
+        senate_feature["properties"]["map_geometry_scope"]
+        == "state_territory_composite_from_house_boundaries"
+    )
+
     search_response = client.get(
         "/api/search",
         params=[("q", "Jane Citizen"), ("types", "representative"), ("limit", "5")],
@@ -389,6 +458,16 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert search_payload["result_count"] == 1
     assert search_payload["results"][0]["id"] == integration_db.person_id
     assert search_payload["results"][0]["label"] == "Jane Citizen"
+
+    token_search_response = client.get(
+        "/api/search",
+        params=[("q", "Senator Alex"), ("types", "representative"), ("limit", "5")],
+    )
+    assert token_search_response.status_code == 200
+    token_results = token_search_response.json()["results"]
+    assert token_results[0]["label"] == "Alex Senator"
+    assert token_results[0]["metadata"]["chamber"] == "senate"
+    assert token_results[0]["metadata"]["state_or_territory"] == "VIC"
 
     broad_search_response = client.get(
         "/api/search",

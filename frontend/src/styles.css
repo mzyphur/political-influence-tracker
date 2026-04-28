@@ -151,6 +151,33 @@ button {
   padding: 15px;
 }
 
+.level-control {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 5px;
+  margin-bottom: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #edf3f2;
+  padding: 4px;
+}
+
+.level-control button {
+  min-height: 34px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #516067;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.level-control button.active {
+  background: linear-gradient(180deg, #243942, #17282f);
+  color: #fff;
+  box-shadow: 0 7px 16px rgba(23, 40, 47, 0.2);
+}
+
 .search-box {
   display: grid;
   grid-template-columns: 20px 1fr 20px;
@@ -201,6 +228,13 @@ button {
   color: #516067;
   font-size: 13px;
   font-weight: 800;
+}
+
+.segmented button:disabled,
+.select-label select:disabled,
+.search-box input:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 
 .segmented button.active {
@@ -282,6 +316,22 @@ button {
   color: #8a3328;
   padding: 10px;
   font-size: 13px;
+}
+
+.scope-notice {
+  display: grid;
+  gap: 3px;
+  margin-top: 12px;
+  border: 1px solid rgba(189, 122, 49, 0.28);
+  border-radius: 8px;
+  background: rgba(255, 240, 215, 0.86);
+  color: #664014;
+  padding: 10px;
+  font-size: 13px;
+}
+
+.scope-notice strong {
+  color: #483014;
 }
 
 .search-results {
@@ -377,6 +427,13 @@ button {
   font-size: 13px;
   letter-spacing: 0;
   text-transform: uppercase;
+}
+
+.scope-caption {
+  margin: -2px 0 10px;
+  color: var(--ink-muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .rep-list,

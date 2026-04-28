@@ -31,6 +31,11 @@ export function DetailsPanel({ feature, caveat, partyColor }: DetailsPanelProps)
 
       <section className="panel-section">
         <h3>Current Representation</h3>
+        {properties.map_geometry_scope && (
+          <p className="scope-caption">
+            Map geometry: {properties.map_geometry_scope.replaceAll("_", " ")}
+          </p>
+        )}
         <div className="rep-list">
           {properties.current_representatives.length ? (
             properties.current_representatives.map((representative) => (
