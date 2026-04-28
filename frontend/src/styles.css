@@ -1362,6 +1362,11 @@ a:focus-visible {
   stroke: #8b5cf6;
 }
 
+.graph-edge[data-edge-kind="context"] {
+  stroke: #7c3aed;
+  stroke-dasharray: 7 5;
+}
+
 .graph-edge[data-selected="true"] {
   opacity: 1;
   filter: drop-shadow(0 0 5px rgba(30, 109, 121, 0.36));
@@ -1443,6 +1448,10 @@ a:focus-visible {
 
 .graph-legend i[data-kind="candidate"] {
   background: repeating-linear-gradient(90deg, #d8781f 0 6px, transparent 6px 10px);
+}
+
+.graph-legend i[data-kind="context"] {
+  background: repeating-linear-gradient(90deg, #7c3aed 0 7px, transparent 7px 12px);
 }
 
 .graph-inspector {

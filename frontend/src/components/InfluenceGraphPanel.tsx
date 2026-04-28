@@ -99,7 +99,7 @@ export function InfluenceGraphPanel({
             </span>
             <span>
               <CheckCircle2 size={15} aria-hidden="true" />
-              {reviewedEdgeCount(graph).toLocaleString("en-AU")} reviewed/public edges
+              {reviewedEdgeCount(graph).toLocaleString("en-AU")} reviewed/context edges
             </span>
             <span>
               <CircleDashed size={15} aria-hidden="true" />
@@ -140,8 +140,18 @@ export function InfluenceGraphPanel({
                         x2={target.x}
                         y2={target.y}
                         className="graph-edge-hit"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Inspect relationship: ${edgeLabel(edge, graph.nodes)}`}
                         onMouseEnter={() => setSelectedEdgeId(edge.id)}
+                        onFocus={() => setSelectedEdgeId(edge.id)}
                         onClick={() => setSelectedEdgeId(edge.id)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Enter" || event.key === " ") {
+                            event.preventDefault();
+                            setSelectedEdgeId(edge.id);
+                          }
+                        }}
                       />
                       <line
                         x1={edgePoint(source, target, source.radius + 4).x}
@@ -180,6 +190,7 @@ export function InfluenceGraphPanel({
               <div className="graph-legend" aria-label="Graph legend">
                 <span><i data-kind="money" /> Public disclosure flow</span>
                 <span><i data-kind="reviewed" /> Reviewed party link</span>
+                <span><i data-kind="context" /> Modelled/context path</span>
                 <span><i data-kind="candidate" /> Candidate, needs review</span>
               </div>
             </div>
@@ -212,7 +223,7 @@ export function InfluenceGraphPanel({
                 <span>{edgeLabel(edge, graph.nodes)}</span>
                 <strong>{edge.type.replaceAll("_", " ")}</strong>
                 <small>
-                  {[eventCountLabel(edge), formatMoney(edge.reported_amount_total)]
+                  {[eventCountLabel(edge), edgeAmountLabel(edge)]
                     .filter(Boolean)
                     .join(" · ")}
                 </small>
@@ -282,6 +293,7 @@ function nodeWeight(edges: InfluenceGraphEdge[], nodeId: string) {
 }
 
 function edgeNumericWeight(edge: InfluenceGraphEdge) {
+  if (isContextEdge(edge)) return Math.min(edge.event_count ?? 1, 3);
   const amount = edge.reported_amount_total ?? 0;
   if (amount > 0) return Math.log10(amount + 1) * 10;
   return edge.event_count ?? 1;
@@ -305,14 +317,25 @@ function edgePoint(from: PositionedNode, to: PositionedNode, inset: number) {
 }
 
 function edgeWidth(edge: InfluenceGraphEdge) {
+  if (isContextEdge(edge)) return Math.min(2.6, 1.2 + edgeNumericWeight(edge) / 5);
   return Math.min(6, 1.4 + edgeNumericWeight(edge) / 9);
 }
 
 function edgeKind(edge: InfluenceGraphEdge) {
   if (isCandidateEdge(edge)) return "candidate";
+  if (isContextEdge(edge)) return "context";
   if (edge.type.includes("party_entity_link")) return "reviewed";
   if (edge.event_family === "benefit") return "benefit";
   return "money";
+}
+
+function isContextEdge(edge: InfluenceGraphEdge) {
+  return (
+    edge.type.includes("modelled") ||
+    edge.type.includes("representation_context") ||
+    edge.evidence_tier === "modelled_allocation" ||
+    edge.evidence_tier === "party_membership_context"
+  );
 }
 
 function isCandidateEdge(edge: InfluenceGraphEdge) {
@@ -330,7 +353,7 @@ function candidateEdgeCount(graph: InfluenceGraph) {
 function graphSubtitle(root: GraphRoot, graph: InfluenceGraph | null) {
   const scope = root.kind === "person" ? "representative" : root.kind;
   if (!graph) return `Loading ${scope} relationships`;
-  return `${graph.edge_count.toLocaleString("en-AU")} source-backed relationships around this ${scope}`;
+  return `${graph.edge_count.toLocaleString("en-AU")} source-backed, reviewed, and modelled context relationships around this ${scope}`;
 }
 
 function truncateLabel(label: string, maxLength: number) {
@@ -355,8 +378,18 @@ function edgeTooltip(edge: InfluenceGraphEdge) {
     edge.event_type ? `Type: ${edge.event_type}` : null,
     edge.link_type ? `Link: ${edge.link_type}` : null,
     edge.review_status ? `Review: ${edge.review_status}` : null,
+    edge.evidence_tier ? `Evidence tier: ${edge.evidence_tier.replaceAll("_", " ")}` : null,
+    edge.allocation_method
+      ? `Allocation: ${allocationLabel(edge)}`
+      : null,
     eventCountLabel(edge),
-    `Reported total: ${formatMoney(edge.reported_amount_total)}`
+    isContextEdge(edge)
+      ? "Direct personal reported total: not applicable to this edge"
+      : `Reported total: ${formatMoney(edge.reported_amount_total)}`,
+    edge.modelled_amount_total !== null && edge.modelled_amount_total !== undefined
+      ? `Estimated indirect exposure: ${formatMoney(edge.modelled_amount_total)} (not received)`
+      : null,
+    edge.claim_scope ?? null
   ]
     .filter(Boolean)
     .join("\n");
@@ -365,6 +398,23 @@ function edgeTooltip(edge: InfluenceGraphEdge) {
 function eventCountLabel(edge: InfluenceGraphEdge) {
   if (edge.event_count === null || edge.event_count === undefined) return null;
   return `${edge.event_count.toLocaleString("en-AU")} records`;
+}
+
+function edgeAmountLabel(edge: InfluenceGraphEdge) {
+  if (edge.modelled_amount_total !== null && edge.modelled_amount_total !== undefined) {
+    return `estimated indirect exposure ${formatMoney(edge.modelled_amount_total)} (not received)`;
+  }
+  return formatMoney(edge.reported_amount_total);
+}
+
+function allocationLabel(edge: InfluenceGraphEdge) {
+  if (
+    edge.allocation_method === "equal_current_representative_share" &&
+    edge.allocation_denominator
+  ) {
+    return `equal share across ${edge.allocation_denominator.toLocaleString("en-AU")} current representatives`;
+  }
+  return edge.allocation_method?.replaceAll("_", " ") ?? "not applicable";
 }
 
 function edgeLabel(edge: InfluenceGraphEdge, nodes: InfluenceGraphNode[]) {
@@ -384,13 +434,43 @@ function GraphEdgeCard({ edge }: { edge: InfluenceGraphEdge }) {
           <dd>{edge.event_count?.toLocaleString("en-AU") ?? "Not applicable"}</dd>
         </div>
         <div>
-          <dt>Reported total</dt>
-          <dd>{formatMoney(edge.reported_amount_total)}</dd>
+          <dt>{isContextEdge(edge) ? "Direct personal reported total" : "Reported total"}</dt>
+          <dd>
+            {isContextEdge(edge)
+              ? "Not applicable to this edge"
+              : formatMoney(edge.reported_amount_total)}
+          </dd>
         </div>
+        {edge.modelled_amount_total !== null && edge.modelled_amount_total !== undefined && (
+          <div>
+            <dt>Modelled exposure</dt>
+            <dd>{formatMoney(edge.modelled_amount_total)}</dd>
+          </div>
+        )}
+        {edge.party_context_reported_amount_total !== null &&
+          edge.party_context_reported_amount_total !== undefined && (
+            <div>
+              <dt>Party context total</dt>
+              <dd>{formatMoney(edge.party_context_reported_amount_total)}</dd>
+            </div>
+          )}
         <div>
           <dt>Evidence</dt>
-          <dd>{(edge.evidence_status || edge.review_status || "not recorded").replaceAll("_", " ")}</dd>
+          <dd>
+            {(
+              edge.evidence_tier ||
+              edge.evidence_status ||
+              edge.review_status ||
+              "not recorded"
+            ).replaceAll("_", " ")}
+          </dd>
         </div>
+        {edge.allocation_method && (
+          <div>
+            <dt>Allocation</dt>
+            <dd>{allocationLabel(edge)}</dd>
+          </div>
+        )}
         <div>
           <dt>Date span</dt>
           <dd>
@@ -400,6 +480,8 @@ function GraphEdgeCard({ edge }: { edge: InfluenceGraphEdge }) {
           </dd>
         </div>
       </dl>
+      {edge.claim_scope && <p>{edge.claim_scope}</p>}
+      {edge.display_caveat && <p>{edge.display_caveat}</p>}
       {edge.evidence_note && <p>{edge.evidence_note}</p>}
       {edge.source_urls?.[0] && (
         <a href={edge.source_urls[0]} target="_blank" rel="noreferrer">

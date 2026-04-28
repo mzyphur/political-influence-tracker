@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import re
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
 
@@ -83,8 +83,9 @@ PARTY_PROFILE_CAVEAT = (
 
 GRAPH_CAVEAT = (
     "Influence graph edges are source-backed disclosure relationships or reviewed "
-    "party/entity links. They are context for exploration, not claims of causation, "
-    "quid pro quo, improper influence, or corruption."
+    "party/entity links. Modelled party-to-representative exposure edges are analytical "
+    "allocations, not disclosed personal receipts. Graphs are context for exploration, "
+    "not claims of causation, quid pro quo, improper influence, or corruption."
 )
 
 
@@ -2540,6 +2541,8 @@ def _append_graph_edge(
             "method": metadata.get("method"),
             "review_status": metadata.get("review_status"),
             "evidence_status": metadata.get("evidence_status"),
+            "evidence_tier": metadata.get("evidence_tier"),
+            "allocation_method": metadata.get("allocation_method"),
         },
         sort_keys=True,
         default=str,
@@ -2579,6 +2582,415 @@ def _entity_or_raw_node(
     node_id = _raw_graph_node_id(raw_prefix, label)
     _add_graph_node(nodes, node_id=node_id, node_type="raw_name", label=label)
     return node_id
+
+
+def _append_reviewed_party_money_context(
+    conn,
+    *,
+    nodes: dict[str, dict[str, Any]],
+    edges: list[dict[str, Any]],
+    party_id: int,
+    party_node_id: str,
+    limit: int,
+) -> dict[str, Any]:
+    summary = _party_reviewed_money_summary(conn, party_id=party_id)
+    money_rows = _fetch_dicts(
+        conn,
+        """
+        WITH reviewed_entities AS (
+            SELECT DISTINCT entity_id
+            FROM party_entity_link
+            WHERE party_id = %s
+              AND review_status = 'reviewed'
+        )
+        SELECT
+            recipient_entity.id AS recipient_entity_id,
+            recipient_entity.canonical_name AS recipient_entity_name,
+            recipient_entity.entity_type AS recipient_entity_type,
+            source_entity.id AS source_entity_id,
+            source_entity.canonical_name AS source_entity_name,
+            influence_event.source_raw_name,
+            influence_event.event_type,
+            count(DISTINCT influence_event.id) AS event_count,
+            count(DISTINCT influence_event.id) FILTER (
+                WHERE influence_event.amount_status = 'reported'
+            ) AS reported_amount_event_count,
+            count(DISTINCT influence_event.id) FILTER (
+                WHERE influence_event.review_status = 'reviewed'
+            ) AS reviewed_event_count,
+            count(DISTINCT influence_event.id) FILTER (
+                WHERE influence_event.review_status = 'needs_review'
+            ) AS needs_review_event_count,
+            count(DISTINCT influence_event.id) FILTER (
+                WHERE jsonb_array_length(influence_event.missing_data_flags) > 0
+            ) AS missing_data_event_count,
+            sum(influence_event.amount) FILTER (
+                WHERE influence_event.amount_status = 'reported'
+            ) AS reported_amount_total,
+            min(influence_event.event_date) AS first_event_date,
+            max(influence_event.event_date) AS last_event_date,
+            array_remove(array_agg(DISTINCT source_document.url), NULL) AS source_urls
+        FROM influence_event
+        JOIN reviewed_entities recipient_link
+          ON recipient_link.entity_id = influence_event.recipient_entity_id
+        JOIN entity recipient_entity
+          ON recipient_entity.id = influence_event.recipient_entity_id
+        LEFT JOIN entity source_entity
+          ON source_entity.id = influence_event.source_entity_id
+        JOIN source_document
+          ON source_document.id = influence_event.source_document_id
+        WHERE influence_event.event_family = 'money'
+          AND influence_event.review_status <> 'rejected'
+          AND (
+                influence_event.source_entity_id IS NULL
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM reviewed_entities source_link
+                    WHERE source_link.entity_id = influence_event.source_entity_id
+                )
+          )
+        GROUP BY
+            recipient_entity.id,
+            recipient_entity.canonical_name,
+            recipient_entity.entity_type,
+            source_entity.id,
+            source_entity.canonical_name,
+            influence_event.source_raw_name,
+            influence_event.event_type
+        ORDER BY reported_amount_total DESC NULLS LAST, event_count DESC
+        LIMIT %s
+        """,
+        (party_id, limit),
+    )
+    display_recipient_entity_ids = sorted(
+        {int(row["recipient_entity_id"]) for row in money_rows}
+    )
+    link_rows = _fetch_dicts(
+        conn,
+        """
+        WITH selected_entities AS (
+            SELECT entity_id
+            FROM (
+                SELECT DISTINCT link.entity_id
+                FROM party_entity_link link
+                WHERE link.party_id = %s
+                  AND link.review_status = 'reviewed'
+                ORDER BY link.entity_id
+                LIMIT %s
+            ) limited_links
+            UNION
+            SELECT unnest(%s::bigint[])
+        )
+        SELECT
+            link.entity_id,
+            entity.canonical_name,
+            entity.entity_type,
+            link.link_type,
+            link.method,
+            link.confidence,
+            link.review_status,
+            link.evidence_note
+        FROM party_entity_link link
+        JOIN selected_entities selected ON selected.entity_id = link.entity_id
+        JOIN entity ON entity.id = link.entity_id
+        WHERE link.party_id = %s
+          AND link.review_status = 'reviewed'
+        ORDER BY entity.canonical_name, link.link_type
+        """,
+        (party_id, limit, display_recipient_entity_ids, party_id),
+    )
+    for row in link_rows:
+        party_entity_node = _graph_node_id("entity", row["entity_id"])
+        _add_graph_node(
+            nodes,
+            node_id=party_entity_node,
+            node_type="entity",
+            label=row["canonical_name"],
+            entity_type=row["entity_type"],
+        )
+        _append_graph_edge(
+            edges,
+            source=party_entity_node,
+            target=party_node_id,
+            edge_type="reviewed_party_entity_link",
+            link_type=row["link_type"],
+            method=row["method"],
+            confidence=row["confidence"],
+            review_status=row["review_status"],
+            evidence_note=row["evidence_note"],
+            evidence_tier="party_entity_context",
+            claim_scope="Reviewed party/entity relationship; not a person-level receipt.",
+        )
+    for row in money_rows:
+        recipient_id = _graph_node_id("entity", row["recipient_entity_id"])
+        _add_graph_node(
+            nodes,
+            node_id=recipient_id,
+            node_type="entity",
+            label=row["recipient_entity_name"],
+            entity_type=row["recipient_entity_type"],
+        )
+        source_id = _entity_or_raw_node(
+            nodes,
+            entity_id=row["source_entity_id"],
+            entity_name=row["source_entity_name"],
+            raw_name=row["source_raw_name"],
+            raw_prefix="raw_source",
+        )
+        _append_graph_edge(
+            edges,
+            source=source_id,
+            target=recipient_id,
+            edge_type="money_to_reviewed_party_entities",
+            event_family="money",
+            event_type=row["event_type"],
+            event_count=row["event_count"],
+            reported_amount_event_count=row["reported_amount_event_count"],
+            reviewed_event_count=row["reviewed_event_count"],
+            needs_review_event_count=row["needs_review_event_count"],
+            missing_data_event_count=row["missing_data_event_count"],
+            reported_amount_total=row["reported_amount_total"],
+            first_event_date=row["first_event_date"],
+            last_event_date=row["last_event_date"],
+            source_urls=row["source_urls"],
+            evidence_status="non_rejected_public_disclosure",
+            evidence_tier="party_entity_context",
+            claim_scope="Money disclosed to a reviewed party/entity, not to this representative.",
+        )
+    return summary
+
+
+def _party_reviewed_money_summary(conn, *, party_id: int) -> dict[str, Any]:
+    summary = {
+        "event_count": 0,
+        "reported_amount_event_count": 0,
+        "reported_amount_total": None,
+        "first_event_date": None,
+        "last_event_date": None,
+        "input_event_ids": set(),
+        "input_source_document_ids": set(),
+    }
+    summary_rows = _fetch_dicts(
+        conn,
+        """
+        WITH reviewed_entities AS (
+            SELECT DISTINCT entity_id
+            FROM party_entity_link
+            WHERE party_id = %s
+              AND review_status = 'reviewed'
+        )
+        SELECT
+            count(DISTINCT influence_event.id) AS event_count,
+            count(DISTINCT influence_event.id) FILTER (
+                WHERE influence_event.amount_status = 'reported'
+            ) AS reported_amount_event_count,
+            sum(influence_event.amount) FILTER (
+                WHERE influence_event.amount_status = 'reported'
+            ) AS reported_amount_total,
+            min(influence_event.event_date) AS first_event_date,
+            max(influence_event.event_date) AS last_event_date,
+            array_remove(array_agg(DISTINCT influence_event.id), NULL) AS input_event_ids,
+            array_remove(array_agg(DISTINCT source_document.id), NULL)
+                AS input_source_document_ids
+        FROM influence_event
+        JOIN reviewed_entities recipient_link
+          ON recipient_link.entity_id = influence_event.recipient_entity_id
+        JOIN source_document
+          ON source_document.id = influence_event.source_document_id
+        WHERE influence_event.event_family = 'money'
+          AND influence_event.review_status <> 'rejected'
+          AND (
+                influence_event.source_entity_id IS NULL
+                OR NOT EXISTS (
+                    SELECT 1
+                    FROM reviewed_entities source_link
+                    WHERE source_link.entity_id = influence_event.source_entity_id
+                )
+          )
+        """,
+        (party_id,),
+    )
+    if not summary_rows:
+        return summary
+    for row in summary_rows:
+        summary["event_count"] += int(row["event_count"] or 0)
+        summary["reported_amount_event_count"] += int(row["reported_amount_event_count"] or 0)
+        if row["reported_amount_total"] is not None:
+            summary["reported_amount_total"] = (
+                (summary["reported_amount_total"] or Decimal("0")) + row["reported_amount_total"]
+            )
+        summary["first_event_date"] = min(
+            (date_value for date_value in (summary["first_event_date"], row["first_event_date"]) if date_value),
+            default=None,
+        )
+        summary["last_event_date"] = max(
+            (date_value for date_value in (summary["last_event_date"], row["last_event_date"]) if date_value),
+            default=None,
+        )
+        summary["input_event_ids"].update(int(event_id) for event_id in row["input_event_ids"] or [])
+        summary["input_source_document_ids"].update(
+            int(source_document_id)
+            for source_document_id in row["input_source_document_ids"] or []
+        )
+    return summary
+
+
+def _append_person_party_exposure_context(
+    conn,
+    *,
+    nodes: dict[str, dict[str, Any]],
+    edges: list[dict[str, Any]],
+    person_id: int,
+    person_node_id: str,
+    limit: int,
+) -> None:
+    party_rows = _fetch_dicts(
+        conn,
+        """
+        SELECT DISTINCT ON (party.id)
+            party.id,
+            party.name,
+            party.short_name,
+            office_term.chamber,
+            electorate.name AS electorate_name,
+            COALESCE(
+                NULLIF(electorate.state_or_territory, ''),
+                NULLIF(office_term.metadata->>'state', '')
+            ) AS state_or_territory,
+            office_term.term_start,
+            COALESCE(current_counts.current_representative_count, 0)
+                AS current_representative_count
+        FROM office_term
+        JOIN party ON party.id = office_term.party_id
+        LEFT JOIN electorate ON electorate.id = office_term.electorate_id
+        LEFT JOIN (
+            SELECT party_id, count(DISTINCT person_id) AS current_representative_count
+            FROM office_term
+            WHERE term_end IS NULL
+              AND party_id IS NOT NULL
+            GROUP BY party_id
+        ) current_counts ON current_counts.party_id = party.id
+        WHERE office_term.person_id = %s
+          AND office_term.term_end IS NULL
+          AND office_term.party_id IS NOT NULL
+        ORDER BY party.id, office_term.term_start DESC NULLS LAST
+        LIMIT %s
+        """,
+        (person_id, 3),
+    )
+    for party in party_rows:
+        party_node_id = _graph_node_id("party", party["id"])
+        _add_graph_node(
+            nodes,
+            node_id=party_node_id,
+            node_type="party",
+            label=party["name"],
+            short_name=party["short_name"],
+        )
+        party_money = _append_reviewed_party_money_context(
+            conn,
+            nodes=nodes,
+            edges=edges,
+            party_id=int(party["id"]),
+            party_node_id=party_node_id,
+            limit=min(limit, 60),
+        )
+        representative_count = int(party["current_representative_count"] or 0)
+        party_total = party_money["reported_amount_total"]
+        modelled_amount = (
+            party_total / representative_count
+            if party_total is not None and representative_count > 0
+            else None
+        )
+        allocation_weight = (
+            Decimal("1") / representative_count
+            if modelled_amount is not None and representative_count > 0
+            else None
+        )
+        _append_graph_edge(
+            edges,
+            source=party_node_id,
+            target=person_node_id,
+            edge_type=(
+                "modelled_party_money_exposure"
+                if modelled_amount is not None
+                else "current_party_representation_context"
+            ),
+            event_family="money" if modelled_amount is not None else None,
+            event_type="party_aggregate_context" if modelled_amount is not None else None,
+            event_count=party_money["event_count"] or None,
+            first_event_date=party_money["first_event_date"],
+            last_event_date=party_money["last_event_date"],
+            evidence_status=(
+                "modelled_context_not_disclosed_receipt"
+                if modelled_amount is not None
+                else "current_office_term"
+            ),
+            evidence_tier=(
+                "modelled_allocation"
+                if modelled_amount is not None
+                else "party_membership_context"
+            ),
+            allocation_method=(
+                "equal_current_representative_share"
+                if modelled_amount is not None
+                else "no_allocation"
+            ),
+            allocation_denominator=representative_count or None,
+            allocation_weight=allocation_weight,
+            allocation_basis=(
+                "reviewed_party_entity_money_total_divided_by_current_party_representatives"
+                if modelled_amount is not None
+                else None
+            ),
+            party_context_reported_amount_total=party_total,
+            modelled_amount_total=modelled_amount,
+            model_name=(
+                "equal_current_representative_party_exposure"
+                if modelled_amount is not None
+                else None
+            ),
+            model_version="0.1.0" if modelled_amount is not None else None,
+            input_event_ids=(
+                sorted(party_money["input_event_ids"])
+                if modelled_amount is not None
+                else None
+            ),
+            input_source_document_ids=(
+                sorted(party_money["input_source_document_ids"])
+                if modelled_amount is not None
+                else None
+            ),
+            amount_estimate=modelled_amount,
+            amount_lower_bound=modelled_amount,
+            amount_upper_bound=modelled_amount,
+            currency="AUD" if modelled_amount is not None else None,
+            uncertainty_label=(
+                "rough_equal_share_point_estimate"
+                if modelled_amount is not None
+                else None
+            ),
+            display_caveat=(
+                "Estimated indirect exposure only; not a disclosed personal receipt."
+                if modelled_amount is not None
+                else None
+            ),
+            generated_at=(
+                datetime.now(UTC).isoformat(timespec="seconds").replace("+00:00", "Z")
+                if modelled_amount is not None
+                else None
+            ),
+            claim_scope=(
+                "Analytical equal-share exposure to reviewed party/entity money; "
+                "not a disclosed personal receipt."
+                if modelled_amount is not None
+                else "Current office-term party relationship; no money allocation applied."
+            ),
+            chamber=party["chamber"],
+            state_or_territory=party["state_or_territory"],
+            electorate_name=party["electorate_name"],
+            term_start=party["term_start"],
+        )
 
 
 def get_influence_graph(
@@ -2693,6 +3105,14 @@ def get_influence_graph(
                     source_urls=row["source_urls"],
                     evidence_status="non_rejected_public_disclosure",
                 )
+            _append_person_party_exposure_context(
+                conn,
+                nodes=nodes,
+                edges=edges,
+                person_id=person_id,
+                person_node_id=root_id,
+                limit=limit,
+            )
 
         if party_id is not None:
             party_rows = _fetch_dicts(

@@ -749,16 +749,25 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert graph_response.status_code == 200
     graph_payload = graph_response.json()
     assert graph_payload["root_id"] == f"person:{integration_db.person_id}"
-    assert graph_payload["edge_count"] == 1
-    assert graph_payload["edges"][0]["type"] == "disclosed_to_representative"
-    assert graph_payload["edges"][0]["reported_amount_total"] == 1250.0
-    assert graph_payload["edges"][0]["source_urls"] == ["https://example.test/source"]
-    assert graph_payload["edges"][0]["needs_review_event_count"] == 0
-    assert graph_payload["edges"][0]["missing_data_event_count"] == 0
+    edge_by_type = {edge["type"]: edge for edge in graph_payload["edges"]}
+    assert graph_payload["edge_count"] == 2
+    assert edge_by_type["disclosed_to_representative"]["reported_amount_total"] == 1250.0
+    assert edge_by_type["disclosed_to_representative"]["source_urls"] == [
+        "https://example.test/source"
+    ]
+    assert edge_by_type["disclosed_to_representative"]["needs_review_event_count"] == 0
+    assert edge_by_type["disclosed_to_representative"]["missing_data_event_count"] == 0
+    assert edge_by_type["current_party_representation_context"][
+        "allocation_method"
+    ] == "no_allocation"
+    assert edge_by_type["current_party_representation_context"][
+        "evidence_tier"
+    ] == "party_membership_context"
     assert len({edge["id"] for edge in graph_payload["edges"]}) == len(graph_payload["edges"])
     assert {node["label"] for node in graph_payload["nodes"]} >= {
         "Jane Citizen",
         "Clean Energy Pty Ltd",
+        "Example Party",
     }
 
     entity_response = client.get(f"/api/entities/{integration_db.entity_id}")
@@ -872,8 +881,13 @@ def test_campaign_support_stays_separate_from_direct_money_totals(
     )
     assert graph_response.status_code == 200
     graph_payload = graph_response.json()
-    assert graph_payload["edge_count"] == 1
-    assert graph_payload["edges"][0]["reported_amount_total"] == 1250.0
+    graph_edge_by_type = {edge["type"]: edge for edge in graph_payload["edges"]}
+    assert graph_payload["edge_count"] == 2
+    assert graph_edge_by_type["disclosed_to_representative"]["reported_amount_total"] == 1250.0
+    assert graph_edge_by_type["current_party_representation_context"][
+        "allocation_method"
+    ] == "no_allocation"
+    assert all(edge.get("event_family") != "campaign_support" for edge in graph_payload["edges"])
 
     entity_response = client.get(f"/api/entities/{integration_db.entity_id}")
     assert entity_response.status_code == 200
@@ -1131,9 +1145,52 @@ def test_party_profile_aggregates_reviewed_party_entity_money(
                 """,
                 (party_id, party_entity_id, source_document_id),
             )
-            for external_key, review_status, amount in (
-                ("party-profile:accepted", "not_required", "3000.00"),
-                ("party-profile:rejected", "rejected", "9999.00"),
+            cur.execute(
+                """
+                INSERT INTO party_entity_link (
+                    party_id, entity_id, link_type, method, confidence, review_status,
+                    evidence_note, reviewer, reviewed_at, source_document_id
+                )
+                VALUES (
+                    %s, %s, 'associated_entity', 'manual', 'manual_reviewed', 'reviewed',
+                    'Fixture second reviewed link type for the same entity.', 'pytest', now(), %s
+                )
+                """,
+                (party_id, party_entity_id, source_document_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO entity (
+                    canonical_name, normalized_name, entity_type, country, source_document_id
+                )
+                VALUES ('Second Donor Pty Ltd', 'second donor pty ltd', 'company', 'AU', %s)
+                RETURNING id
+                """,
+                (source_document_id,),
+            )
+            second_donor_entity_id = cur.fetchone()[0]
+            for external_key, review_status, amount, source_id, source_name in (
+                (
+                    "party-profile:accepted",
+                    "not_required",
+                    "3000.00",
+                    donor_entity_id,
+                    "Example Donor Pty Ltd",
+                ),
+                (
+                    "party-profile:second-accepted",
+                    "not_required",
+                    "2000.00",
+                    second_donor_entity_id,
+                    "Second Donor Pty Ltd",
+                ),
+                (
+                    "party-profile:rejected",
+                    "rejected",
+                    "9999.00",
+                    donor_entity_id,
+                    "Example Donor Pty Ltd",
+                ),
             ):
                 cur.execute(
                     """
@@ -1146,7 +1203,7 @@ def test_party_profile_aggregates_reviewed_party_entity_money(
                         source_document_id, source_ref, missing_data_flags, metadata
                     )
                     VALUES (
-                        %s, 'money', 'donation_or_gift', %s, 'Example Donor Pty Ltd',
+                        %s, 'money', 'donation_or_gift', %s, %s,
                         %s, 'Example Party Federal Campaign', %s, %s, 'reported',
                         '2024-06-01', '2023-24', 'pytest fixture',
                         'official_record_parsed', 'fixture_seed', %s,
@@ -1155,7 +1212,8 @@ def test_party_profile_aggregates_reviewed_party_entity_money(
                     """,
                     (
                         external_key,
-                        donor_entity_id,
+                        source_id,
+                        source_name,
                         party_entity_id,
                         jurisdiction_id,
                         amount,
@@ -1173,9 +1231,35 @@ def test_party_profile_aggregates_reviewed_party_entity_money(
     payload = response.json()
     assert payload["party"]["name"] == "Example Party"
     assert payload["linked_entities"][0]["canonical_name"] == "Example Party Federal Campaign"
-    assert payload["money_summary"][0]["reported_amount_total"] == 3000.0
+    assert payload["money_summary"][0]["reported_amount_total"] == 5000.0
     assert payload["top_sources"][0]["source_label"] == "Example Donor Pty Ltd"
     assert payload["recent_events"][0]["review_status"] == "not_required"
+
+    person_graph_response = client.get(
+        "/api/graph/influence",
+        params={"person_id": integration_db.person_id, "limit": "1"},
+    )
+    assert person_graph_response.status_code == 200
+    person_graph_payload = person_graph_response.json()
+    person_edge_types = {edge["type"] for edge in person_graph_payload["edges"]}
+    assert "money_to_reviewed_party_entities" in person_edge_types
+    assert "reviewed_party_entity_link" in person_edge_types
+    assert "modelled_party_money_exposure" in person_edge_types
+    modelled_edges = [
+        edge
+        for edge in person_graph_payload["edges"]
+        if edge["type"] == "modelled_party_money_exposure"
+    ]
+    assert modelled_edges[0]["evidence_tier"] == "modelled_allocation"
+    assert modelled_edges[0]["allocation_method"] == "equal_current_representative_share"
+    assert modelled_edges[0]["allocation_denominator"] == 4
+    assert modelled_edges[0].get("reported_amount_total") is None
+    assert modelled_edges[0]["party_context_reported_amount_total"] == 5000.0
+    assert modelled_edges[0]["modelled_amount_total"] == 1250.0
+    assert modelled_edges[0]["model_name"] == "equal_current_representative_party_exposure"
+    assert modelled_edges[0]["input_event_ids"]
+    assert modelled_edges[0]["input_source_document_ids"]
+    assert "not a disclosed personal receipt" in modelled_edges[0]["claim_scope"]
 
 
 def test_party_entity_link_review_accepts_and_rejects_candidates(

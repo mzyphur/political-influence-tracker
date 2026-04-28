@@ -34,6 +34,16 @@ Completed:
 - Added `docs/influence_network_model.md`, which defines direct, campaign,
   party/entity, and modelled allocation evidence tiers for indirect network
   paths such as `Commonwealth Bank -> ALP entity/branch -> ALP MPs/Senators`.
+- Added the first representative-level indirect graph implementation. Person
+  influence graphs now include current party context, reviewed party/entity
+  links, source-backed money into reviewed party entities, and a separately
+  labelled `modelled_party_money_exposure` edge using
+  `equal_current_representative_share` only as modelled exposure, not personal
+  receipt.
+- Hardened indirect graph totals after review: modelled party exposure now uses
+  an unbounded distinct-event aggregate across all reviewed party/entity links,
+  not the graph display limit, and duplicate reviewed link types for the same
+  party entity do not double-count the same money event.
 
 Verification:
 
@@ -42,6 +52,13 @@ Verification:
   `backend/tests/test_api.py` and `backend/tests/test_aec_public_funding.py`.
 - Focused `ruff check` passed for the party-search and public-funding parser
   changes.
+- Postgres integration tests passed for the indirect graph path, including
+  direct totals excluding campaign/modelled values, low graph limits not
+  changing modelled totals, duplicate reviewed party/entity link types not
+  double-counting money, and modelled edges carrying caveats/metadata instead
+  of `reported_amount_total`.
+- Frontend graph build passed after adding explicit modelled-exposure labels,
+  de-emphasized context-edge weighting, and keyboard-focusable graph edges.
 - Live local API smoke checks confirmed `labor` and `liberal` search results now
   prioritize active parliamentary party records.
 

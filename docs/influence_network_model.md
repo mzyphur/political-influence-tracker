@@ -159,6 +159,19 @@ Every `modelled_allocation_edge` must include:
 - `display_caveat`
 - `generated_at`
 
+Current API graph scaffold:
+
+- `modelled_party_money_exposure`
+  - Uses reviewed party/entity links and current office-term party membership.
+  - Reports `party_context_reported_amount_total` as the aggregate party/entity
+    money context.
+  - Reports `modelled_amount_total` as a labelled equal-share exposure index
+    when `allocation_method = equal_current_representative_share`.
+  - Keeps `reported_amount_total` unset on the party-to-person edge so the
+    value cannot be mistaken for a disclosed personal receipt.
+  - Includes `claim_scope = analytical equal-share exposure ... not a disclosed
+    personal receipt` for frontend display.
+
 ## UI Rules
 
 - Direct disclosed records appear first and keep source links visible.
@@ -182,4 +195,3 @@ Every `modelled_allocation_edge` must include:
    all modelled values.
 6. Add documentation and UI text for every allocation method before enabling it
    in public views.
-
