@@ -29,12 +29,12 @@ export function featureCollection(features: ElectorateFeature[]): ElectorateFeat
 
 export function electorateColor(partyName?: string | null): string {
   const name = (partyName || "").toLowerCase();
-  if (name.includes("labor")) return "#d94a46";
-  if (name.includes("liberal")) return "#2e65b8";
-  if (name.includes("national")) return "#2f8c56";
-  if (name.includes("greens")) return "#2f9a6a";
-  if (name.includes("independent")) return "#8b6f36";
-  return "#68717d";
+  if (name.includes("labor")) return "#d85a54";
+  if (name.includes("liberal")) return "#2f72b7";
+  if (name.includes("national")) return "#4f9659";
+  if (name.includes("greens")) return "#2d9b75";
+  if (name.includes("independent")) return "#c7953d";
+  return "#78828c";
 }
 
 export function formatMoney(value?: number | null): string {

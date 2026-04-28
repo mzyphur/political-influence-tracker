@@ -53,22 +53,24 @@ export function MapCanvas({
             "match",
             ["get", "party_short_name"],
             "ALP",
-            "#d94a46",
+            "#d85a54",
             "LP",
-            "#2e65b8",
+            "#2f72b7",
             "LNP",
-            "#2e65b8",
+            "#2f72b7",
             "Nats",
-            "#2f8c56",
+            "#4f9659",
             "AG",
-            "#2f9a6a",
-            "#68717d"
+            "#2d9b75",
+            "IND",
+            "#c7953d",
+            "#78828c"
           ],
           "fill-opacity": [
             "case",
             ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
-            0.68,
-            0.42
+            0.72,
+            0.48
           ]
         }
       });
@@ -77,9 +79,9 @@ export function MapCanvas({
         type: "line",
         source: sourceId,
         paint: {
-          "line-color": "#27323a",
-          "line-opacity": 0.5,
-          "line-width": 0.7
+          "line-color": "#26343b",
+          "line-opacity": 0.42,
+          "line-width": 0.8
         }
       });
       map.addLayer({
@@ -88,8 +90,8 @@ export function MapCanvas({
         source: sourceId,
         filter: ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
         paint: {
-          "line-color": "#f8b34b",
-          "line-width": 3,
+          "line-color": "#ffd166",
+          "line-width": 3.4,
           "line-opacity": 0.95
         }
       });
@@ -111,7 +113,7 @@ export function MapCanvas({
       map.remove();
       mapRef.current = null;
     };
-  }, [initialBounds, onSelectFeature, features, selectedFeature?.id]);
+  }, [initialBounds, onSelectFeature]);
 
   useEffect(() => {
     featuresRef.current = features;
@@ -129,13 +131,9 @@ export function MapCanvas({
       map.setPaintProperty(fillLayerId, "fill-opacity", [
         "case",
         ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
-        0.68,
-        0.42
+        0.72,
+        0.48
       ]);
-    }
-    if (selectedFeature?.geometry) {
-      const bounds = featureBounds(selectedFeature);
-      if (bounds) map.fitBounds(bounds, { padding: 72, duration: 520, maxZoom: 8 });
     }
   }, [selectedFeature]);
 
@@ -157,23 +155,4 @@ function syncData(map: maplibregl.Map, features: ElectorateFeature[]) {
   source.setData(
     featureCollection(features.filter((feature) => feature.geometry)) as FeatureCollection
   );
-}
-
-function featureBounds(feature: ElectorateFeature): maplibregl.LngLatBoundsLike | null {
-  if (!feature.geometry) return null;
-  const coordinates: number[][] = [];
-  collectPositions(feature.geometry.coordinates, coordinates);
-  if (!coordinates.length) return null;
-  const bounds = new maplibregl.LngLatBounds(coordinates[0] as [number, number], coordinates[0] as [number, number]);
-  for (const coordinate of coordinates) bounds.extend(coordinate as [number, number]);
-  return bounds;
-}
-
-function collectPositions(value: unknown, output: number[][]) {
-  if (!Array.isArray(value)) return;
-  if (typeof value[0] === "number" && typeof value[1] === "number") {
-    output.push(value as number[]);
-    return;
-  }
-  for (const item of value) collectPositions(item, output);
 }
