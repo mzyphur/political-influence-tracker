@@ -12,7 +12,12 @@ from psycopg.types.json import Jsonb
 
 from au_politics_money.api.app import app
 from au_politics_money.config import PROJECT_ROOT
-from au_politics_money.db.load import apply_migrations, apply_schema, connect
+from au_politics_money.db.load import (
+    apply_migrations,
+    apply_schema,
+    connect,
+    link_aec_direct_representative_money_flows,
+)
 
 
 @dataclass(frozen=True)
@@ -420,6 +425,34 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
 
         cur.execute(
             """
+            INSERT INTO influence_event (
+                external_key, event_family, event_type, source_entity_id,
+                source_raw_name, recipient_person_id, recipient_raw_name,
+                jurisdiction_id, amount, amount_status, event_date, chamber,
+                disclosure_system, evidence_status, extraction_method, review_status,
+                description, source_document_id, source_ref, missing_data_flags,
+                metadata
+            )
+            VALUES (
+                'influence:clean-energy:jane-citizen:rejected', 'money',
+                'donation_or_gift', %s, 'Clean Energy Pty Ltd', %s,
+                'Jane Citizen', %s, 9999.00, 'reported', '2023-02-15', 'house',
+                'pytest fixture', 'official_record', 'fixture_seed', 'rejected',
+                'Fixture rejected event that public surfaces must exclude.',
+                %s, 'fixture-row-rejected', '[]'::jsonb, %s
+            )
+            """,
+            (
+                entity_id,
+                person_id,
+                jurisdiction_id,
+                source_document_id,
+                Jsonb({"fixture": True}),
+            ),
+        )
+
+        cur.execute(
+            """
             INSERT INTO vote_division (
                 external_id, chamber, division_date, division_number, title,
                 bill_name, motion_text, aye_count, no_count, source_document_id
@@ -608,7 +641,20 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
         row["event_family"]: row["event_count"]
         for row in representative_payload["event_summary"]
     }["money"] == 1
+    assert representative_payload["influence_by_sector"][0]["influence_event_count"] == 1
+    assert representative_payload["source_effect_context"][0]["lifetime_influence_event_count"] == 1
     assert representative_payload["recent_events"][0]["source_raw_name"] == "Clean Energy Pty Ltd"
+    assert len(representative_payload["recent_events"]) == 1
+
+    electorate_response = client.get(f"/api/electorates/{integration_db.electorate_id}")
+    assert electorate_response.status_code == 200
+    electorate_payload = electorate_response.json()
+    assert (
+        electorate_payload["current_representative_influence_summary"][0][
+            "influence_event_count"
+        ]
+        == 1
+    )
 
     search_response = client.get(
         "/api/search",
@@ -618,6 +664,15 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     search_payload = search_response.json()
     assert search_payload["result_count"] == 1
     assert search_payload["results"][0]["id"] == integration_db.person_id
+
+    entity_search_response = client.get(
+        "/api/search",
+        params=[("q", "Clean Energy"), ("types", "entity"), ("limit", "5")],
+    )
+    assert entity_search_response.status_code == 200
+    entity_search_payload = entity_search_response.json()
+    assert entity_search_payload["result_count"] == 1
+    assert entity_search_payload["results"][0]["metadata"]["influence_event_count"] == 1
     assert search_payload["results"][0]["label"] == "Jane Citizen"
 
     token_search_response = client.get(
@@ -684,3 +739,56 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     context_payload = context_response.json()
     assert context_payload["row_count"] == 1
     assert context_payload["rows"][0]["relationship"] == "direct_material_interest"
+
+
+def test_aec_direct_member_return_rows_link_to_unique_people(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
+            jurisdiction_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO money_flow (
+                    external_key, source_raw_name, recipient_raw_name, amount,
+                    financial_year, return_type, receipt_type, disclosure_category,
+                    jurisdiction_id, source_document_id, source_row_ref, confidence,
+                    metadata
+                )
+                VALUES (
+                    'aec-direct-member-return:jane-citizen', 'Example Donor Pty Ltd',
+                    'Ms Jane Citizen OAM MP', 2500.00, '2024-25',
+                    'Member of HOR Return', 'Donation Received', 'detailed_receipt',
+                    %s, %s, 'Detailed Receipts.csv:1', 'unresolved', %s
+                )
+                """,
+                (
+                    jurisdiction_id,
+                    source_document_id,
+                    Jsonb({"fixture": True}),
+                ),
+            )
+        conn.commit()
+
+        summary = link_aec_direct_representative_money_flows(conn)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    recipient_person_id,
+                    confidence,
+                    metadata->'recipient_person_match'->>'status'
+                FROM money_flow
+                WHERE external_key = 'aec-direct-member-return:jane-citizen'
+                """
+            )
+            recipient_person_id, confidence, status = cur.fetchone()
+
+    assert summary["direct_representative_money_flows_linked"] == 1
+    assert recipient_person_id == integration_db.person_id
+    assert confidence == "exact_name_context"
+    assert status == "linked"

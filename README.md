@@ -97,6 +97,10 @@ Current local federal baseline loaded into PostgreSQL:
   interests tables: 192,201 money events, 1,390 benefit events, 4,700 private
   interest events, 1,413 organisational-role events, and 102 other declared
   interests.
+- 50 direct AEC House-member return money rows are now person-linked to MP
+  profiles through conservative unique cleaned-name matching, totaling
+  AUD 1,383,511. Unmatched direct representative rows remain unlinked with audit
+  metadata rather than guessed.
 - 226 people/office terms, including one documented House-register-derived fallback for Sussan Ley/Farrer because the APH contact CSV omitted that House seat.
 - 150 current federal House electorate boundaries from the AEC March 2025
   national ESRI shapefile transformed from GDA94/EPSG:4283 to GeoJSON/PostGIS

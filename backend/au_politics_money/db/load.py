@@ -54,6 +54,36 @@ STATE_CODES = {
 
 INFLUENCE_EVENT_LOADER_NAME = "load_influence_events_v1"
 
+REPRESENTATIVE_RETURN_TITLE_TOKENS = {
+    "dr",
+    "hon",
+    "mr",
+    "mrs",
+    "ms",
+    "sen",
+    "senator",
+    "the",
+}
+
+REPRESENTATIVE_RETURN_POSTNOMINAL_TOKENS = {
+    "ac",
+    "afsm",
+    "am",
+    "ao",
+    "apm",
+    "csc",
+    "dsc",
+    "dsm",
+    "kc",
+    "mg",
+    "mp",
+    "oam",
+    "psm",
+    "qc",
+    "sc",
+    "vc",
+}
+
 PRIVATE_INTEREST_EVENT_TYPES = {
     "Shareholdings": "shareholding",
     "Family and business trusts and nominee companies": "trust_or_nominee_company",
@@ -151,6 +181,26 @@ def normalize_name(value: str) -> str:
     lowered = value.lower().strip()
     lowered = re.sub(r"[^a-z0-9]+", " ", lowered)
     return " ".join(lowered.split())
+
+
+def normalize_representative_return_name(value: str) -> str:
+    tokens = normalize_name(value).split()
+    while tokens and tokens[0] in REPRESENTATIVE_RETURN_TITLE_TOKENS:
+        tokens.pop(0)
+    while tokens and tokens[-1] in REPRESENTATIVE_RETURN_POSTNOMINAL_TOKENS:
+        tokens.pop()
+    return " ".join(tokens)
+
+
+def is_direct_representative_return_type(value: str) -> bool:
+    normalized = normalize_name(value)
+    return normalized in {
+        "member of hor return",
+        "member of house of representatives return",
+        "member of parliament return",
+        "senate return",
+        "senator return",
+    }
 
 
 def parse_date(value: str) -> date | None:
@@ -624,9 +674,12 @@ def load_roster(conn, roster_path: Path | None = None) -> dict[str, int]:
     payload = json.loads(path.read_text(encoding="utf-8"))
     jurisdiction_id = get_or_create_jurisdiction(conn, "Commonwealth", "federal", "CWLTH")
     source_doc_cache: dict[str, int] = {}
+    roster_generated_at = parse_datetime(payload.get("generated_at", ""))
+    roster_generated_date = roster_generated_at.date() if roster_generated_at else date.today()
 
     people_count = 0
     office_count = 0
+    current_office_external_keys: set[str] = set()
     for person in payload["people"]:
         source_metadata_path = person["source_metadata_path"]
         if source_metadata_path not in source_doc_cache:
@@ -684,6 +737,7 @@ def load_roster(conn, roster_path: Path | None = None) -> dict[str, int]:
             person_id = int(cur.fetchone()[0])
 
             office_external_key = f"{external_key}:current_office"
+            current_office_external_keys.add(office_external_key)
             cur.execute(
                 """
                 INSERT INTO office_term (
@@ -697,6 +751,7 @@ def load_roster(conn, roster_path: Path | None = None) -> dict[str, int]:
                     electorate_id = EXCLUDED.electorate_id,
                     party_id = EXCLUDED.party_id,
                     role_title = EXCLUDED.role_title,
+                    term_end = NULL,
                     source_document_id = EXCLUDED.source_document_id,
                     metadata = EXCLUDED.metadata
                 """,
@@ -714,8 +769,41 @@ def load_roster(conn, roster_path: Path | None = None) -> dict[str, int]:
         people_count += 1
         office_count += 1
 
+    closed_office_terms = 0
+    if current_office_external_keys:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE office_term
+                SET
+                    term_end = %s,
+                    metadata = office_term.metadata || %s
+                WHERE term_end IS NULL
+                  AND external_key LIKE 'aph_current:%%:current_office'
+                  AND external_key <> ALL(%s)
+                  AND metadata ? 'source_row_number'
+                """,
+                (
+                    roster_generated_date,
+                    as_jsonb(
+                        {
+                            "ended_by_loader": "load_roster",
+                            "ended_reason": "absent_from_current_aph_roster_snapshot",
+                            "roster_generated_at": payload.get("generated_at"),
+                            "roster_path": str(path),
+                        }
+                    ),
+                    list(current_office_external_keys),
+                ),
+            )
+            closed_office_terms = cur.rowcount
+
     conn.commit()
-    return {"people": people_count, "office_terms": office_count}
+    return {
+        "people": people_count,
+        "office_terms": office_count,
+        "stale_office_terms_closed": closed_office_terms,
+    }
 
 
 def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]:
@@ -786,7 +874,8 @@ def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]
             count += 1
 
     conn.commit()
-    return {"money_flows": count}
+    link_summary = link_aec_direct_representative_money_flows(conn)
+    return {"money_flows": count, **link_summary}
 
 
 def _person_lookup(conn) -> dict[str, int]:
@@ -799,6 +888,125 @@ def _person_lookup(conn) -> dict[str, int]:
                 if normalized:
                     lookup[normalized] = int(person_id)
     return lookup
+
+
+def _unique_representative_name_lookup(conn) -> dict[str, int]:
+    candidate_ids: dict[str, set[int]] = defaultdict(set)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, display_name, canonical_name, first_name, last_name
+            FROM person
+            """
+        )
+        for person_id, display_name, canonical_name, first_name, last_name in cur.fetchall():
+            names = {
+                display_name or "",
+                canonical_name or "",
+                " ".join(part for part in (first_name or "", last_name or "") if part),
+            }
+            for name in names:
+                normalized = normalize_representative_return_name(name)
+                if normalized:
+                    candidate_ids[normalized].add(int(person_id))
+    return {
+        normalized: next(iter(person_ids))
+        for normalized, person_ids in candidate_ids.items()
+        if len(person_ids) == 1
+    }
+
+
+def link_aec_direct_representative_money_flows(conn) -> dict[str, int]:
+    unique_lookup = _unique_representative_name_lookup(conn)
+    all_candidates: dict[str, set[int]] = defaultdict(set)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, display_name, canonical_name, first_name, last_name
+            FROM person
+            """
+        )
+        for person_id, display_name, canonical_name, first_name, last_name in cur.fetchall():
+            for name in (
+                display_name or "",
+                canonical_name or "",
+                " ".join(part for part in (first_name or "", last_name or "") if part),
+            ):
+                normalized = normalize_representative_return_name(name)
+                if normalized:
+                    all_candidates[normalized].add(int(person_id))
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, recipient_raw_name, return_type
+            FROM money_flow
+            WHERE return_type IS NOT NULL
+            """
+        )
+        rows = [
+            (int(row[0]), row[1] or "", row[2] or "")
+            for row in cur.fetchall()
+            if is_direct_representative_return_type(row[2] or "")
+        ]
+
+    considered = len(rows)
+    linked = 0
+    unmatched = 0
+    ambiguous = 0
+    for money_flow_id, recipient_raw_name, return_type in rows:
+        normalized = normalize_representative_return_name(recipient_raw_name)
+        candidate_ids = all_candidates.get(normalized, set())
+        person_id = unique_lookup.get(normalized)
+        if person_id is not None:
+            status = "linked"
+            confidence = "exact_name_context"
+            linked += 1
+        elif candidate_ids:
+            person_id = None
+            status = "ambiguous"
+            confidence = "unresolved"
+            ambiguous += 1
+        else:
+            person_id = None
+            status = "unmatched"
+            confidence = "unresolved"
+            unmatched += 1
+        metadata_patch = {
+            "recipient_person_match": {
+                "method": "aec_direct_representative_return_cleaned_name_exact_unique",
+                "status": status,
+                "return_type": return_type,
+                "raw_recipient_name": recipient_raw_name,
+                "normalized_recipient_name": normalized,
+                "candidate_person_count": len(candidate_ids),
+            }
+        }
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE money_flow
+                SET
+                    recipient_person_id = %s,
+                    confidence = %s,
+                    metadata = money_flow.metadata || %s
+                WHERE id = %s
+                """,
+                (
+                    person_id,
+                    confidence,
+                    as_jsonb(metadata_patch),
+                    money_flow_id,
+                ),
+            )
+
+    conn.commit()
+    return {
+        "direct_representative_money_flows_considered": considered,
+        "direct_representative_money_flows_linked": linked,
+        "direct_representative_money_flows_unmatched": unmatched,
+        "direct_representative_money_flows_ambiguous": ambiguous,
+    }
 
 
 def _house_electorate_person_lookup(conn) -> dict[str, int]:
@@ -3306,10 +3514,14 @@ def load_processed_artifacts(
     reapply_reviews: bool = True,
 ) -> dict[str, Any]:
     with connect(database_url) as conn:
+        migration_summary: dict[str, int] | None = None
         if apply_schema_first:
             apply_schema(conn)
+            migration_summary = apply_migrations(conn)
 
         summary: dict[str, Any] = {"schema_applied": apply_schema_first}
+        if migration_summary is not None:
+            summary["migrations"] = migration_summary
         if include_roster:
             summary["roster"] = load_roster(conn)
         if include_money_flows:

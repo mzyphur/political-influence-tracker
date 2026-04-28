@@ -368,7 +368,9 @@ def _search_entities(conn, pattern: str, limit: int) -> list[dict[str, Any]]:
                 WHERE influence_event.amount_status = 'reported'
             ) AS reported_amount_total
         FROM entity
-        LEFT JOIN influence_event ON influence_event.source_entity_id = entity.id
+        LEFT JOIN influence_event
+          ON influence_event.source_entity_id = entity.id
+         AND influence_event.review_status <> 'rejected'
         WHERE entity.canonical_name ILIKE %s
         GROUP BY entity.id, entity.canonical_name, entity.entity_type
         ORDER BY influence_event_count DESC, entity.canonical_name
@@ -1555,6 +1557,7 @@ def get_electorate_profile(electorate_id: int, *, database_url: str | None = Non
               ON office_term.person_id = person.id
              AND office_term.electorate_id = %s
              AND office_term.term_end IS NULL
+            WHERE ie.review_status <> 'rejected'
             GROUP BY ie.recipient_person_id, person.display_name
             ORDER BY influence_event_count DESC, person.display_name
             """,

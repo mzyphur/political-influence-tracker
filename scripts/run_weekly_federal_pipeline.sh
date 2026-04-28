@@ -21,6 +21,16 @@ fi
   > "${LOG_DIR}/weekly_federal_pipeline_${TIMESTAMP}.stdout.log" \
   2> "${LOG_DIR}/weekly_federal_pipeline_${TIMESTAMP}.stderr.log"
 
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli migrate-postgres \
+  > "${LOG_DIR}/weekly_federal_migrate_${TIMESTAMP}.stdout.log" \
+  2> "${LOG_DIR}/weekly_federal_migrate_${TIMESTAMP}.stderr.log"
+
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-postgres --include-vote-divisions \
+  > "${LOG_DIR}/weekly_federal_load_${TIMESTAMP}.stdout.log" \
+  2> "${LOG_DIR}/weekly_federal_load_${TIMESTAMP}.stderr.log"
+
 .venv/bin/python -m pytest \
   > "${LOG_DIR}/weekly_federal_pipeline_tests_${TIMESTAMP}.stdout.log" \
   2> "${LOG_DIR}/weekly_federal_pipeline_tests_${TIMESTAMP}.stderr.log"

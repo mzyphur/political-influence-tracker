@@ -53,6 +53,11 @@ rerun after each scheduled pipeline run. The database is therefore a
 serving/indexing layer over reproducible artifacts rather than the only copy of
 the evidence.
 
+When `--apply-schema` is used, the loader applies the baseline schema and then
+all additive migrations. Routine weekly runs should use `migrate-postgres`
+followed by `load-postgres --include-vote-divisions` so the serving database is
+updated from the newest reproducible artifacts.
+
 ## Pipeline Stages
 
 The federal foundation pipeline currently performs:
@@ -78,6 +83,10 @@ The federal foundation pipeline currently performs:
 4. Build current federal Parliament roster JSON.
 5. Summarize AEC annual disclosure ZIP schemas.
 6. Normalize key AEC annual money-flow tables.
+   Direct MP/Senator return rows are person-linked only when the recipient name
+   is a unique exact cleaned-name match against the reproducible APH roster.
+   Titles and postnominals are stripped, but ambiguous/unmatched rows remain
+   unlinked with audit metadata rather than being guessed.
 7. Fetch the current national AEC ESRI federal-boundary ZIP.
 8. Transform AEC federal boundaries from source CRS to GeoJSON/PostGIS SRID 4326.
 9. Extract official APH decision-record indexes for House Votes and
@@ -201,6 +210,7 @@ election periods.
 Recommended initial schedule:
 
 - Weekly full run.
+- Weekly PostgreSQL migration and reload after the full run.
 - Daily lightweight source-index check.
 - Manual review queue after each run.
 - Manual review decisions stored separately from machine-produced records.

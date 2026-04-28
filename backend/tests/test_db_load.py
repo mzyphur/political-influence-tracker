@@ -6,11 +6,13 @@ from au_politics_money.db.load import (
     apply_schema,
     classify_interest_event,
     classify_money_event_type,
+    is_direct_representative_return_type,
     load_official_parliamentary_decision_record_documents,
     load_official_parliamentary_decision_records,
     missing_interest_flags,
     normalize_electorate_name,
     normalize_name,
+    normalize_representative_return_name,
     parse_date,
     parse_datetime,
     senate_api_name_to_canonical,
@@ -46,6 +48,15 @@ class RecordingConnection:
 def test_normalize_name_is_stable_for_entity_matching() -> None:
     assert normalize_name("Example Pty. Ltd.") == "example pty ltd"
     assert normalize_name("  A.B.C.  Holdings  ") == "a b c holdings"
+
+
+def test_normalize_representative_return_name_strips_titles_and_postnominals() -> None:
+    assert normalize_representative_return_name("Ms Zali Steggall OAM MP") == "zali steggall"
+    assert normalize_representative_return_name("Hon Andrew Hastie MP") == "andrew hastie"
+    assert normalize_representative_return_name("Senator Penny Allman-Payne") == "penny allman payne"
+    assert is_direct_representative_return_type("Member of HOR Return")
+    assert is_direct_representative_return_type("Senator Return")
+    assert not is_direct_representative_return_type("Political Party Return")
 
 
 def test_parse_date_accepts_aec_common_formats() -> None:

@@ -693,6 +693,7 @@ FROM influence_event ie
 JOIN person p ON p.id = ie.recipient_person_id
 LEFT JOIN best_entity_sector ON best_entity_sector.entity_id = ie.source_entity_id
 WHERE ie.recipient_person_id IS NOT NULL
+  AND ie.review_status <> 'rejected'
 GROUP BY ie.recipient_person_id, p.display_name, COALESCE(best_entity_sector.public_sector, 'unknown');
 
 CREATE OR REPLACE VIEW person_policy_influence_context AS
@@ -793,6 +794,7 @@ LEFT JOIN (
 ) best_entity_sector
   ON best_entity_sector.entity_id = ie.source_entity_id
 WHERE link.review_status = 'reviewed'
+  AND ie.review_status <> 'rejected'
   AND COALESCE(best_entity_sector.public_sector, 'unknown') = link.public_sector
 GROUP BY
     votes.person_id,

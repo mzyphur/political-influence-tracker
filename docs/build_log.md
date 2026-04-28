@@ -9,6 +9,24 @@ Completed:
   Votes and Proceedings and Senate Journals indexes, preserving raw bodies,
   checksums, request headers, and APH index provenance in processed summaries
   and database link rows.
+- Added the first federal data-coverage audit focused on why representative
+  pages were sparse, with a prioritized plan for direct MP/Senator money,
+  party/entity money surfaces, benefit extraction, lobbying/access evidence,
+  official House votes, and sector-policy review.
+- Added conservative AEC direct-representative money linking. Direct
+  representative annual return rows now strip titles/postnominals and link only
+  unique exact cleaned-name matches to `person`; unmatched or ambiguous rows are
+  preserved with audit metadata instead of guessed. The current local reload
+  linked 50 of 57 `Member of HOR Return` rows, totaling AUD 1,383,511, to MP
+  profiles.
+- Hardened public influence surfaces so rejected `influence_event` rows are
+  excluded from sector/context views, entity search counts, and electorate
+  profile summaries.
+- Hardened roster refreshes so prior APH current-office terms absent from a new
+  APH roster snapshot can be closed with audit metadata, avoiding stale
+  `term_end IS NULL` public representatives.
+- Extended the weekly runner so scheduled runs now execute the pipeline, apply
+  migrations, reload PostgreSQL with vote divisions, and then run tests.
 - Added `official_parliamentary_decision_record_document` plus a loader that
   links each archived raw ParlInfo snapshot back to its APH index row without
   overwriting original raw evidence.
