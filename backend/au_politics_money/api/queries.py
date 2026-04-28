@@ -342,10 +342,45 @@ def _search_electorates(
     ]
 
 
-def _search_parties(conn, pattern: str, limit: int) -> list[dict[str, Any]]:
+def _party_search_terms(cleaned_query: str) -> tuple[list[str], set[str]]:
+    lowered = cleaned_query.lower()
+    name_patterns = [f"%{cleaned_query}%"]
+    exact_short_names: set[str] = set()
+    alias_terms = (
+        (("labor", "labour", "alp"), ("ALP",)),
+        (("liberal national", "lnp"), ("LNP",)),
+        (("country liberal", "clp"), ("CLP",)),
+        (("liberal",), ("LP", "LNP", "CLP")),
+        (("national party", "nationals", "nats"), ("NATS",)),
+        (("greens",), ("AG",)),
+        (("one nation", "pauline hanson"), ("ON",)),
+        (("united australia", "uap"), ("UAP",)),
+        (("katter", "kap"), ("KAP",)),
+        (("jacqui lambie", "lambie", "jln"), ("JLN",)),
+        (("community alliance",), ("CA",)),
+        (("independent",), ("IND",)),
+    )
+    for triggers, short_names in alias_terms:
+        if any(trigger in lowered for trigger in triggers):
+            exact_short_names.update(short_names)
+    return name_patterns, exact_short_names
+
+
+def _search_parties(conn, cleaned_query: str, limit: int) -> list[dict[str, Any]]:
+    name_patterns, exact_short_names = _party_search_terms(cleaned_query)
+    conditions = []
+    params: list[Any] = []
+    for pattern in name_patterns:
+        conditions.append("(party.name ILIKE %s OR party.short_name ILIKE %s)")
+        params.extend([pattern, pattern])
+    if exact_short_names:
+        placeholders = ", ".join(["%s"] * len(exact_short_names))
+        conditions.append(f"party.short_name IN ({placeholders})")
+        params.extend(sorted(exact_short_names))
+    params.append(limit)
     rows = _fetch_dicts(
         conn,
-        """
+        f"""
         SELECT
             party.id,
             party.name,
@@ -355,13 +390,12 @@ def _search_parties(conn, pattern: str, limit: int) -> list[dict[str, Any]]:
             ) AS current_representative_count
         FROM party
         LEFT JOIN office_term ON office_term.party_id = party.id
-        WHERE party.name ILIKE %s
-           OR party.short_name ILIKE %s
+        WHERE {" OR ".join(conditions)}
         GROUP BY party.id, party.name, party.short_name
         ORDER BY current_representative_count DESC, party.name
         LIMIT %s
         """,
-        (pattern, pattern, limit),
+        tuple(params),
     )
     return [
         _result(
@@ -592,7 +626,7 @@ def search_database(
         if "electorate" in requested_types:
             results.extend(_search_electorates(conn, pattern, token_patterns, limit))
         if "party" in requested_types:
-            results.extend(_search_parties(conn, pattern, limit))
+            results.extend(_search_parties(conn, cleaned, limit))
         if "entity" in requested_types:
             results.extend(_search_entities(conn, pattern, limit))
         if "policy_topic" in requested_types:
@@ -600,7 +634,7 @@ def search_database(
         if "sector" in requested_types:
             results.extend(_search_sectors(conn, pattern, limit))
 
-    results = sorted(results, key=lambda item: (item["rank"], item["label"].lower()))[:limit]
+    results = sorted(results, key=_search_result_sort_key)[:limit]
     return {
         "query": query,
         "normalized_query": cleaned,
@@ -609,6 +643,14 @@ def search_database(
         "limitations": limitations,
         "caveat": SEARCH_CAVEAT,
     }
+
+
+def _search_result_sort_key(item: dict[str, Any]) -> tuple[Any, ...]:
+    metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    current_representatives = 0
+    if item.get("type") == "party":
+        current_representatives = int(metadata.get("current_representative_count") or 0)
+    return (item["rank"], -current_representatives, item["label"].lower())
 
 
 def get_electorate_map(

@@ -204,3 +204,35 @@ def test_search_database_short_query_returns_caveat_without_db() -> None:
 
     assert response["results"] == []
     assert response["caveat"] == queries.SEARCH_CAVEAT
+
+
+def test_party_search_terms_include_common_public_aliases() -> None:
+    _, labor_short_names = queries._party_search_terms("labor")
+    _, liberal_short_names = queries._party_search_terms("liberal")
+    _, greens_short_names = queries._party_search_terms("greens")
+
+    assert "ALP" in labor_short_names
+    assert {"LP", "LNP", "CLP"} <= liberal_short_names
+    assert "ALP" not in liberal_short_names
+    assert "AG" in greens_short_names
+
+
+def test_search_result_sort_prioritizes_active_party_records() -> None:
+    rows = [
+        {
+            "type": "party",
+            "rank": 30,
+            "label": "Australian Labor Party",
+            "metadata": {"current_representative_count": 0},
+        },
+        {
+            "type": "party",
+            "rank": 30,
+            "label": "ALP",
+            "metadata": {"current_representative_count": 123},
+        },
+    ]
+
+    sorted_rows = sorted(rows, key=queries._search_result_sort_key)
+
+    assert sorted_rows[0]["label"] == "ALP"
