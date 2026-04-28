@@ -15,6 +15,7 @@ import {
   fetchCoverage,
   fetchElectorateMap,
   fetchEntityProfile,
+  fetchInfluenceGraph,
   fetchPartyProfile,
   fetchRepresentativeProfile,
   searchDatabase
@@ -22,6 +23,7 @@ import {
 import { MapCanvas } from "./components/MapCanvas";
 import { DetailsPanel } from "./components/DetailsPanel";
 import { EntityProfilePanel } from "./components/EntityProfilePanel";
+import { InfluenceGraphPanel } from "./components/InfluenceGraphPanel";
 import { PartyProfilePanel } from "./components/PartyProfilePanel";
 import {
   AUSTRALIA_BOUNDS,
@@ -34,6 +36,7 @@ import type {
   CoverageResponse,
   ElectorateFeature,
   EntityProfile,
+  InfluenceGraph,
   LoadState,
   PartyProfile,
   RepresentativeProfile,
@@ -42,6 +45,12 @@ import type {
 
 const states = ["All", "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"];
 type DataLevel = "federal" | "state" | "council";
+type GraphRoot = {
+  kind: "person" | "party" | "entity";
+  id: number | string;
+  label: string;
+  includeCandidates: boolean;
+};
 
 const levelLabels: Record<DataLevel, string> = {
   federal: "Federal",
@@ -79,6 +88,10 @@ function App() {
   const [partyProfile, setPartyProfile] = useState<PartyProfile | null>(null);
   const [partyProfileStatus, setPartyProfileStatus] = useState<LoadState>("idle");
   const [partyProfileError, setPartyProfileError] = useState("");
+  const [graphRoot, setGraphRoot] = useState<GraphRoot | null>(null);
+  const [influenceGraph, setInfluenceGraph] = useState<InfluenceGraph | null>(null);
+  const [influenceGraphStatus, setInfluenceGraphStatus] = useState<LoadState>("idle");
+  const [influenceGraphError, setInfluenceGraphError] = useState("");
 
   useEffect(() => {
     if (dataLevel !== "federal") {
@@ -245,6 +258,38 @@ function App() {
     return () => controller.abort();
   }, [selectedSearchResult]);
 
+  useEffect(() => {
+    if (!graphRoot) {
+      setInfluenceGraph(null);
+      setInfluenceGraphStatus("idle");
+      setInfluenceGraphError("");
+      return;
+    }
+    const controller = new AbortController();
+    setInfluenceGraph(null);
+    setInfluenceGraphStatus("loading");
+    setInfluenceGraphError("");
+    fetchInfluenceGraph({
+      personId: graphRoot.kind === "person" ? graphRoot.id : undefined,
+      partyId: graphRoot.kind === "party" ? graphRoot.id : undefined,
+      entityId: graphRoot.kind === "entity" ? graphRoot.id : undefined,
+      includeCandidates: graphRoot.includeCandidates,
+      limit: 80,
+      signal: controller.signal
+    })
+      .then((payload) => {
+        setInfluenceGraph(payload);
+        setInfluenceGraphStatus("ready");
+      })
+      .catch((error: Error) => {
+        if (controller.signal.aborted) return;
+        setInfluenceGraph(null);
+        setInfluenceGraphError(error.message);
+        setInfluenceGraphStatus("error");
+      });
+    return () => controller.abort();
+  }, [graphRoot]);
+
   const totals = useMemo(() => {
     return features.reduce(
       (acc, feature) => {
@@ -290,6 +335,16 @@ function App() {
     setSelectedPersonId(personId);
     setContactPersonId(personId);
     setRepresentativeProfileRefreshKey((current) => current + 1);
+  }
+
+  function openRepresentativeGraph(personId: number, label: string) {
+    setGraphRoot({ kind: "person", id: personId, label, includeCandidates: false });
+  }
+
+  function toggleGraphCandidates(includeCandidates: boolean) {
+    setGraphRoot((current) => (
+      current?.kind === "party" ? { ...current, includeCandidates } : current
+    ));
   }
 
   return (
@@ -442,6 +497,9 @@ function App() {
                   profile={entityProfile}
                   status={entityProfileStatus}
                   error={entityProfileError}
+                  onOpenGraph={(entityId, label) =>
+                    setGraphRoot({ kind: "entity", id: entityId, label, includeCandidates: false })
+                  }
                   onClose={() => setSelectedSearchResult(null)}
                 />
               )}
@@ -450,6 +508,9 @@ function App() {
                   profile={partyProfile}
                   status={partyProfileStatus}
                   error={partyProfileError}
+                  onOpenGraph={(partyId, label) =>
+                    setGraphRoot({ kind: "party", id: partyId, label, includeCandidates: false })
+                  }
                   onClose={() => setSelectedSearchResult(null)}
                 />
               )}
@@ -499,7 +560,16 @@ function App() {
           representativeProfile={representativeProfile}
           representativeProfileStatus={representativeProfileStatus}
           onSelectRepresentative={selectRepresentativeForContact}
+          onOpenRepresentativeGraph={openRepresentativeGraph}
           onCloseContact={() => setContactPersonId(null)}
+        />
+        <InfluenceGraphPanel
+          graph={influenceGraph}
+          root={graphRoot}
+          status={influenceGraphStatus}
+          error={influenceGraphError}
+          onToggleCandidates={toggleGraphCandidates}
+          onClose={() => setGraphRoot(null)}
         />
       </section>
     </main>

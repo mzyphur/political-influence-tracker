@@ -2227,10 +2227,27 @@ def _append_graph_edge(
     edge_type: str,
     **metadata: Any,
 ) -> None:
-    key = "|".join([source, target, edge_type, str(metadata.get("event_family") or "")])
+    key = json.dumps(
+        {
+            "source": source,
+            "target": target,
+            "type": edge_type,
+            "event_family": metadata.get("event_family"),
+            "event_type": metadata.get("event_type"),
+            "link_type": metadata.get("link_type"),
+            "method": metadata.get("method"),
+            "review_status": metadata.get("review_status"),
+            "evidence_status": metadata.get("evidence_status"),
+        },
+        sort_keys=True,
+        default=str,
+    )
+    edge_id = _graph_node_id("edge", key)
+    if any(edge["id"] == edge_id for edge in edges):
+        return
     edges.append(
         {
-            "id": _graph_node_id("edge", key),
+            "id": edge_id,
             "source": source,
             "target": target,
             "type": edge_type,
@@ -2312,6 +2329,15 @@ def get_influence_graph(
                     count(DISTINCT influence_event.id) FILTER (
                         WHERE influence_event.amount_status = 'reported'
                     ) AS reported_amount_event_count,
+                    count(DISTINCT influence_event.id) FILTER (
+                        WHERE influence_event.review_status = 'reviewed'
+                    ) AS reviewed_event_count,
+                    count(DISTINCT influence_event.id) FILTER (
+                        WHERE influence_event.review_status = 'needs_review'
+                    ) AS needs_review_event_count,
+                    count(DISTINCT influence_event.id) FILTER (
+                        WHERE jsonb_array_length(influence_event.missing_data_flags) > 0
+                    ) AS missing_data_event_count,
                     sum(influence_event.amount) FILTER (
                         WHERE influence_event.amount_status = 'reported'
                     ) AS reported_amount_total,
@@ -2353,6 +2379,9 @@ def get_influence_graph(
                     event_type=row["event_type"],
                     event_count=row["event_count"],
                     reported_amount_event_count=row["reported_amount_event_count"],
+                    reviewed_event_count=row["reviewed_event_count"],
+                    needs_review_event_count=row["needs_review_event_count"],
+                    missing_data_event_count=row["missing_data_event_count"],
                     reported_amount_total=row["reported_amount_total"],
                     first_event_date=row["first_event_date"],
                     last_event_date=row["last_event_date"],
@@ -2381,6 +2410,16 @@ def get_influence_graph(
                 label=party["name"],
                 short_name=party["short_name"],
             )
+            reviewed_entity_id_rows = _fetch_dicts(
+                conn,
+                """
+                SELECT link.entity_id
+                FROM party_entity_link link
+                WHERE link.party_id = %s
+                  AND link.review_status = 'reviewed'
+                """,
+                (party_id,),
+            )
             link_rows = _fetch_dicts(
                 conn,
                 """
@@ -2402,7 +2441,7 @@ def get_influence_graph(
                 """,
                 (party_id, limit),
             )
-            linked_entity_ids = [int(row["entity_id"]) for row in link_rows]
+            linked_entity_ids = [int(row["entity_id"]) for row in reviewed_entity_id_rows]
             for row in link_rows:
                 party_entity_node = _graph_node_id("entity", row["entity_id"])
                 _add_graph_node(
@@ -2428,6 +2467,14 @@ def get_influence_graph(
                     conn,
                     """
                     SELECT
+                        recipient_entity.id AS recipient_entity_id,
+                        recipient_entity.canonical_name AS recipient_entity_name,
+                        recipient_entity.entity_type AS recipient_entity_type,
+                        party_link.link_type AS party_link_type,
+                        party_link.method AS party_link_method,
+                        party_link.confidence AS party_link_confidence,
+                        party_link.review_status AS party_link_review_status,
+                        party_link.evidence_note AS party_link_evidence_note,
                         source_entity.id AS source_entity_id,
                         source_entity.canonical_name AS source_entity_name,
                         influence_event.source_raw_name,
@@ -2436,6 +2483,15 @@ def get_influence_graph(
                         count(DISTINCT influence_event.id) FILTER (
                             WHERE influence_event.amount_status = 'reported'
                         ) AS reported_amount_event_count,
+                        count(DISTINCT influence_event.id) FILTER (
+                            WHERE influence_event.review_status = 'reviewed'
+                        ) AS reviewed_event_count,
+                        count(DISTINCT influence_event.id) FILTER (
+                            WHERE influence_event.review_status = 'needs_review'
+                        ) AS needs_review_event_count,
+                        count(DISTINCT influence_event.id) FILTER (
+                            WHERE jsonb_array_length(influence_event.missing_data_flags) > 0
+                        ) AS missing_data_event_count,
                         sum(influence_event.amount) FILTER (
                             WHERE influence_event.amount_status = 'reported'
                         ) AS reported_amount_total,
@@ -2443,6 +2499,12 @@ def get_influence_graph(
                         max(influence_event.event_date) AS last_event_date,
                         array_remove(array_agg(DISTINCT source_document.url), NULL) AS source_urls
                     FROM influence_event
+                    JOIN party_entity_link party_link
+                      ON party_link.party_id = %s
+                     AND party_link.entity_id = influence_event.recipient_entity_id
+                     AND party_link.review_status = 'reviewed'
+                    JOIN entity recipient_entity
+                      ON recipient_entity.id = influence_event.recipient_entity_id
                     LEFT JOIN entity source_entity
                       ON source_entity.id = influence_event.source_entity_id
                     JOIN source_document
@@ -2455,6 +2517,14 @@ def get_influence_graph(
                             OR NOT influence_event.source_entity_id = ANY(%s::bigint[])
                       )
                     GROUP BY
+                        recipient_entity.id,
+                        recipient_entity.canonical_name,
+                        recipient_entity.entity_type,
+                        party_link.link_type,
+                        party_link.method,
+                        party_link.confidence,
+                        party_link.review_status,
+                        party_link.evidence_note,
                         source_entity.id,
                         source_entity.canonical_name,
                         influence_event.source_raw_name,
@@ -2462,9 +2532,28 @@ def get_influence_graph(
                     ORDER BY reported_amount_total DESC NULLS LAST, event_count DESC
                     LIMIT %s
                     """,
-                    (linked_entity_ids, linked_entity_ids, limit),
+                    (party_id, linked_entity_ids, linked_entity_ids, limit),
                 )
                 for row in rows:
+                    recipient_id = _graph_node_id("entity", row["recipient_entity_id"])
+                    _add_graph_node(
+                        nodes,
+                        node_id=recipient_id,
+                        node_type="entity",
+                        label=row["recipient_entity_name"],
+                        entity_type=row["recipient_entity_type"],
+                    )
+                    _append_graph_edge(
+                        edges,
+                        source=recipient_id,
+                        target=root_id,
+                        edge_type="reviewed_party_entity_link",
+                        link_type=row["party_link_type"],
+                        method=row["party_link_method"],
+                        confidence=row["party_link_confidence"],
+                        review_status=row["party_link_review_status"],
+                        evidence_note=row["party_link_evidence_note"],
+                    )
                     source_id = _entity_or_raw_node(
                         nodes,
                         entity_id=row["source_entity_id"],
@@ -2475,12 +2564,15 @@ def get_influence_graph(
                     _append_graph_edge(
                         edges,
                         source=source_id,
-                        target=root_id,
+                        target=recipient_id,
                         edge_type="money_to_reviewed_party_entities",
                         event_family="money",
                         event_type=row["event_type"],
                         event_count=row["event_count"],
                         reported_amount_event_count=row["reported_amount_event_count"],
+                        reviewed_event_count=row["reviewed_event_count"],
+                        needs_review_event_count=row["needs_review_event_count"],
+                        missing_data_event_count=row["missing_data_event_count"],
                         reported_amount_total=row["reported_amount_total"],
                         first_event_date=row["first_event_date"],
                         last_event_date=row["last_event_date"],
@@ -2577,11 +2669,21 @@ def get_influence_graph(
                     count(DISTINCT influence_event.id) FILTER (
                         WHERE influence_event.amount_status = 'reported'
                     ) AS reported_amount_event_count,
+                    count(DISTINCT influence_event.id) FILTER (
+                        WHERE influence_event.review_status = 'reviewed'
+                    ) AS reviewed_event_count,
+                    count(DISTINCT influence_event.id) FILTER (
+                        WHERE influence_event.review_status = 'needs_review'
+                    ) AS needs_review_event_count,
+                    count(DISTINCT influence_event.id) FILTER (
+                        WHERE jsonb_array_length(influence_event.missing_data_flags) > 0
+                    ) AS missing_data_event_count,
                     sum(influence_event.amount) FILTER (
                         WHERE influence_event.amount_status = 'reported'
                     ) AS reported_amount_total,
                     min(influence_event.event_date) AS first_event_date,
-                    max(influence_event.event_date) AS last_event_date
+                    max(influence_event.event_date) AS last_event_date,
+                    array_remove(array_agg(DISTINCT source_document.url), NULL) AS source_urls
                 FROM influence_event
                 LEFT JOIN entity counterparty_entity
                   ON counterparty_entity.id = CASE
@@ -2592,6 +2694,8 @@ def get_influence_graph(
                 LEFT JOIN person counterparty_person
                   ON counterparty_person.id = influence_event.recipient_person_id
                  AND influence_event.source_entity_id = %s
+                JOIN source_document
+                  ON source_document.id = influence_event.source_document_id
                 WHERE (
                         influence_event.source_entity_id = %s
                         OR influence_event.recipient_entity_id = %s
@@ -2640,9 +2744,13 @@ def get_influence_graph(
                     event_type=row["event_type"],
                     event_count=row["event_count"],
                     reported_amount_event_count=row["reported_amount_event_count"],
+                    reviewed_event_count=row["reviewed_event_count"],
+                    needs_review_event_count=row["needs_review_event_count"],
+                    missing_data_event_count=row["missing_data_event_count"],
                     reported_amount_total=row["reported_amount_total"],
                     first_event_date=row["first_event_date"],
                     last_event_date=row["last_event_date"],
+                    source_urls=row["source_urls"],
                     evidence_status="non_rejected_public_disclosure",
                 )
 

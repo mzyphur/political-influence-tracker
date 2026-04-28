@@ -1,4 +1,4 @@
-import { Banknote, Building2, ExternalLink, Loader2, X } from "lucide-react";
+import { Banknote, Building2, ExternalLink, Loader2, Network, X } from "lucide-react";
 import { formatMoney } from "../map";
 import type { EntityEvent, EntityProfile, LoadState } from "../types";
 
@@ -6,6 +6,7 @@ type EntityProfilePanelProps = {
   profile: EntityProfile | null;
   status: LoadState;
   error: string;
+  onOpenGraph: (entityId: number, label: string) => void;
   onClose: () => void;
 };
 
@@ -13,6 +14,7 @@ export function EntityProfilePanel({
   profile,
   status,
   error,
+  onOpenGraph,
   onClose
 }: EntityProfilePanelProps) {
   if (status === "idle") return null;
@@ -30,9 +32,22 @@ export function EntityProfilePanel({
             </p>
           )}
         </div>
-        <button className="icon-button" type="button" aria-label="Close entity profile" onClick={onClose}>
-          <X size={15} aria-hidden="true" />
-        </button>
+        <div className="profile-header-actions">
+          {profile && (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={`Open influence graph for ${profile.entity.canonical_name}`}
+              title="Open source-backed influence graph"
+              onClick={() => onOpenGraph(profile.entity.id, profile.entity.canonical_name)}
+            >
+              <Network size={15} aria-hidden="true" />
+            </button>
+          )}
+          <button className="icon-button" type="button" aria-label="Close entity profile" onClick={onClose}>
+            <X size={15} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       {status === "loading" && (

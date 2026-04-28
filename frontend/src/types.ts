@@ -333,6 +333,54 @@ export type PartyEvent = {
   source_final_url: string | null;
 };
 
+export type InfluenceGraphNode = {
+  id: string;
+  type: "person" | "party" | "entity" | "raw_source" | "raw_counterparty" | string;
+  label: string;
+  short_name?: string | null;
+  entity_type?: string | null;
+};
+
+export type InfluenceGraphEdge = {
+  id: string;
+  source: string;
+  target: string;
+  type: string;
+  event_family?: string | null;
+  event_type?: string | null;
+  link_type?: string | null;
+  method?: string | null;
+  confidence?: string | number | null;
+  review_status?: string | null;
+  evidence_status?: string | null;
+  evidence_note?: string | null;
+  event_count?: number | null;
+  reported_amount_event_count?: number | null;
+  reviewed_event_count?: number | null;
+  needs_review_event_count?: number | null;
+  missing_data_event_count?: number | null;
+  reported_amount_total?: number | null;
+  first_event_date?: string | null;
+  last_event_date?: string | null;
+  source_urls?: string[];
+};
+
+export type InfluenceGraph = {
+  root_id: string;
+  nodes: InfluenceGraphNode[];
+  edges: InfluenceGraphEdge[];
+  node_count: number;
+  edge_count: number;
+  filters: {
+    person_id?: number | null;
+    party_id?: number | null;
+    entity_id?: number | null;
+    include_candidates?: boolean;
+    limit?: number;
+  };
+  caveat: string;
+};
+
 export type RepresentativeContact = {
   email: string | null;
   email_source_metadata_path: string | null;

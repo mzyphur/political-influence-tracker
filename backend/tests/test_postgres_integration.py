@@ -751,6 +751,10 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert graph_payload["edge_count"] == 1
     assert graph_payload["edges"][0]["type"] == "disclosed_to_representative"
     assert graph_payload["edges"][0]["reported_amount_total"] == 1250.0
+    assert graph_payload["edges"][0]["source_urls"] == ["https://example.test/source"]
+    assert graph_payload["edges"][0]["needs_review_event_count"] == 0
+    assert graph_payload["edges"][0]["missing_data_event_count"] == 0
+    assert len({edge["id"] for edge in graph_payload["edges"]}) == len(graph_payload["edges"])
     assert {node["label"] for node in graph_payload["nodes"]} >= {
         "Jane Citizen",
         "Clean Energy Pty Ltd",
@@ -764,6 +768,16 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert entity_payload["as_source_summary"][0]["event_count"] == 1
     assert entity_payload["top_recipients"][0]["recipient_label"] == "Jane Citizen"
     assert entity_payload["recent_events"][0]["entity_role"] == "as_source"
+
+    entity_graph_response = client.get(
+        "/api/graph/influence",
+        params={"entity_id": integration_db.entity_id, "limit": "10"},
+    )
+    assert entity_graph_response.status_code == 200
+    entity_graph_payload = entity_graph_response.json()
+    assert entity_graph_payload["root_id"] == f"entity:{integration_db.entity_id}"
+    assert entity_graph_payload["edges"][0]["type"] == "entity_disclosure_flow"
+    assert entity_graph_payload["edges"][0]["source_urls"] == ["https://example.test/source"]
 
     context_response = client.get(
         "/api/influence-context",
@@ -1158,3 +1172,21 @@ def test_party_entity_link_review_accepts_and_rejects_candidates(
     graph_labels = {node["label"] for node in graph_payload["nodes"]}
     assert "Example Party Federal Campaign" in graph_labels
     assert "Example Party Rejected Campaign" not in graph_labels
+    assert len({edge["id"] for edge in graph_payload["edges"]}) == len(graph_payload["edges"])
+    party_entity_node_id = next(
+        node["id"]
+        for node in graph_payload["nodes"]
+        if node["label"] == "Example Party Federal Campaign"
+    )
+    money_edges = [
+        edge for edge in graph_payload["edges"] if edge["type"] == "money_to_reviewed_party_entities"
+    ]
+    assert money_edges
+    assert all(edge["target"] == party_entity_node_id for edge in money_edges)
+    assert all(edge["target"] != graph_payload["root_id"] for edge in money_edges)
+    assert any(
+        edge["type"] == "reviewed_party_entity_link"
+        and edge["source"] == party_entity_node_id
+        and edge["target"] == graph_payload["root_id"]
+        for edge in graph_payload["edges"]
+    )

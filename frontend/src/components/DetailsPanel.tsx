@@ -9,6 +9,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  Network,
   Phone,
   X,
   Vote
@@ -31,6 +32,7 @@ type DetailsPanelProps = {
   representativeProfile: RepresentativeProfile | null;
   representativeProfileStatus: LoadState;
   onSelectRepresentative: (personId: number) => void;
+  onOpenRepresentativeGraph: (personId: number, label: string) => void;
   onCloseContact: () => void;
 };
 
@@ -43,6 +45,7 @@ export function DetailsPanel({
   representativeProfile,
   representativeProfileStatus,
   onSelectRepresentative,
+  onOpenRepresentativeGraph,
   onCloseContact
 }: DetailsPanelProps) {
   const [eventFamilyFilter, setEventFamilyFilter] = useState("all");
@@ -111,19 +114,35 @@ export function DetailsPanel({
               const isContactOpen = contactPersonId === representative.person_id;
               return (
                 <div className="rep-item" key={representative.person_id}>
-                  <button
-                    className="rep-row"
-                    data-selected={representative.person_id === selectedPersonId}
-                    type="button"
-                    aria-expanded={isContactOpen}
-                    onClick={() => onSelectRepresentative(representative.person_id)}
-                  >
-                    <div>
-                      <strong>{representative.display_name}</strong>
-                      <span>{representative.party_name || "No party recorded"}</span>
-                    </div>
-                    <ArrowRight size={16} aria-hidden="true" />
-                  </button>
+                  <div className="rep-action-row">
+                    <button
+                      className="rep-row"
+                      data-selected={representative.person_id === selectedPersonId}
+                      type="button"
+                      aria-expanded={isContactOpen}
+                      onClick={() => onSelectRepresentative(representative.person_id)}
+                    >
+                      <div>
+                        <strong>{representative.display_name}</strong>
+                        <span>{representative.party_name || "No party recorded"}</span>
+                      </div>
+                      <ArrowRight size={16} aria-hidden="true" />
+                    </button>
+                    <button
+                      className="graph-open-button"
+                      type="button"
+                      aria-label={`Open influence graph for ${representative.display_name}`}
+                      title="Open source-backed influence graph"
+                      onClick={() =>
+                        onOpenRepresentativeGraph(
+                          representative.person_id,
+                          representative.display_name
+                        )
+                      }
+                    >
+                      <Network size={17} aria-hidden="true" />
+                    </button>
+                  </div>
                   {isContactOpen && (
                     <ContactPopup
                       profile={representativeProfile}

@@ -2,6 +2,7 @@ import type {
   CoverageResponse,
   ElectorateFeatureCollection,
   EntityProfile,
+  InfluenceGraph,
   PartyProfile,
   RepresentativeProfile,
   SearchResponse
@@ -21,7 +22,14 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
     signal
   });
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    let detail = "";
+    try {
+      const payload = (await response.json()) as { detail?: unknown };
+      detail = typeof payload.detail === "string" ? payload.detail : "";
+    } catch {
+      detail = "";
+    }
+    throw new Error(detail || `${response.status} ${response.statusText}`);
   }
   return (await response.json()) as T;
 }
@@ -69,6 +77,29 @@ export async function fetchPartyProfile(
   signal?: AbortSignal
 ): Promise<PartyProfile> {
   return fetchJson<PartyProfile>(apiUrl(`/api/parties/${partyId}`), signal);
+}
+
+export async function fetchInfluenceGraph(
+  options: {
+    personId?: number | string;
+    partyId?: number | string;
+    entityId?: number | string;
+    includeCandidates?: boolean;
+    limit?: number;
+    signal?: AbortSignal;
+  }
+): Promise<InfluenceGraph> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 80)
+  });
+  if (options.personId !== undefined) params.set("person_id", String(options.personId));
+  if (options.partyId !== undefined) params.set("party_id", String(options.partyId));
+  if (options.entityId !== undefined) params.set("entity_id", String(options.entityId));
+  if (options.includeCandidates) params.set("include_candidates", "true");
+  return fetchJson<InfluenceGraph>(
+    apiUrl("/api/graph/influence", params),
+    options.signal
+  );
 }
 
 export async function searchDatabase(

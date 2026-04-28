@@ -1,4 +1,4 @@
-import { Banknote, Building2, Loader2, Users, X } from "lucide-react";
+import { Banknote, Building2, Loader2, Network, Users, X } from "lucide-react";
 import { formatMoney } from "../map";
 import type { LoadState, PartyEvent, PartyProfile } from "../types";
 
@@ -6,6 +6,7 @@ type PartyProfilePanelProps = {
   profile: PartyProfile | null;
   status: LoadState;
   error: string;
+  onOpenGraph: (partyId: number, label: string) => void;
   onClose: () => void;
 };
 
@@ -13,6 +14,7 @@ export function PartyProfilePanel({
   profile,
   status,
   error,
+  onOpenGraph,
   onClose
 }: PartyProfilePanelProps) {
   if (status === "idle") return null;
@@ -31,9 +33,22 @@ export function PartyProfilePanel({
             </p>
           )}
         </div>
-        <button className="icon-button" type="button" aria-label="Close party profile" onClick={onClose}>
-          <X size={15} aria-hidden="true" />
-        </button>
+        <div className="profile-header-actions">
+          {profile && (
+            <button
+              className="icon-button"
+              type="button"
+              aria-label={`Open influence graph for ${profile.party.name}`}
+              title="Open source-backed influence graph"
+              onClick={() => onOpenGraph(profile.party.id, profile.party.name)}
+            >
+              <Network size={15} aria-hidden="true" />
+            </button>
+          )}
+          <button className="icon-button" type="button" aria-label="Close party profile" onClick={onClose}>
+            <X size={15} aria-hidden="true" />
+          </button>
+        </div>
       </div>
 
       {status === "loading" && (
