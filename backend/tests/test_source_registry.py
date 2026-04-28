@@ -18,6 +18,8 @@ def test_core_federal_sources_exist() -> None:
         "aph_members_interests_48",
         "aph_senators_interests",
         "aph_contacts_csv",
+        "aph_members_contact_list_pdf",
+        "aph_senators_contact_list_pdf",
         "aec_federal_boundaries_gis",
         "aph_house_votes_and_proceedings",
         "aph_senate_journals",
@@ -68,6 +70,27 @@ def test_discover_senate_interests_env_asset() -> None:
     assert len(links) == 1
     assert links[0].link_type == "js"
     assert links[0].url == "https://www.aph.gov.au/js/apps/senators-interests-register/build/env.js?v=123"
+
+
+def test_discover_aph_contact_csv_and_pdf_links() -> None:
+    source = get_source("aph_contacts_csv")
+    html = """
+    <html>
+      <body>
+        <a href="/-/media/03_Senators_and_Members/32_Members/Lists/Members_List.pdf">
+          Members List PDF
+        </a>
+        <a href="/-/media/03_Senators_and_Members/Address_Labels_and_CSV_files/Senators/allsenstate.csv">
+          All Senators by State CSV
+        </a>
+        <a href="/unrelated.html">Unrelated</a>
+      </body>
+    </html>
+    """
+    links = discover_links_from_html(source, html)
+
+    assert {link.link_type for link in links} == {"csv", "pdf"}
+    assert len(links) == 2
 
 
 def test_discovered_source_ids_are_stable() -> None:

@@ -23,6 +23,10 @@ The first usable screen is the national map explorer:
 - `/api/representatives/{person_id}` supplies the side panel's selected
   representative record feed, including money, benefits, private interests,
   organisational roles, and other person-linked disclosed records.
+- Clicking a representative opens a public contact details popup. The popup uses
+  APH contact CSV phone/address fields and APH contact-list PDF email fields
+  when the official PDF exposes an email; otherwise it shows the official APH
+  profile/search link rather than inferring an email.
 - House map fills and panel accents use explicit party short-code colors for the
   party codes currently present in the database. Senate map fills use
   state/territory colors because each Senate feature is multi-member.

@@ -72,7 +72,7 @@ def _should_keep_link(source_id: str, url: str, title: str) -> bool:
         return "/download/all" in path
 
     if source_id == "aph_contacts_csv":
-        return path.endswith(".csv")
+        return path.endswith(".csv") or path.endswith(".pdf")
 
     if source_id == "aph_members_interests_48":
         return path.endswith(".pdf") or "pdf" in title_lower

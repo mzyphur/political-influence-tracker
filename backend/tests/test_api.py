@@ -128,6 +128,22 @@ def test_representative_profile_404(monkeypatch) -> None:
     assert response.status_code == 404
 
 
+def test_representative_contact_payload_does_not_expose_local_source_paths() -> None:
+    contact = queries._representative_contact_from_metadata(
+        {
+            "email": "Example.Member.MP@aph.gov.au",
+            "email_source_metadata_path": "/local/raw/contact-list/metadata.json",
+            "electorate_phone": "(02) 0000 0000",
+            "electorate_office_address": "1 Example Street, Canberra ACT 2600",
+        },
+        source_url="https://www.aph.gov.au/example.csv",
+    )
+
+    assert contact["email"] == "Example.Member.MP@aph.gov.au"
+    assert contact["email_source_metadata_path"] is None
+    assert contact["source_url"] == "https://www.aph.gov.au/example.csv"
+
+
 def test_search_database_short_query_returns_caveat_without_db() -> None:
     response = queries.search_database("x")
 

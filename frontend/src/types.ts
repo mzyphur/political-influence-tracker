@@ -135,9 +135,33 @@ export type RepresentativeProfile = {
     display_name: string;
     canonical_name: string;
   };
+  contact: RepresentativeContact;
   event_summary: RepresentativeEventSummary[];
   recent_events: RepresentativeEvent[];
   caveat: string;
+};
+
+export type RepresentativeContact = {
+  email: string | null;
+  email_source_metadata_path: string | null;
+  phones: {
+    electorate: string | null;
+    parliament: string | null;
+    tollfree: string | null;
+    fax: string | null;
+  };
+  addresses: {
+    physical_office: string | null;
+    postal: string | null;
+    parliament: string | null;
+  };
+  web: {
+    official_profile: string | null;
+    contact_form: string | null;
+    personal_website: string | null;
+  };
+  source_url: string | null;
+  source_note: string;
 };
 
 export type LoadState = "idle" | "loading" | "ready" | "error";

@@ -44,6 +44,12 @@ MAP_CAVEAT = (
     "counts for current representatives, not electorate-level allegations or causal claims."
 )
 
+CONTACT_CAVEAT = (
+    "Contact details are public APH roster/contact-list records. Email is returned only "
+    "when present in an official APH contact-list PDF; otherwise the official APH "
+    "profile/search link is the electronic contact path."
+)
+
 
 def _jsonable(value: Any) -> Any:
     if isinstance(value, Decimal):
@@ -55,6 +61,46 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, list):
         return [_jsonable(item) for item in value]
     return value
+
+
+def _contact_value(metadata: dict[str, Any], key: str) -> str | None:
+    value = metadata.get(key)
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _representative_contact_from_metadata(
+    metadata: dict[str, Any] | None,
+    *,
+    source_url: str | None = None,
+) -> dict[str, Any]:
+    metadata = metadata or {}
+    email = _contact_value(metadata, "email")
+    official_profile_url = _contact_value(metadata, "official_profile_search_url")
+    return {
+        "email": email,
+        "email_source_metadata_path": None,
+        "phones": {
+            "electorate": _contact_value(metadata, "electorate_phone"),
+            "parliament": _contact_value(metadata, "parliamentary_phone"),
+            "tollfree": _contact_value(metadata, "electorate_tollfree"),
+            "fax": _contact_value(metadata, "electorate_fax"),
+        },
+        "addresses": {
+            "physical_office": _contact_value(metadata, "electorate_office_address"),
+            "postal": _contact_value(metadata, "electorate_postal_address"),
+            "parliament": _contact_value(metadata, "parliament_office_address"),
+        },
+        "web": {
+            "official_profile": official_profile_url,
+            "contact_form": None,
+            "personal_website": None,
+        },
+        "source_url": source_url,
+        "source_note": CONTACT_CAVEAT,
+    }
 
 
 def _clean_query(query: str) -> str:
@@ -1295,9 +1341,18 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
         person_rows = _fetch_dicts(
             conn,
             """
-            SELECT id, external_key, display_name, canonical_name, metadata
+            SELECT
+                person.id,
+                person.external_key,
+                person.display_name,
+                person.canonical_name,
+                person.metadata,
+                source_document.final_url AS source_final_url,
+                source_document.url AS source_url
             FROM person
-            WHERE id = %s
+            LEFT JOIN source_document
+              ON source_document.id = person.source_document_id
+            WHERE person.id = %s
             """,
             (person_id,),
         )
@@ -1418,7 +1473,16 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
         )
     return _jsonable(
         {
-            "person": person_rows[0],
+            "person": {
+                "id": person_rows[0]["id"],
+                "external_key": person_rows[0]["external_key"],
+                "display_name": person_rows[0]["display_name"],
+                "canonical_name": person_rows[0]["canonical_name"],
+            },
+            "contact": _representative_contact_from_metadata(
+                person_rows[0].get("metadata"),
+                source_url=person_rows[0].get("source_final_url") or person_rows[0].get("source_url"),
+            ),
             "office_terms": terms,
             "event_summary": event_summary,
             "recent_events": recent_events,

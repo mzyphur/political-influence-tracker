@@ -250,6 +250,8 @@ def run_federal_foundation_pipeline(
                 for source_id in (
                     "aec_transparency_downloads",
                     "aph_contacts_csv",
+                    "aph_members_contact_list_pdf",
+                    "aph_senators_contact_list_pdf",
                     "aph_members_interests_48",
                     "aph_senators_interests",
                     "aec_federal_boundaries_gis",

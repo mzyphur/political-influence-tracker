@@ -4,20 +4,27 @@ import {
   Banknote,
   ExternalLink,
   Gift,
+  Globe2,
   Loader2,
+  Mail,
+  MapPin,
+  Phone,
+  X,
   Vote
 } from "lucide-react";
 import { formatMoney } from "../map";
-import type { ElectorateFeature, LoadState, RepresentativeProfile } from "../types";
+import type { ElectorateFeature, LoadState, RepresentativeContact, RepresentativeProfile } from "../types";
 
 type DetailsPanelProps = {
   feature: ElectorateFeature | null;
   caveat: string;
   partyColor: string;
   selectedPersonId: number | null;
+  contactPersonId: number | null;
   representativeProfile: RepresentativeProfile | null;
   representativeProfileStatus: LoadState;
   onSelectRepresentative: (personId: number) => void;
+  onCloseContact: () => void;
 };
 
 export function DetailsPanel({
@@ -25,9 +32,11 @@ export function DetailsPanel({
   caveat,
   partyColor,
   selectedPersonId,
+  contactPersonId,
   representativeProfile,
   representativeProfileStatus,
-  onSelectRepresentative
+  onSelectRepresentative,
+  onCloseContact
 }: DetailsPanelProps) {
   if (!feature) {
     return (
@@ -58,21 +67,33 @@ export function DetailsPanel({
         )}
         <div className="rep-list">
           {properties.current_representatives.length ? (
-            properties.current_representatives.map((representative) => (
-              <button
-                className="rep-row"
-                data-selected={representative.person_id === selectedPersonId}
-                key={representative.person_id}
-                type="button"
-                onClick={() => onSelectRepresentative(representative.person_id)}
-              >
-                <div>
-                  <strong>{representative.display_name}</strong>
-                  <span>{representative.party_name || "No party recorded"}</span>
+            properties.current_representatives.map((representative) => {
+              const isContactOpen = contactPersonId === representative.person_id;
+              return (
+                <div className="rep-item" key={representative.person_id}>
+                  <button
+                    className="rep-row"
+                    data-selected={representative.person_id === selectedPersonId}
+                    type="button"
+                    aria-expanded={isContactOpen}
+                    onClick={() => onSelectRepresentative(representative.person_id)}
+                  >
+                    <div>
+                      <strong>{representative.display_name}</strong>
+                      <span>{representative.party_name || "No party recorded"}</span>
+                    </div>
+                    <ArrowRight size={16} aria-hidden="true" />
+                  </button>
+                  {isContactOpen && (
+                    <ContactPopup
+                      profile={representativeProfile}
+                      status={representativeProfileStatus}
+                      onClose={onCloseContact}
+                    />
+                  )}
                 </div>
-                <ArrowRight size={16} aria-hidden="true" />
-              </button>
-            ))
+              );
+            })
           ) : (
             <p className="muted">No current representative is attached in the database.</p>
           )}
@@ -178,6 +199,142 @@ function eventTimeLabel(event: { event_date: string | null; reporting_period: st
   if (event.event_date) return event.event_date;
   if (event.reporting_period) return `Reporting period ${event.reporting_period}`;
   return null;
+}
+
+function ContactPopup({
+  profile,
+  status,
+  onClose
+}: {
+  profile: RepresentativeProfile | null;
+  status: LoadState;
+  onClose: () => void;
+}) {
+  if (status === "loading") {
+    return (
+      <div className="contact-popover" role="dialog" aria-label="Representative contact details">
+        <p className="muted inline-loading">
+          <Loader2 size={14} className="spin" aria-hidden="true" />
+          Loading public contact details
+        </p>
+      </div>
+    );
+  }
+  if (status === "error" || !profile) {
+    return (
+      <div className="contact-popover" role="dialog" aria-label="Representative contact details">
+        <p className="muted">Could not load public contact details.</p>
+      </div>
+    );
+  }
+
+  const contact = profile.contact;
+  return (
+    <div className="contact-popover" role="dialog" aria-label="Representative contact details">
+      <div className="contact-popover-header">
+        <div>
+          <small>Public contact details</small>
+          <strong>{profile.person.display_name}</strong>
+        </div>
+        <button type="button" className="icon-button" onClick={onClose} aria-label="Close contact details">
+          <X size={15} aria-hidden="true" />
+        </button>
+      </div>
+
+      <div className="contact-grid">
+        <ContactLine
+          icon={<Mail size={15} />}
+          label="Email"
+          value={contact.email}
+          href={contact.email ? `mailto:${contact.email}` : null}
+          fallback="Not published in loaded APH contact record"
+        />
+        <ContactLine
+          icon={<Phone size={15} />}
+          label="Electorate phone"
+          value={contact.phones.electorate}
+          href={telHref(contact.phones.electorate)}
+          fallback="Not listed"
+        />
+        <ContactLine
+          icon={<Phone size={15} />}
+          label="Parliament phone"
+          value={contact.phones.parliament}
+          href={telHref(contact.phones.parliament)}
+          fallback="Not listed"
+        />
+        <ContactLine
+          icon={<MapPin size={15} />}
+          label="Physical office"
+          value={contact.addresses.physical_office}
+          fallback="Not listed"
+        />
+        <ContactLine
+          icon={<MapPin size={15} />}
+          label="Postal address"
+          value={contact.addresses.postal}
+          fallback="Not listed"
+        />
+        <ContactLine
+          icon={<Globe2 size={15} />}
+          label="Web profile"
+          value={contact.web.official_profile ? "APH profile/search" : null}
+          href={contact.web.official_profile}
+          fallback="Not listed"
+        />
+      </div>
+
+      <div className="contact-source-row">
+        <ContactSourceLink contact={contact} />
+      </div>
+      <p className="contact-note">{contact.source_note}</p>
+    </div>
+  );
+}
+
+function ContactLine({
+  icon,
+  label,
+  value,
+  href,
+  fallback
+}: {
+  icon: React.ReactNode;
+  label: string;
+  value: string | null;
+  href?: string | null;
+  fallback: string;
+}) {
+  return (
+    <div className="contact-line">
+      <span className="contact-icon">{icon}</span>
+      <div>
+        <small>{label}</small>
+        {value && href ? (
+          <a href={href} target={href.startsWith("http") ? "_blank" : undefined} rel="noreferrer">
+            {value}
+          </a>
+        ) : (
+          <strong>{value || fallback}</strong>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ContactSourceLink({ contact }: { contact: RepresentativeContact }) {
+  if (!contact.source_url) return <span>Source: APH public contact records</span>;
+  return (
+    <a href={contact.source_url} target="_blank" rel="noreferrer">
+      Source: APH public contact records
+    </a>
+  );
+}
+
+function telHref(phone: string | null) {
+  if (!phone) return null;
+  const cleaned = phone.replace(/[^\d+]/g, "");
+  return cleaned ? `tel:${cleaned}` : null;
 }
 
 function Fact({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) {

@@ -60,6 +60,8 @@ function App() {
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
   const [coverageStatus, setCoverageStatus] = useState<LoadState>("idle");
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
+  const [contactPersonId, setContactPersonId] = useState<number | null>(null);
+  const [representativeProfileRefreshKey, setRepresentativeProfileRefreshKey] = useState(0);
   const [representativeProfile, setRepresentativeProfile] =
     useState<RepresentativeProfile | null>(null);
   const [representativeProfileStatus, setRepresentativeProfileStatus] =
@@ -127,6 +129,7 @@ function App() {
   useEffect(() => {
     const firstRepresentative = selectedFeature?.properties.current_representatives[0];
     setSelectedPersonId(firstRepresentative?.person_id ?? null);
+    setContactPersonId(null);
   }, [selectedFeature]);
 
   useEffect(() => {
@@ -148,7 +151,7 @@ function App() {
         setRepresentativeProfileStatus("error");
       });
     return () => controller.abort();
-  }, [selectedPersonId]);
+  }, [representativeProfileRefreshKey, selectedPersonId]);
 
   useEffect(() => {
     const cleaned = query.trim();
@@ -211,6 +214,12 @@ function App() {
       }
       setPendingSearchResult(result);
     }
+  }
+
+  function selectRepresentativeForContact(personId: number) {
+    setSelectedPersonId(personId);
+    setContactPersonId(personId);
+    setRepresentativeProfileRefreshKey((current) => current + 1);
   }
 
   return (
@@ -369,9 +378,11 @@ function App() {
               : electorateColor(selectedFeature?.properties.party_name)
           }
           selectedPersonId={selectedPersonId}
+          contactPersonId={contactPersonId}
           representativeProfile={representativeProfile}
           representativeProfileStatus={representativeProfileStatus}
-          onSelectRepresentative={setSelectedPersonId}
+          onSelectRepresentative={selectRepresentativeForContact}
+          onCloseContact={() => setContactPersonId(null)}
         />
       </section>
     </main>

@@ -150,6 +150,12 @@ historical office terms, reviewed context summaries, and a person-linked
 receive or disclose?" across money, gifts, hospitality, travel, private
 interests, organisational roles, and other traceable disclosed records.
 
+The response also includes a `contact` object for public representative contact
+details. Phone and office-address fields come from APH contact CSVs. Email is
+populated only when the address is present in an official APH House/Senate
+contact-list PDF and the deterministic match is unambiguous; otherwise the API
+returns the official APH profile/search URL as the electronic contact path.
+
 These are still person-linked records only. Party/entity/candidate-return money
 flows remain in the whole database and should be surfaced through party/entity
 and attribution-method views rather than forced onto a person without evidence.

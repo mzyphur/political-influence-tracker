@@ -255,6 +255,12 @@ Verification:
   visual QA. Party short-code colors now cover the parties present in the
   current database, and the selected region uses a white halo plus bright gold
   stroke instead of the earlier muted outline.
+- Added public representative contact details to the reproducible roster/API/UI
+  path. Weekly runs now fetch explicit APH House and Senate contact-list PDFs,
+  the roster preserves APH CSV phone/address fields, email fields are attached
+  only when matched from official APH PDF text, ambiguous senator surname email
+  matches are left blank, and clicking a representative opens a contact popup in
+  the frontend with source/caveat text.
 
 Notable data observations:
 
