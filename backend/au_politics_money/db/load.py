@@ -76,6 +76,7 @@ CAMPAIGN_SUPPORT_FLOW_KINDS = {
     "election_candidate_or_senate_group_donation_received",
     "election_candidate_or_senate_group_return_summary",
     "election_media_advertising_expenditure",
+    "election_public_funding_paid",
     "election_third_party_campaign_expenditure",
 }
 
@@ -377,7 +378,7 @@ def classify_money_event_type(disclosure_category: str, receipt_type: str) -> st
 
 def is_campaign_support_money_flow(metadata: dict[str, Any]) -> bool:
     return (
-        metadata.get("source_dataset") == "aec_election"
+        metadata.get("source_dataset") in {"aec_election", "aec_public_funding"}
         and metadata.get("flow_kind") in CAMPAIGN_SUPPORT_FLOW_KINDS
     )
 
@@ -397,6 +398,8 @@ def campaign_support_event_type(metadata: dict[str, Any], fallback_event_type: s
         return "candidate_or_senate_group_return_summary"
     if flow_kind == "election_media_advertising_expenditure":
         return "observed_media_ad_activity"
+    if flow_kind == "election_public_funding_paid":
+        return "election_public_funding_paid"
     if flow_kind == "election_third_party_campaign_expenditure":
         return "third_party_campaign_expenditure"
     return fallback_event_type
@@ -1058,6 +1061,17 @@ def load_aec_election_money_flows(conn, jsonl_path: Path | None = None) -> dict[
             "skipped_reason": "no_processed_aec_election_money_flows",
         }
     return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="aec_election")
+
+
+def load_aec_public_funding_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(PROCESSED_DIR / "aec_public_funding_money_flows", "*.jsonl")
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_aec_public_funding_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="aec_public_funding")
 
 
 def _person_lookup(conn) -> dict[str, int]:
@@ -4344,6 +4358,7 @@ def load_processed_artifacts(
         if include_money_flows:
             summary["money_flows"] = load_aec_money_flows(conn)
             summary["election_money_flows"] = load_aec_election_money_flows(conn)
+            summary["public_funding_money_flows"] = load_aec_public_funding_money_flows(conn)
         if include_house_interests:
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:

@@ -387,7 +387,15 @@ def _search_entities(conn, pattern: str, limit: int) -> list[dict[str, Any]]:
             count(DISTINCT influence_event.id) AS influence_event_count,
             sum(influence_event.amount) FILTER (
                 WHERE influence_event.amount_status = 'reported'
-            ) AS reported_amount_total
+                  AND influence_event.event_family <> 'campaign_support'
+            ) AS reported_amount_total,
+            count(DISTINCT influence_event.id) FILTER (
+                WHERE influence_event.event_family = 'campaign_support'
+            ) AS campaign_support_event_count,
+            sum(influence_event.amount) FILTER (
+                WHERE influence_event.amount_status = 'reported'
+                  AND influence_event.event_family = 'campaign_support'
+            ) AS campaign_support_reported_amount_total
         FROM entity
         LEFT JOIN influence_event
           ON (
@@ -997,6 +1005,16 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
                       AND event_family <> 'campaign_support'
                 )
                     AS reported_amount_total,
+                count(*) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family = 'campaign_support'
+                )
+                    AS campaign_support_reported_amount_event_count,
+                sum(amount) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family = 'campaign_support'
+                )
+                    AS campaign_support_reported_amount_total,
                 min(event_date) AS first_event_date,
                 max(event_date) AS last_event_date
             FROM influence_event
@@ -1497,6 +1515,16 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
                       AND event_family <> 'campaign_support'
                 )
                     AS reported_amount_total,
+                count(*) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family = 'campaign_support'
+                )
+                    AS campaign_support_reported_amount_event_count,
+                sum(amount) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family = 'campaign_support'
+                )
+                    AS campaign_support_reported_amount_total,
                 min(event_date) AS first_event_date,
                 max(event_date) AS last_event_date
             FROM influence_event
@@ -1781,6 +1809,16 @@ def get_entity_profile(entity_id: int, *, database_url: str | None = None) -> di
                       AND event_family <> 'campaign_support'
                 )
                     AS reported_amount_total,
+                count(*) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family = 'campaign_support'
+                )
+                    AS campaign_support_reported_amount_event_count,
+                sum(amount) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family = 'campaign_support'
+                )
+                    AS campaign_support_reported_amount_total,
                 min(event_date) AS first_event_date,
                 max(event_date) AS last_event_date
             FROM influence_event
@@ -1809,6 +1847,16 @@ def get_entity_profile(entity_id: int, *, database_url: str | None = None) -> di
                       AND event_family <> 'campaign_support'
                 )
                     AS reported_amount_total,
+                count(*) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family = 'campaign_support'
+                )
+                    AS campaign_support_reported_amount_event_count,
+                sum(amount) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family = 'campaign_support'
+                )
+                    AS campaign_support_reported_amount_total,
                 min(event_date) AS first_event_date,
                 max(event_date) AS last_event_date
             FROM influence_event

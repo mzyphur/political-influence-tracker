@@ -181,10 +181,18 @@ Campaign-return and party-channelled records are deliberately separated from
 the direct feed. The response includes `campaign_support_summary`,
 `campaign_support_recent_events`, and `campaign_support_caveat` for candidate
 or Senate-group election returns, campaign expenditure, nil-return context, and
-other campaign activity that is source-backed but not personal receipt. House
-candidate rows are linked to representatives only when the candidate name,
-electorate, and state form an exact unique match; Senate rows stay at
-state/group/party context unless a source supports senator-specific attribution.
+other campaign activity that is source-backed but not personal receipt. AEC
+public election funding is also represented as campaign support: party payments
+remain party aggregate rows, while independent-candidate payments remain
+candidate/campaign-context rows. House candidate rows are linked to
+representatives only when the candidate name, electorate, and state form an
+exact unique match; Senate rows stay at state/group/party context unless a
+source supports senator-specific attribution.
+
+Entity profiles keep the same separation. `reported_amount_total` fields in
+entity direct-money summaries exclude `campaign_support`; campaign support is
+available in `campaign_support_reported_amount_total` fields and in recent
+records with `event_family=campaign_support`.
 
 The response also includes a `contact` object for public representative contact
 details. Phone and office-address fields come from APH contact CSVs. Email is

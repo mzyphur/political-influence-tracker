@@ -45,6 +45,7 @@ from au_politics_money.ingest.aec_election import (
     normalize_aec_election_money_flows,
     summarize_aec_election_zip,
 )
+from au_politics_money.ingest.aec_public_funding import normalize_aec_public_funding
 from au_politics_money.ingest.aph_decision_records import (
     DECISION_RECORD_SOURCE_IDS,
     extract_aph_decision_record_index,
@@ -203,6 +204,12 @@ def summarize_aec_election_command(sample_size: int) -> int:
 
 def normalize_aec_election_command() -> int:
     summary_path = normalize_aec_election_money_flows()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def normalize_aec_public_funding_command() -> int:
+    summary_path = normalize_aec_public_funding()
     print(str(Path(summary_path).resolve()))
     return 0
 
@@ -558,6 +565,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("normalize-aec-election-money-flows")
 
+    subparsers.add_parser("normalize-aec-public-funding")
+
     subparsers.add_parser("extract-house-interest-sections")
 
     subparsers.add_parser("extract-house-interest-records")
@@ -742,6 +751,8 @@ def main() -> int:
         return summarize_aec_election_command(args.sample_size)
     if args.command == "normalize-aec-election-money-flows":
         return normalize_aec_election_command()
+    if args.command == "normalize-aec-public-funding":
+        return normalize_aec_public_funding_command()
     if args.command == "extract-house-interest-sections":
         return extract_house_interest_sections_command()
     if args.command == "extract-house-interest-records":

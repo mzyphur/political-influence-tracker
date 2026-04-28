@@ -24,6 +24,7 @@ from au_politics_money.ingest.aec_election import (
     normalize_aec_election_money_flows,
     summarize_aec_election_zip,
 )
+from au_politics_money.ingest.aec_public_funding import normalize_aec_public_funding
 from au_politics_money.ingest.aph_decision_records import (
     extract_aph_decision_record_index,
     fetch_aph_decision_record_documents,
@@ -269,6 +270,7 @@ def run_federal_foundation_pipeline(
                     "aec_federal_boundaries_gis",
                     "aec_download_all_annual_data",
                     "aec_download_all_election_data",
+                    "aec_2025_federal_election_funding_finalised",
                     "aims_australian_coastline_50k_2024_simp",
                     "natural_earth_admin0_countries_10m",
                     "natural_earth_physical_land_10m",
@@ -298,6 +300,7 @@ def run_federal_foundation_pipeline(
         ("normalize_aec_annual_money_flows", normalize_aec_annual_money_flows),
         ("summarize_aec_election_zip", summarize_aec_election_zip),
         ("normalize_aec_election_money_flows", normalize_aec_election_money_flows),
+        ("normalize_aec_public_funding", normalize_aec_public_funding),
         ("fetch_current_aec_boundaries_zip", fetch_current_aec_boundary_zip),
         ("extract_aec_federal_boundaries", extract_current_aec_boundaries),
         ("fetch_aims_australian_coastline_zip", fetch_aims_australian_coastline_zip),

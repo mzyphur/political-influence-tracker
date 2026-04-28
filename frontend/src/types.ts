@@ -217,6 +217,8 @@ export type EntityEventSummary = {
   person_linked_event_count?: number;
   reported_amount_event_count: number;
   reported_amount_total: number | null;
+  campaign_support_reported_amount_event_count?: number;
+  campaign_support_reported_amount_total?: number | null;
   first_event_date: string | null;
   last_event_date: string | null;
 };

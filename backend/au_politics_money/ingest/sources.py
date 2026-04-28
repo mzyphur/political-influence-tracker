@@ -65,6 +65,21 @@ SOURCES: tuple[SourceRecord, ...] = (
         notes="Bulk election disclosure data export.",
     ),
     SourceRecord(
+        source_id="aec_2025_federal_election_funding_finalised",
+        name="AEC 2025 Federal Election Funding Payments Finalised",
+        jurisdiction="Commonwealth",
+        level="federal",
+        source_type="election_public_funding_summary",
+        url="https://www.aec.gov.au/media/2025/11-27.htm",
+        expected_format="html",
+        update_frequency="event_finalisation",
+        priority="core",
+        notes=(
+            "Official AEC summary of final 2025 election public funding payments "
+            "to parties and independent candidates."
+        ),
+    ),
+    SourceRecord(
         source_id="aec_download_all_referendum_data",
         name="AEC All Referendum Disclosure Data ZIP",
         jurisdiction="Commonwealth",

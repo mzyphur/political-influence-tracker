@@ -312,6 +312,11 @@ Verification:
   direct-money totals, source-effect context amount totals, person/entity graph
   direct-disclosure edges, and entity direct-money summaries. Campaign-support
   amounts remain visible in campaign-support-specific fields and panels.
+- Added reproducible AEC public-funding ingestion for the finalised 2025 federal
+  election funding page. The pipeline fetches the official AEC HTML page,
+  normalises party and independent-candidate payment tables, and loads them as
+  `campaign_support` / `election_public_funding_paid` rows rather than donations
+  or personal receipts.
 
 Notable data observations:
 
@@ -334,6 +339,10 @@ Notable data observations:
   benefit detail rows. Candidate/electorate/state context is attached only when
   the candidate-context key is unambiguous; nine ambiguous context keys are
   withheld for review rather than linked.
+- The AEC 2025 public-funding normalizer produced 86 rows: 26 party aggregate
+  payments and 60 independent-candidate payments. Loaded public funding totals
+  match the AEC finalised total of $93,850,428.95 and remain separated from
+  direct disclosed money/gift totals.
 - House interests text extraction needed OCR fallback for scanned/low-text pages, including `Gosling_48P.pdf` and `Katter_48P.pdf`; OCR artifacts are handled in the metadata extractor and record filters.
 - The Senate register currently exposes structured JSON through a public API used by the official APH React app; this is preferable to PDF scraping for current Senate interests, but the API should be monitored for schema changes.
 - `public_interest_sector_rules_v1` is useful for exploratory filtering but remains inferred. Any public claim about an entity's sector should retain the classifier/method/confidence caveat until ABN/ASIC/ANZSIC or manual-review evidence is added.

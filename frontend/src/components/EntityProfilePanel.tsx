@@ -1,4 +1,4 @@
-import { Banknote, Building2, ExternalLink, Loader2, Network, X } from "lucide-react";
+import { Banknote, Building2, ExternalLink, Loader2, Megaphone, Network, X } from "lucide-react";
 import { formatMoney } from "../map";
 import type { EntityEvent, EntityProfile, LoadState } from "../types";
 
@@ -92,6 +92,13 @@ export function EntityProfilePanel({
               label="Received total"
               value={formatMoney(summaryAmount(profile.as_recipient_summary))}
             />
+            <ProfileFact
+              icon={<Megaphone size={16} />}
+              label="Campaign support"
+              value={formatMoney(
+                campaignSupportAmount(profile.as_source_summary, profile.as_recipient_summary)
+              )}
+            />
           </div>
 
           <EntityRankList
@@ -137,6 +144,14 @@ function summaryCount(rows: Array<{ event_count: number }>) {
 
 function summaryAmount(rows: Array<{ reported_amount_total: number | null }>) {
   return rows.reduce((total, row) => total + (row.reported_amount_total ?? 0), 0);
+}
+
+function campaignSupportAmount(
+  ...groups: Array<Array<{ campaign_support_reported_amount_total?: number | null }>>
+) {
+  return groups
+    .flat()
+    .reduce((total, row) => total + (row.campaign_support_reported_amount_total ?? 0), 0);
 }
 
 function ProfileFact({
