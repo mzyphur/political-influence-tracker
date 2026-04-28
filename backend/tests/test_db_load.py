@@ -1,7 +1,10 @@
 from datetime import date
 import json
 
+import pytest
+
 from au_politics_money.db.load import (
+    MAX_COASTLINE_REPAIR_BUFFER_METERS,
     _can_create_house_interest_person,
     apply_schema,
     classify_interest_event,
@@ -9,6 +12,7 @@ from au_politics_money.db.load import (
     is_direct_representative_return_type,
     load_official_parliamentary_decision_record_documents,
     load_official_parliamentary_decision_records,
+    load_electorate_boundary_display_geometries,
     missing_interest_flags,
     normalize_electorate_name,
     normalize_name,
@@ -126,6 +130,20 @@ def test_apply_schema_loads_backend_schema() -> None:
     assert "'sector_policy_topic_link'" in conn.cursor_instance.executed_sql
     assert "CREATE OR REPLACE VIEW person_policy_vote_summary" in conn.cursor_instance.executed_sql
     assert conn.committed is True
+
+
+def test_display_geometry_repair_buffer_validates_range() -> None:
+    with pytest.raises(ValueError, match="non-negative"):
+        load_electorate_boundary_display_geometries(
+            object(),
+            coastline_repair_buffer_meters=-1,
+        )
+
+    with pytest.raises(ValueError, match="no greater than"):
+        load_electorate_boundary_display_geometries(
+            object(),
+            coastline_repair_buffer_meters=MAX_COASTLINE_REPAIR_BUFFER_METERS + 1,
+        )
 
 
 def test_money_event_classifier_keeps_donations_visible() -> None:

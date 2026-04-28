@@ -170,10 +170,11 @@ processed GeoJSON and PostGIS rows are SRID 4326; the raw AEC shapefile source
 CRS and DBF attributes remain in metadata. The serving API defaults to a
 separate `land_clipped_display` derivative produced from Natural Earth Admin 0
 Australia intersected with Natural Earth physical land, plus a local coastline
-repair buffer inside each official AEC boundary. The buffer is documented in
-metadata and prevents the coarser display mask from cutting away shoreline land
-relative to the basemap while still suppressing broad coastal and maritime AEC
-extents. The official AEC geometry remains preserved for audit.
+repair buffer inside each official AEC boundary. The buffer is applied in
+EPSG:3577 Australian Albers metres, documented in metadata, and prevents the
+coarser display mask from cutting away shoreline land relative to the basemap
+while still suppressing broad coastal and maritime AEC extents. The official
+AEC geometry remains preserved for audit.
 
 ```bash
 cd backend

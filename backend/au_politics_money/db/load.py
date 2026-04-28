@@ -61,6 +61,8 @@ STATE_CODES = {
 }
 
 INFLUENCE_EVENT_LOADER_NAME = "load_influence_events_v1"
+DISPLAY_GEOMETRY_REPAIR_PROJECTION_SRID = 3577
+MAX_COASTLINE_REPAIR_BUFFER_METERS = 10_000
 
 REPRESENTATIVE_RETURN_TITLE_TOKENS = {
     "dr",
@@ -2699,29 +2701,38 @@ def load_electorate_boundary_display_geometries(
     country_name: str = "Australia",
     coastline_repair_buffer_meters: int = 3000,
 ) -> dict[str, Any]:
-    coastline_repair_buffer_degrees = coastline_repair_buffer_meters / 111_320
+    if coastline_repair_buffer_meters < 0:
+        raise ValueError("coastline_repair_buffer_meters must be non-negative.")
+    if coastline_repair_buffer_meters > MAX_COASTLINE_REPAIR_BUFFER_METERS:
+        raise ValueError(
+            "coastline_repair_buffer_meters must be no greater than "
+            f"{MAX_COASTLINE_REPAIR_BUFFER_METERS}."
+        )
     land_summary = load_display_land_mask(conn, country_name=country_name)
     with conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO electorate_boundary_display_geometry (
-                electorate_boundary_id, geometry_role, geom, clip_source_document_id, metadata
-            )
-            WITH clipped AS (
+            WITH target_boundaries AS (
                 SELECT
                     boundary.id AS electorate_boundary_id,
-                    boundary.geom AS source_geom,
+                    boundary.geom AS source_geom
+                FROM electorate_boundary boundary
+                WHERE boundary.boundary_set = %s
+            ),
+            clipped AS (
+                SELECT
+                    target.electorate_boundary_id,
+                    target.source_geom,
                     ST_Multi(
                         ST_CollectionExtract(
-                            ST_MakeValid(ST_Intersection(boundary.geom, mask.geom)),
+                            ST_MakeValid(ST_Intersection(target.source_geom, mask.geom)),
                             3
                         )
                     ) AS geom,
                     mask.source_document_id AS clip_source_document_id
-                FROM electorate_boundary boundary
+                FROM target_boundaries target
                 JOIN display_land_mask mask
                   ON mask.source_key = %s
-                WHERE boundary.boundary_set = %s
             ),
             repaired AS (
                 SELECT
@@ -2731,7 +2742,14 @@ def load_electorate_boundary_display_geometries(
                             ST_MakeValid(
                                 ST_Intersection(
                                     source_geom,
-                                    ST_Buffer(geom, %s, 'quad_segs=2')
+                                    ST_Transform(
+                                        ST_Buffer(
+                                            ST_Transform(geom, %s),
+                                            %s,
+                                            'quad_segs=2'
+                                        ),
+                                        4326
+                                    )
                                 )
                             ),
                             3
@@ -2740,24 +2758,50 @@ def load_electorate_boundary_display_geometries(
                     clip_source_document_id
                 FROM clipped
                 WHERE NOT ST_IsEmpty(geom)
+            ),
+            upserted AS (
+                INSERT INTO electorate_boundary_display_geometry (
+                    electorate_boundary_id,
+                    geometry_role,
+                    geom,
+                    clip_source_document_id,
+                    metadata
+                )
+                SELECT
+                    electorate_boundary_id,
+                    'land_clipped_display',
+                    geom,
+                    clip_source_document_id,
+                    %s
+                FROM repaired
+                WHERE NOT ST_IsEmpty(geom)
+                ON CONFLICT (electorate_boundary_id, geometry_role) DO UPDATE SET
+                    geom = EXCLUDED.geom,
+                    clip_source_document_id = EXCLUDED.clip_source_document_id,
+                    metadata = EXCLUDED.metadata
+                RETURNING electorate_boundary_id
+            ),
+            stale_deleted AS (
+                DELETE FROM electorate_boundary_display_geometry display
+                USING target_boundaries target
+                WHERE display.electorate_boundary_id = target.electorate_boundary_id
+                  AND display.geometry_role = 'land_clipped_display'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM upserted
+                      WHERE upserted.electorate_boundary_id = display.electorate_boundary_id
+                  )
+                RETURNING display.id
             )
             SELECT
-                electorate_boundary_id,
-                'land_clipped_display',
-                geom,
-                clip_source_document_id,
-                %s
-            FROM repaired
-            WHERE NOT ST_IsEmpty(geom)
-            ON CONFLICT (electorate_boundary_id, geometry_role) DO UPDATE SET
-                geom = EXCLUDED.geom,
-                clip_source_document_id = EXCLUDED.clip_source_document_id,
-                metadata = EXCLUDED.metadata
+                (SELECT count(*) FROM upserted),
+                (SELECT count(*) FROM stale_deleted)
             """,
             (
-                land_summary["source_key"],
                 boundary_set,
-                coastline_repair_buffer_degrees,
+                land_summary["source_key"],
+                DISPLAY_GEOMETRY_REPAIR_PROJECTION_SRID,
+                coastline_repair_buffer_meters,
                 as_jsonb(
                     {
                         "clip_method": "postgis_intersection_with_local_coastline_repair_buffer",
@@ -2766,12 +2810,14 @@ def load_electorate_boundary_display_geometries(
                         "land_mask_source_key": land_summary["source_key"],
                         "land_mask_country_name": country_name,
                         "coastline_repair_buffer_meters": coastline_repair_buffer_meters,
-                        "coastline_repair_buffer_degrees": coastline_repair_buffer_degrees,
+                        "coastline_repair_projection_srid": (
+                            DISPLAY_GEOMETRY_REPAIR_PROJECTION_SRID
+                        ),
                     }
                 ),
             ),
         )
-        display_geometries_upserted = cur.rowcount
+        display_geometries_upserted, stale_display_geometries_deleted = cur.fetchone()
         cur.execute(
             """
             SELECT count(*)
@@ -2786,6 +2832,7 @@ def load_electorate_boundary_display_geometries(
         "boundary_set": boundary_set,
         "source_boundary_count": source_boundary_count,
         "display_geometries_upserted": display_geometries_upserted,
+        "stale_display_geometries_deleted": stale_display_geometries_deleted,
         "land_mask": land_summary,
     }
 

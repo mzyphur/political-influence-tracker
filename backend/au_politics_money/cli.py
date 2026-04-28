@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 
 from au_politics_money.db.load import (
+    MAX_COASTLINE_REPAIR_BUFFER_METERS,
     apply_migrations,
     connect,
     load_electorate_boundary_display_geometries,
@@ -90,6 +91,20 @@ def list_sources() -> int:
             f"{source.source_type}\t{source.name}"
         )
     return 0
+
+
+def coastline_repair_buffer_arg(value: str) -> int:
+    try:
+        buffer_meters = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be an integer number of metres") from exc
+    if buffer_meters < 0:
+        raise argparse.ArgumentTypeError("must be non-negative")
+    if buffer_meters > MAX_COASTLINE_REPAIR_BUFFER_METERS:
+        raise argparse.ArgumentTypeError(
+            f"must be no greater than {MAX_COASTLINE_REPAIR_BUFFER_METERS} metres"
+        )
+    return buffer_meters
 
 
 def show_source(source_id: str) -> int:
@@ -571,7 +586,11 @@ def build_parser() -> argparse.ArgumentParser:
     display_geometry_parser = subparsers.add_parser("load-display-geometries")
     display_geometry_parser.add_argument("--boundary-set")
     display_geometry_parser.add_argument("--country-name", default="Australia")
-    display_geometry_parser.add_argument("--coastline-repair-buffer-meters", type=int, default=3000)
+    display_geometry_parser.add_argument(
+        "--coastline-repair-buffer-meters",
+        type=coastline_repair_buffer_arg,
+        default=3000,
+    )
 
     aph_decision_parser = subparsers.add_parser("extract-aph-decision-record-index")
     aph_decision_parser.add_argument("source_id", choices=DECISION_RECORD_SOURCE_IDS, nargs="?")
