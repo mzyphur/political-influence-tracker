@@ -14,6 +14,7 @@ type MapCanvasProps = {
 const sourceId = "electorates";
 const fillLayerId = "electorate-fills";
 const lineLayerId = "electorate-lines";
+const selectedHaloLayerId = "selected-electorate-halo";
 const selectedLayerId = "selected-electorate";
 
 export function MapCanvas({
@@ -56,46 +57,62 @@ export function MapCanvas({
               "match",
               ["get", "state_or_territory"],
               "ACT",
-              "#6b8fcf",
+              "#7c3aed",
               "NSW",
-              "#5e9fc0",
+              "#00a3e0",
               "NT",
-              "#d48952",
+              "#f97316",
               "QLD",
-              "#b96969",
+              "#ef4444",
               "SA",
-              "#7d79bf",
+              "#8b5cf6",
               "TAS",
-              "#4c9b82",
+              "#10b981",
               "VIC",
-              "#687ec3",
+              "#2563eb",
               "WA",
-              "#c49a4c",
-              "#78828c"
+              "#f59e0b",
+              "#64748b"
             ],
             [
               "match",
               ["get", "party_short_name"],
               "ALP",
-              "#d85a54",
+              "#f04438",
               "LP",
-              "#2f72b7",
+              "#1769e0",
               "LNP",
-              "#2f72b7",
+              "#0b5fd3",
+              "NATS",
+              "#21a857",
               "Nats",
-              "#4f9659",
+              "#21a857",
               "AG",
-              "#2d9b75",
+              "#00a651",
               "IND",
-              "#c7953d",
-              "#78828c"
+              "#00a6a6",
+              "ON",
+              "#ff6b00",
+              "UAP",
+              "#ffd400",
+              "JLN",
+              "#8b5cf6",
+              "KAP",
+              "#c2410c",
+              "CLP",
+              "#0064b7",
+              "CA",
+              "#14b8d4",
+              "AV",
+              "#2dd4bf",
+              "#64748b"
             ]
           ],
           "fill-opacity": [
             "case",
             ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
-            0.72,
-            0.48
+            0.76,
+            0.57
           ],
           "fill-antialias": false
         }
@@ -106,8 +123,20 @@ export function MapCanvas({
         source: sourceId,
         paint: {
           "line-color": "#26343b",
-          "line-opacity": 0.42,
+          "line-opacity": 0.5,
           "line-width": 0.8
+        }
+      });
+      map.addLayer({
+        id: selectedHaloLayerId,
+        type: "line",
+        source: sourceId,
+        filter: ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
+        paint: {
+          "line-color": "#ffffff",
+          "line-width": 7.2,
+          "line-opacity": 0.92,
+          "line-blur": 0.8
         }
       });
       map.addLayer({
@@ -116,9 +145,9 @@ export function MapCanvas({
         source: sourceId,
         filter: ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
         paint: {
-          "line-color": "#ffd166",
-          "line-width": 3.4,
-          "line-opacity": 0.95
+          "line-color": "#ffe600",
+          "line-width": 4.4,
+          "line-opacity": 1
         }
       });
       syncData(map, features);
@@ -150,6 +179,9 @@ export function MapCanvas({
   useEffect(() => {
     const map = mapRef.current;
     if (!map?.isStyleLoaded()) return;
+    if (map.getLayer(selectedHaloLayerId)) {
+      map.setFilter(selectedHaloLayerId, ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1]);
+    }
     if (map.getLayer(selectedLayerId)) {
       map.setFilter(selectedLayerId, ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1]);
     }
@@ -157,8 +189,8 @@ export function MapCanvas({
       map.setPaintProperty(fillLayerId, "fill-opacity", [
         "case",
         ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
-        0.72,
-        0.48
+        0.76,
+        0.57
       ]);
     }
   }, [selectedFeature]);

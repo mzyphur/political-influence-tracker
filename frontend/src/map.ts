@@ -28,35 +28,43 @@ export function featureCollection(features: ElectorateFeature[]): ElectorateFeat
 }
 
 export function electorateColor(partyName?: string | null): string {
-  const name = (partyName || "").toLowerCase();
-  if (name.includes("labor")) return "#d85a54";
-  if (name.includes("liberal")) return "#2f72b7";
-  if (name.includes("national")) return "#4f9659";
-  if (name.includes("greens")) return "#2d9b75";
-  if (name.includes("independent")) return "#c7953d";
-  return "#78828c";
+  const name = (partyName || "").trim().toLowerCase();
+  if (name === "alp" || name.includes("labor")) return "#f04438";
+  if (name === "lp" || name.includes("liberal")) return "#1769e0";
+  if (name === "lnp") return "#0b5fd3";
+  if (name === "nats" || name === "nat" || name.includes("national")) return "#21a857";
+  if (name === "ag" || name.includes("greens")) return "#00a651";
+  if (name === "ind" || name.includes("independent")) return "#00a6a6";
+  if (name === "on" || name.includes("one nation")) return "#ff6b00";
+  if (name === "uap" || name.includes("united australia")) return "#ffd400";
+  if (name === "jln" || name.includes("jacqui lambie")) return "#8b5cf6";
+  if (name === "kap" || name.includes("katter")) return "#c2410c";
+  if (name === "clp" || name.includes("country liberal")) return "#0064b7";
+  if (name === "ca" || name.includes("centre alliance")) return "#14b8d4";
+  if (name === "av" || name.includes("australia's voice")) return "#2dd4bf";
+  return "#64748b";
 }
 
 export function senateRegionColor(state?: string | null): string {
   switch ((state || "").toUpperCase()) {
     case "ACT":
-      return "#6b8fcf";
+      return "#7c3aed";
     case "NSW":
-      return "#5e9fc0";
+      return "#00a3e0";
     case "NT":
-      return "#d48952";
+      return "#f97316";
     case "QLD":
-      return "#b96969";
+      return "#ef4444";
     case "SA":
-      return "#7d79bf";
+      return "#8b5cf6";
     case "TAS":
-      return "#4c9b82";
+      return "#10b981";
     case "VIC":
-      return "#687ec3";
+      return "#2563eb";
     case "WA":
-      return "#c49a4c";
+      return "#f59e0b";
     default:
-      return "#78828c";
+      return "#64748b";
   }
 }
 

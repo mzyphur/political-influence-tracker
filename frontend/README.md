@@ -23,6 +23,9 @@ The first usable screen is the national map explorer:
 - `/api/representatives/{person_id}` supplies the side panel's selected
   representative record feed, including money, benefits, private interests,
   organisational roles, and other person-linked disclosed records.
+- House map fills and panel accents use explicit party short-code colors for the
+  party codes currently present in the database. Senate map fills use
+  state/territory colors because each Senate feature is multi-member.
 
 ## Local Development
 

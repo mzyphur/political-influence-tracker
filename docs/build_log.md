@@ -251,6 +251,10 @@ Verification:
 - Added person-linked representative record detail in `/api/representatives`
   and the side panel. Selecting an MP or senator now shows family counts and
   recent source-backed records instead of only aggregate map counts.
+- Brightened the frontend political palette and selected-region treatment after
+  visual QA. Party short-code colors now cover the parties present in the
+  current database, and the selected region uses a white halo plus bright gold
+  stroke instead of the earlier muted outline.
 
 Notable data observations:
 
