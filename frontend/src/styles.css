@@ -71,6 +71,11 @@ a:focus-visible {
   background: #dce7e6;
 }
 
+.map-wrap .maplibregl-ctrl-bottom-right {
+  right: calc(min(390px, 100vw - 36px) + 32px);
+  bottom: 18px;
+}
+
 .map-warning {
   position: absolute;
   left: 24px;
@@ -1042,6 +1047,11 @@ a:focus-visible {
   .map-wrap {
     position: relative;
     min-height: 58vh;
+  }
+
+  .map-wrap .maplibregl-ctrl-bottom-right {
+    right: 10px;
+    bottom: 10px;
   }
 
   .map-topbar,
