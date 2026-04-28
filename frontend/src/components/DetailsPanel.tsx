@@ -37,6 +37,7 @@ type DetailsPanelProps = {
   onOpenRepresentativeGraph: (personId: number, label: string) => void;
   onCloseContact: () => void;
   onCollapse: () => void;
+  collapseButtonRef?: React.Ref<HTMLButtonElement>;
 };
 
 export function DetailsPanel({
@@ -50,7 +51,8 @@ export function DetailsPanel({
   onSelectRepresentative,
   onOpenRepresentativeGraph,
   onCloseContact,
-  onCollapse
+  onCollapse,
+  collapseButtonRef
 }: DetailsPanelProps) {
   const [eventFamilyFilter, setEventFamilyFilter] = useState("all");
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
@@ -91,6 +93,7 @@ export function DetailsPanel({
     return (
       <aside className="details-panel empty" id="selection-details-panel" aria-label="Selection details">
         <button
+          ref={collapseButtonRef}
           type="button"
           className="panel-collapse-button details-collapse-button"
           aria-label="Collapse selection details"
@@ -111,6 +114,7 @@ export function DetailsPanel({
   return (
     <aside className="details-panel" id="selection-details-panel" aria-label="Selection details">
       <button
+        ref={collapseButtonRef}
         type="button"
         className="panel-collapse-button details-collapse-button"
         aria-label="Collapse selection details"

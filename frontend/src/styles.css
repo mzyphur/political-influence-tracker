@@ -1179,7 +1179,7 @@ a:focus-visible {
 .influence-graph-panel {
   position: absolute;
   left: 18px;
-  right: calc(min(390px, calc(100vw - 36px)) + 42px);
+  right: calc(var(--right-panel-width) + 42px);
   bottom: 124px;
   z-index: 9;
   display: grid;
@@ -1193,6 +1193,10 @@ a:focus-visible {
     var(--panel-solid);
   box-shadow: 0 24px 60px rgba(18, 31, 38, 0.22);
   padding: 14px;
+}
+
+.map-stage[data-details-collapsed="true"] .influence-graph-panel {
+  right: 18px;
 }
 
 .influence-graph-header {

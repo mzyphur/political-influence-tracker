@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Banknote,
@@ -97,6 +97,12 @@ function App() {
   const [influenceGraphError, setInfluenceGraphError] = useState("");
   const [controlsCollapsed, setControlsCollapsed] = useState(false);
   const [detailsCollapsed, setDetailsCollapsed] = useState(false);
+  const controlsPeekButtonRef = useRef<HTMLButtonElement | null>(null);
+  const controlsCollapseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const detailsPeekButtonRef = useRef<HTMLButtonElement | null>(null);
+  const detailsCollapseButtonRef = useRef<HTMLButtonElement | null>(null);
+  const previousControlsCollapsedRef = useRef(controlsCollapsed);
+  const previousDetailsCollapsedRef = useRef(detailsCollapsed);
 
   useEffect(() => {
     if (dataLevel !== "federal") {
@@ -295,6 +301,32 @@ function App() {
     return () => controller.abort();
   }, [graphRoot]);
 
+  useEffect(() => {
+    if (previousControlsCollapsedRef.current !== controlsCollapsed) {
+      window.requestAnimationFrame(() => {
+        if (controlsCollapsed) {
+          controlsPeekButtonRef.current?.focus();
+        } else {
+          controlsCollapseButtonRef.current?.focus();
+        }
+      });
+    }
+    previousControlsCollapsedRef.current = controlsCollapsed;
+  }, [controlsCollapsed]);
+
+  useEffect(() => {
+    if (previousDetailsCollapsedRef.current !== detailsCollapsed) {
+      window.requestAnimationFrame(() => {
+        if (detailsCollapsed) {
+          detailsPeekButtonRef.current?.focus();
+        } else {
+          detailsCollapseButtonRef.current?.focus();
+        }
+      });
+    }
+    previousDetailsCollapsedRef.current = detailsCollapsed;
+  }, [detailsCollapsed]);
+
   const totals = useMemo(() => {
     return features.reduce(
       (acc, feature) => {
@@ -391,6 +423,7 @@ function App() {
 
         {controlsCollapsed ? (
           <button
+            ref={controlsPeekButtonRef}
             type="button"
             className="panel-peek-button panel-peek-left"
             aria-label="Open map controls"
@@ -406,6 +439,7 @@ function App() {
             <div className="control-panel-heading">
               <span>Explore</span>
               <button
+                ref={controlsCollapseButtonRef}
                 type="button"
                 className="panel-collapse-button control-collapse-button"
                 aria-label="Collapse map controls"
@@ -586,6 +620,7 @@ function App() {
 
         {detailsCollapsed ? (
           <button
+            ref={detailsPeekButtonRef}
             type="button"
             className="panel-peek-button panel-peek-right"
             aria-label="Open selection details"
@@ -613,6 +648,7 @@ function App() {
             onOpenRepresentativeGraph={openRepresentativeGraph}
             onCloseContact={() => setContactPersonId(null)}
             onCollapse={() => setDetailsCollapsed(true)}
+            collapseButtonRef={detailsCollapseButtonRef}
           />
         )}
         <InfluenceGraphPanel
