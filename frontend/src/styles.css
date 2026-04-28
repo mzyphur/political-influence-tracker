@@ -789,6 +789,12 @@ a:focus-visible {
   padding: 8px;
 }
 
+.party-row {
+  width: 100%;
+  color: inherit;
+  text-align: left;
+}
+
 .rep-row {
   width: 100%;
   color: inherit;

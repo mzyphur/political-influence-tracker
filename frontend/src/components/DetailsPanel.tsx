@@ -35,6 +35,7 @@ type DetailsPanelProps = {
   representativeProfileStatus: LoadState;
   onSelectRepresentative: (personId: number) => void;
   onOpenRepresentativeGraph: (personId: number, label: string) => void;
+  onOpenPartyProfile: (partyId: number, label: string) => void;
   onCloseContact: () => void;
   onCollapse: () => void;
   collapseButtonRef?: React.Ref<HTMLButtonElement>;
@@ -50,6 +51,7 @@ export function DetailsPanel({
   representativeProfileStatus,
   onSelectRepresentative,
   onOpenRepresentativeGraph,
+  onOpenPartyProfile,
   onCloseContact,
   onCollapse,
   collapseButtonRef
@@ -380,12 +382,29 @@ export function DetailsPanel({
         <h3>Party Breakdown</h3>
         <div className="party-breakdown">
           {properties.party_breakdown.length ? (
-            properties.party_breakdown.map((party) => (
-              <div className="party-row" key={`${party.party_id}:${party.party_name}`}>
-                <span>{party.party_name || "No party recorded"}</span>
-                <strong>{party.representative_count}</strong>
-              </div>
-            ))
+            properties.party_breakdown.map((party) => {
+              const label = party.party_name || "No party recorded";
+              if (!party.party_id) {
+                return (
+                  <div className="party-row" key={`${party.party_id}:${party.party_name}`}>
+                    <span>{label}</span>
+                    <strong>{party.representative_count}</strong>
+                  </div>
+                );
+              }
+              return (
+                <button
+                  className="party-row"
+                  key={`${party.party_id}:${party.party_name}`}
+                  type="button"
+                  title={`Open party money profile for ${label}`}
+                  onClick={() => onOpenPartyProfile(Number(party.party_id), label)}
+                >
+                  <span>{label}</span>
+                  <strong>{party.representative_count}</strong>
+                </button>
+              );
+            })
           ) : (
             <p className="muted">No party breakdown is available.</p>
           )}

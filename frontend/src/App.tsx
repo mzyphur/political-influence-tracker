@@ -195,7 +195,6 @@ function App() {
     if (dataLevel !== "federal" || cleaned.length < 3) {
       setSearchResults([]);
       setSearchStatus("idle");
-      setSelectedSearchResult(null);
       return;
     }
     const controller = new AbortController();
@@ -376,6 +375,17 @@ function App() {
 
   function openRepresentativeGraph(personId: number, label: string) {
     setGraphRoot({ kind: "person", id: personId, label, includeCandidates: false });
+  }
+
+  function openPartyProfile(partyId: number, label: string) {
+    setSelectedSearchResult({
+      type: "party",
+      id: partyId,
+      label,
+      subtitle: "Selected from current representation",
+      rank: 30,
+      metadata: { id: partyId }
+    });
   }
 
   function toggleGraphCandidates(includeCandidates: boolean) {
@@ -562,28 +572,6 @@ function App() {
               {searchStatus === "ready" && searchResults.length === 0 && (
                 <p className="muted">No source-backed results matched this search.</p>
               )}
-              {selectedSearchResult?.type === "entity" && (
-                <EntityProfilePanel
-                  profile={entityProfile}
-                  status={entityProfileStatus}
-                  error={entityProfileError}
-                  onOpenGraph={(entityId, label) =>
-                    setGraphRoot({ kind: "entity", id: entityId, label, includeCandidates: false })
-                  }
-                  onClose={() => setSelectedSearchResult(null)}
-                />
-              )}
-              {selectedSearchResult?.type === "party" && (
-                <PartyProfilePanel
-                  profile={partyProfile}
-                  status={partyProfileStatus}
-                  error={partyProfileError}
-                  onOpenGraph={(partyId, label) =>
-                    setGraphRoot({ kind: "party", id: partyId, label, includeCandidates: false })
-                  }
-                  onClose={() => setSelectedSearchResult(null)}
-                />
-              )}
               {searchResults.map((result) => (
                 <button
                   type="button"
@@ -614,6 +602,28 @@ function App() {
               )}
               {searchCaveat && <p className="caveat compact">{searchCaveat}</p>}
             </div>
+          )}
+          {dataLevel === "federal" && selectedSearchResult?.type === "entity" && (
+            <EntityProfilePanel
+              profile={entityProfile}
+              status={entityProfileStatus}
+              error={entityProfileError}
+              onOpenGraph={(entityId, label) =>
+                setGraphRoot({ kind: "entity", id: entityId, label, includeCandidates: false })
+              }
+              onClose={() => setSelectedSearchResult(null)}
+            />
+          )}
+          {dataLevel === "federal" && selectedSearchResult?.type === "party" && (
+            <PartyProfilePanel
+              profile={partyProfile}
+              status={partyProfileStatus}
+              error={partyProfileError}
+              onOpenGraph={(partyId, label) =>
+                setGraphRoot({ kind: "party", id: partyId, label, includeCandidates: false })
+              }
+              onClose={() => setSelectedSearchResult(null)}
+            />
           )}
         </aside>
         )}
@@ -646,6 +656,7 @@ function App() {
             representativeProfileStatus={representativeProfileStatus}
             onSelectRepresentative={selectRepresentativeForContact}
             onOpenRepresentativeGraph={openRepresentativeGraph}
+            onOpenPartyProfile={openPartyProfile}
             onCloseContact={() => setContactPersonId(null)}
             onCollapse={() => setDetailsCollapsed(true)}
             collapseButtonRef={detailsCollapseButtonRef}
