@@ -1,4 +1,4 @@
-import type { ElectorateFeatureCollection, SearchResponse } from "./types";
+import type { CoverageResponse, ElectorateFeatureCollection, SearchResponse } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
 
@@ -28,7 +28,7 @@ export async function fetchElectorateMap(options: {
 }): Promise<ElectorateFeatureCollection> {
   const params = new URLSearchParams({
     chamber: options.chamber,
-    simplify_tolerance: "0.015"
+    simplify_tolerance: "0.0005"
   });
   if (options.state) params.set("state", options.state);
   if (options.boundarySet) params.set("boundary_set", options.boundarySet);
@@ -37,6 +37,10 @@ export async function fetchElectorateMap(options: {
     apiUrl("/api/map/electorates", params),
     options.signal
   );
+}
+
+export async function fetchCoverage(signal?: AbortSignal): Promise<CoverageResponse> {
+  return fetchJson<CoverageResponse>(apiUrl("/api/coverage"), signal);
 }
 
 export async function searchDatabase(

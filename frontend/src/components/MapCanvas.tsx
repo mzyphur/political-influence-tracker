@@ -96,7 +96,8 @@ export function MapCanvas({
             ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
             0.72,
             0.48
-          ]
+          ],
+          "fill-antialias": false
         }
       });
       map.addLayer({

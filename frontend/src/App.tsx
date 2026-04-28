@@ -11,7 +11,7 @@ import {
   Search,
   Users
 } from "lucide-react";
-import { fetchElectorateMap, searchDatabase } from "./api";
+import { fetchCoverage, fetchElectorateMap, searchDatabase } from "./api";
 import { MapCanvas } from "./components/MapCanvas";
 import { DetailsPanel } from "./components/DetailsPanel";
 import {
@@ -21,7 +21,7 @@ import {
   formatMoney,
   senateRegionColor
 } from "./map";
-import type { ElectorateFeature, LoadState, SearchResult } from "./types";
+import type { CoverageResponse, ElectorateFeature, LoadState, SearchResult } from "./types";
 
 const states = ["All", "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"];
 type DataLevel = "federal" | "state" | "council";
@@ -46,6 +46,8 @@ function App() {
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchCaveat, setSearchCaveat] = useState("");
   const [pendingSearchResult, setPendingSearchResult] = useState<SearchResult | null>(null);
+  const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
+  const [coverageStatus, setCoverageStatus] = useState<LoadState>("idle");
 
   useEffect(() => {
     if (dataLevel !== "federal") {
@@ -83,6 +85,20 @@ function App() {
       });
     return () => controller.abort();
   }, [chamber, dataLevel, stateFilter]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCoverageStatus("loading");
+    fetchCoverage(controller.signal)
+      .then((payload) => {
+        setCoverage(payload);
+        setCoverageStatus("ready");
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setCoverageStatus("error");
+      });
+    return () => controller.abort();
+  }, []);
 
   useEffect(() => {
     if (!pendingSearchResult || dataLevel !== "federal") return;
@@ -270,9 +286,11 @@ function App() {
               value={totals.electorates.toLocaleString("en-AU")}
             />
             <Metric icon={<Users size={17} />} label="Reps" value={totals.representatives.toLocaleString("en-AU")} />
-            <Metric icon={<Building2 size={17} />} label="Events" value={totals.events.toLocaleString("en-AU")} />
-            <Metric icon={<Banknote size={17} />} label="Reported" value={formatMoney(totals.reported)} />
+            <Metric icon={<Building2 size={17} />} label="Rep records" value={totals.events.toLocaleString("en-AU")} />
+            <Metric icon={<Banknote size={17} />} label="Rep reported" value={formatMoney(totals.reported)} />
           </div>
+
+          <CoveragePanel coverage={coverage} status={coverageStatus} />
 
           {mapError && (
             <div className="inline-alert" role="alert">
@@ -330,6 +348,79 @@ function Metric({
       <strong>{value}</strong>
     </div>
   );
+}
+
+function CoveragePanel({
+  coverage,
+  status
+}: {
+  coverage: CoverageResponse | null;
+  status: LoadState;
+}) {
+  if (status === "loading") {
+    return (
+      <div className="coverage-panel" aria-label="Database coverage">
+        <div className="coverage-header">
+          <strong>Database coverage</strong>
+          <span>Loading</span>
+        </div>
+      </div>
+    );
+  }
+  if (!coverage) return null;
+
+  const totalEvents = numberValue(coverage.influence_event_totals.event_count);
+  const personLinkedEvents = numberValue(
+    coverage.influence_event_totals.person_linked_event_count
+  );
+  const moneyEvents = numberValue(
+    coverage.influence_events_by_family.find((row) => row.event_family === "money")
+      ?.event_count
+  );
+  const reportedTotal = numberValue(coverage.influence_event_totals.reported_amount_total);
+  const stateLayer = coverage.coverage_layers.find((layer) => layer.level === "state");
+  const councilLayer = coverage.coverage_layers.find((layer) => layer.level === "council");
+
+  return (
+    <div className="coverage-panel" aria-label="Database coverage">
+      <div className="coverage-header">
+        <strong>Database coverage</strong>
+        <span>{coverage.active_country} · {coverage.active_levels.join(", ")}</span>
+      </div>
+      <div className="coverage-grid">
+        <span>
+          <small>All influence rows</small>
+          <strong>{totalEvents.toLocaleString("en-AU")}</strong>
+        </span>
+        <span>
+          <small>Money rows</small>
+          <strong>{moneyEvents.toLocaleString("en-AU")}</strong>
+        </span>
+        <span>
+          <small>Person-linked</small>
+          <strong>{personLinkedEvents.toLocaleString("en-AU")}</strong>
+        </span>
+        <span>
+          <small>DB reported total</small>
+          <strong>{formatMoney(reportedTotal)}</strong>
+        </span>
+      </div>
+      <div className="coverage-status-row">
+        <span>State: {stateLayer?.status || "planned"}</span>
+        <span>Council: {councilLayer?.status || "planned"}</span>
+      </div>
+      <p>{coverage.caveat}</p>
+    </div>
+  );
+}
+
+function numberValue(value: number | string | null | undefined): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 export default App;

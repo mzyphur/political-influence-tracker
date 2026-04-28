@@ -236,6 +236,14 @@ Verification:
   ingestion layers. The Senate map now returns state/territory features derived
   from source-backed House boundaries, while senator lists and influence
   summaries come from Senate office terms.
+- Tightened map geometry QA after visual inspection showed cracks from aggressive
+  per-electorate simplification. The frontend now requests low-tolerance
+  geometry (`simplify_tolerance=0.0005`) and disables fill antialias seams; exact
+  source geometry remains available for strict QA with `simplify_tolerance=0`.
+- Added `/api/coverage` and a frontend coverage panel so sparse-looking
+  representative map counts can be compared against whole-database source-family
+  counts. The coverage model is written as a portable jurisdiction-adapter layer
+  for later AU state/council, NZ, UK, and US builds.
 
 Notable data observations:
 

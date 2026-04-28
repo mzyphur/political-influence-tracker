@@ -521,7 +521,7 @@ def get_electorate_map(
     state: str | None = None,
     boundary_set: str | None = None,
     include_geometry: bool = True,
-    simplify_tolerance: float = 0.01,
+    simplify_tolerance: float = 0.0005,
     database_url: str | None = None,
 ) -> dict[str, Any]:
     chamber = chamber.strip().lower()
@@ -769,6 +769,241 @@ def get_electorate_map(
         },
         "caveat": MAP_CAVEAT,
     }
+
+
+def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
+    with connect(database_url) as conn:
+        source_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                source_id,
+                source_name,
+                source_type,
+                jurisdiction,
+                count(*) AS document_count,
+                max(fetched_at) AS last_fetched_at
+            FROM source_document
+            GROUP BY source_id, source_name, source_type, jurisdiction
+            ORDER BY jurisdiction, source_id
+            """,
+            (),
+        )
+        jurisdiction_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT level, count(*) AS jurisdiction_count
+            FROM jurisdiction
+            GROUP BY level
+            ORDER BY level
+            """,
+            (),
+        )
+        representative_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                chamber,
+                count(DISTINCT person_id) FILTER (WHERE term_end IS NULL)
+                    AS current_representative_count,
+                count(*) AS office_term_count
+            FROM office_term
+            GROUP BY chamber
+            ORDER BY chamber
+            """,
+            (),
+        )
+        boundary_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                electorate.chamber,
+                count(DISTINCT electorate.id) AS electorate_count,
+                count(boundary.id) AS boundary_count,
+                count(DISTINCT boundary.boundary_set) AS boundary_set_count
+            FROM electorate
+            LEFT JOIN electorate_boundary boundary
+              ON boundary.electorate_id = electorate.id
+            GROUP BY electorate.chamber
+            ORDER BY electorate.chamber
+            """,
+            (),
+        )
+        influence_family_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                event_family,
+                count(*) AS event_count,
+                count(*) FILTER (WHERE recipient_person_id IS NOT NULL)
+                    AS person_linked_event_count,
+                count(*) FILTER (WHERE recipient_party_id IS NOT NULL)
+                    AS party_linked_event_count,
+                count(*) FILTER (WHERE source_entity_id IS NOT NULL)
+                    AS source_entity_linked_event_count,
+                count(*) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_event_count,
+                sum(amount) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_total,
+                min(event_date) AS first_event_date,
+                max(event_date) AS last_event_date
+            FROM influence_event
+            WHERE review_status <> 'rejected'
+            GROUP BY event_family
+            ORDER BY event_count DESC, event_family
+            """,
+            (),
+        )
+        influence_total_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                count(*) AS event_count,
+                count(*) FILTER (WHERE recipient_person_id IS NOT NULL)
+                    AS person_linked_event_count,
+                count(*) FILTER (WHERE recipient_party_id IS NOT NULL)
+                    AS party_linked_event_count,
+                count(*) FILTER (WHERE source_entity_id IS NOT NULL)
+                    AS source_entity_linked_event_count,
+                count(*) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_event_count,
+                sum(amount) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_total,
+                min(event_date) AS first_event_date,
+                max(event_date) AS last_event_date
+            FROM influence_event
+            WHERE review_status <> 'rejected'
+            """,
+            (),
+        )
+        vote_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                chamber,
+                count(*) AS division_count,
+                min(division_date) AS first_division_date,
+                max(division_date) AS last_division_date
+            FROM vote_division
+            GROUP BY chamber
+            ORDER BY chamber
+            """,
+            (),
+        )
+
+    totals = influence_total_rows[0] if influence_total_rows else {}
+    federal_status = "active"
+    state_status = "planned"
+    council_status = "planned"
+    layers = [
+        {
+            "id": "federal_representatives",
+            "label": "Federal representatives and office terms",
+            "level": "federal",
+            "status": federal_status,
+            "attribution": "person/electorate/chamber",
+            "counts": {
+                "current_representatives": sum(
+                    row["current_representative_count"] or 0 for row in representative_rows
+                ),
+                "office_terms": sum(row["office_term_count"] or 0 for row in representative_rows),
+            },
+        },
+        {
+            "id": "federal_boundaries",
+            "label": "Federal House electorate boundaries",
+            "level": "federal",
+            "status": federal_status,
+            "attribution": "electorate geometry",
+            "counts": {
+                "electorates": sum(row["electorate_count"] or 0 for row in boundary_rows),
+                "boundaries": sum(row["boundary_count"] or 0 for row in boundary_rows),
+            },
+        },
+        {
+            "id": "federal_influence_events",
+            "label": "Disclosed money, gifts, interests, and roles",
+            "level": "federal",
+            "status": federal_status,
+            "attribution": "mixed: person, party, source entity, return-level",
+            "counts": {
+                "events": totals.get("event_count") or 0,
+                "person_linked_events": totals.get("person_linked_event_count") or 0,
+                "party_linked_events": totals.get("party_linked_event_count") or 0,
+                "reported_amount_events": totals.get("reported_amount_event_count") or 0,
+                "reported_amount_total": totals.get("reported_amount_total"),
+            },
+        },
+        {
+            "id": "federal_vote_divisions",
+            "label": "Federal parliamentary divisions",
+            "level": "federal",
+            "status": "active" if vote_rows else "partial",
+            "attribution": "person/chamber/topic after review",
+            "counts": {
+                "divisions": sum(row["division_count"] or 0 for row in vote_rows),
+            },
+        },
+        {
+            "id": "state_territory_disclosures",
+            "label": "State and territory money/gift/lobbying records",
+            "level": "state",
+            "status": state_status,
+            "attribution": "adapter-ready, not yet ingested",
+            "counts": {},
+        },
+        {
+            "id": "local_council_disclosures",
+            "label": "Council/local disclosures and meeting records",
+            "level": "council",
+            "status": council_status,
+            "attribution": "adapter-ready, not yet ingested",
+            "counts": {},
+        },
+    ]
+
+    return _jsonable(
+        {
+            "status": "ok",
+            "active_country": "AU",
+            "active_levels": ["federal"],
+            "planned_levels": ["state", "council"],
+            "coverage_layers": layers,
+            "source_documents": source_rows,
+            "jurisdictions": jurisdiction_rows,
+            "representatives_by_chamber": representative_rows,
+            "boundaries_by_chamber": boundary_rows,
+            "influence_events_by_family": influence_family_rows,
+            "influence_event_totals": totals,
+            "vote_divisions_by_chamber": vote_rows,
+            "portable_model": {
+                "supported_levels": [
+                    "national/federal",
+                    "state/territory/province/devolved",
+                    "local/council/municipal",
+                ],
+                "core_dimensions": [
+                    "actors",
+                    "offices",
+                    "boundaries",
+                    "money_flows",
+                    "gifts_hospitality_travel",
+                    "interests_assets_roles",
+                    "lobbying_access",
+                    "votes_and_proceedings",
+                    "entity_identifiers",
+                    "industry_classifications",
+                ],
+                "planned_country_adapters": ["NZ", "UK", "US"],
+            },
+            "caveat": (
+                "Coverage is source-family coverage, not evidentiary completeness. "
+                "Map-linked counts are narrower than whole-database counts because many "
+                "financial disclosures are party/entity/return-level records that cannot "
+                "honestly be assigned to one MP or electorate without an explicit method."
+            ),
+        }
+    )
 
 
 def _get_senate_map(

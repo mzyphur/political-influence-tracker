@@ -77,4 +77,24 @@ export type SearchResponse = {
   caveat: string;
 };
 
+export type CoverageLayer = {
+  id: string;
+  label: string;
+  level: string;
+  status: string;
+  attribution: string;
+  counts: Record<string, number | string | null>;
+};
+
+export type CoverageResponse = {
+  status: string;
+  active_country: string;
+  active_levels: string[];
+  planned_levels: string[];
+  coverage_layers: CoverageLayer[];
+  influence_events_by_family: Array<Record<string, number | string | null>>;
+  influence_event_totals: Record<string, number | string | null>;
+  caveat: string;
+};
+
 export type LoadState = "idle" | "loading" | "ready" | "error";

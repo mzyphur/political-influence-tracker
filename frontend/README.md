@@ -13,6 +13,13 @@ The first usable screen is the national map explorer:
 - Federal House maps use electorate geometries. Federal Senate maps use
   state/territory composite geometries derived from source-backed House
   boundaries, with senator data from Senate office records.
+- The frontend requests low-tolerance boundary geometry
+  (`simplify_tolerance=0.0005`) because high per-electorate simplification
+  creates visible cracks between neighbouring polygons. Exact source geometry
+  remains available from the API with `simplify_tolerance=0`.
+- `/api/coverage` supplies whole-database coverage counts and attribution caveats
+  so users can distinguish map-linked representative records from broader
+  party/entity/return-level money-flow records.
 
 ## Local Development
 

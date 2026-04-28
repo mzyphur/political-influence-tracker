@@ -86,7 +86,7 @@ Preferred implementation path:
 ## Map Features
 
 `/api/map/electorates` returns a GeoJSON-style `FeatureCollection` for the
-frontend map. By default it emits House electorates with simplified geometry
+frontend map. By default it emits House electorates with low-tolerance geometry
 from `electorate_boundary`, current representative and party fields from
 `office_term`, and non-rejected disclosed influence-event counts for the current
 representative or representatives.
@@ -97,7 +97,13 @@ Useful parameters:
 - `state=VIC`, `NSW`, etc.
 - `boundary_set=aec_federal_2025_current`
 - `include_geometry=false` for sidebar/list loading.
-- `simplify_tolerance=0.01` for lighter map payloads during development.
+- `simplify_tolerance=0.0005` is the interactive default. It is much finer than
+  the earlier development value and avoids large visible cracks while keeping
+  payloads usable.
+- `simplify_tolerance=0` preserves source geometry for strict QA/publication
+  checks. Higher tolerances are allowed for lighter development payloads, but
+  they can create visible cracks because adjacent electorates are simplified
+  separately.
 
 When `boundary_set` is supplied, only electorates with that boundary set are
 returned. When it is omitted, the endpoint selects the latest currently valid
@@ -117,6 +123,24 @@ that geometry provenance.
 
 Map counts are discovery context only. They are not claims about misconduct,
 causation, or whether any money/gift/interest affected a vote or policy action.
+The current map summary counts are representative-linked counts only. Whole
+database counts are broader because many financial disclosures are honestly
+attributable only to a party, entity, return, or donor-recipient pair rather
+than a single MP/electorate.
+
+## Coverage
+
+`/api/coverage` reports source-family coverage for the frontend and public QA.
+It separates active federal/Commonwealth coverage from planned state and council
+layers, and exposes whole-database counts alongside attribution caveats. This is
+the endpoint the UI uses to show why the map-linked record counts are narrower
+than the total disclosed-money database.
+
+The coverage model is intentionally portable: each jurisdiction adapter should
+fill the same dimensions where legally/publicly available: actors, offices,
+boundaries, money flows, gifts/hospitality/travel, interests/assets/roles,
+lobbying access, votes/proceedings, entity identifiers, and industry
+classifications.
 
 ## Source-To-Effect Context
 

@@ -96,6 +96,29 @@ def test_electorate_map_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     assert response.json()["type"] == "FeatureCollection"
 
 
+def test_coverage_endpoint_delegates_to_query_layer(monkeypatch) -> None:
+    monkeypatch.setattr(
+        queries,
+        "get_data_coverage",
+        lambda: {
+            "status": "ok",
+            "active_country": "AU",
+            "active_levels": ["federal"],
+            "planned_levels": ["state", "council"],
+            "coverage_layers": [],
+            "influence_events_by_family": [],
+            "influence_event_totals": {"event_count": 0},
+            "caveat": "fixture",
+        },
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/coverage")
+
+    assert response.status_code == 200
+    assert response.json()["active_country"] == "AU"
+
+
 def test_representative_profile_404(monkeypatch) -> None:
     monkeypatch.setattr(queries, "get_representative_profile", lambda person_id: {})
     client = TestClient(app)

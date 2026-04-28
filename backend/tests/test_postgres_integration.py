@@ -449,6 +449,17 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
         == "state_territory_composite_from_house_boundaries"
     )
 
+    coverage_response = client.get("/api/coverage")
+    assert coverage_response.status_code == 200
+    coverage_payload = coverage_response.json()
+    assert coverage_payload["active_country"] == "AU"
+    assert coverage_payload["active_levels"] == ["federal"]
+    assert coverage_payload["influence_event_totals"]["event_count"] == 1
+    assert coverage_payload["influence_event_totals"]["person_linked_event_count"] == 1
+    assert {
+        layer["id"]: layer["status"] for layer in coverage_payload["coverage_layers"]
+    }["state_territory_disclosures"] == "planned"
+
     search_response = client.get(
         "/api/search",
         params=[("q", "Jane Citizen"), ("types", "representative"), ("limit", "5")],

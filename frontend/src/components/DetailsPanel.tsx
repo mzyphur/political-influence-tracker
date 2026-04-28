@@ -54,7 +54,7 @@ export function DetailsPanel({ feature, caveat, partyColor }: DetailsPanelProps)
       </section>
 
       <section className="panel-section">
-        <h3>Disclosed Influence Context</h3>
+        <h3>Representative-Linked Context</h3>
         <div className="fact-grid">
           <Fact
             icon={<ExternalLink size={17} />}

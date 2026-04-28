@@ -85,7 +85,7 @@ def electorate_map(
         Query(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$"),
     ] = None,
     include_geometry: bool = True,
-    simplify_tolerance: Annotated[float, Query(ge=0.0, le=0.25)] = 0.01,
+    simplify_tolerance: Annotated[float, Query(ge=0.0, le=0.25)] = 0.0005,
 ) -> dict:
     try:
         return queries.get_electorate_map(
@@ -97,6 +97,11 @@ def electorate_map(
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/coverage")
+def coverage() -> dict:
+    return queries.get_data_coverage()
 
 
 @app.get("/api/representatives/{person_id}")

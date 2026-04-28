@@ -20,6 +20,8 @@ users must be able to drill from a visualization down to the source record.
 4. Never imply illegal corruption unless there is a legal or official finding.
 5. Make uncertainty visible instead of hiding it.
 6. Build repeatable weekly ingestion from the start.
+7. Treat country and government level as adapter dimensions, not as one-off
+   assumptions; see `docs/jurisdiction_generalization.md`.
 
 ## Phase 1: Federal Foundation
 
