@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS manual_review_decision (
             'influence_event',
             'entity_industry_classification',
             'sector_policy_topic_link',
+            'party_entity_link',
             'source_document',
             'other'
         )

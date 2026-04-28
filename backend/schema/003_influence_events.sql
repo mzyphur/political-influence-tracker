@@ -75,6 +75,8 @@ CREATE INDEX IF NOT EXISTS influence_event_family_type_idx
     ON influence_event (event_family, event_type);
 CREATE INDEX IF NOT EXISTS influence_event_source_entity_idx
     ON influence_event (source_entity_id);
+CREATE INDEX IF NOT EXISTS influence_event_recipient_entity_idx
+    ON influence_event (recipient_entity_id);
 CREATE INDEX IF NOT EXISTS influence_event_recipient_person_idx
     ON influence_event (recipient_person_id);
 CREATE INDEX IF NOT EXISTS influence_event_recipient_party_idx

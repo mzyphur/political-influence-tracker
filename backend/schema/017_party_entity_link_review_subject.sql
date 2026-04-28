@@ -14,3 +14,13 @@ ALTER TABLE manual_review_decision
             'other'
         )
     );
+
+ALTER TABLE party_entity_link
+    DROP CONSTRAINT IF EXISTS party_entity_link_review_requires_reviewer_check;
+
+ALTER TABLE party_entity_link
+    ADD CONSTRAINT party_entity_link_review_requires_reviewer_check
+    CHECK (
+        review_status NOT IN ('reviewed', 'rejected')
+        OR (reviewer IS NOT NULL AND reviewed_at IS NOT NULL)
+    ) NOT VALID;

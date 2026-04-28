@@ -231,6 +231,10 @@ Recommended initial schedule:
 - Daily lightweight source-index check.
 - Manual review queue after each run.
 - Manual review decisions stored separately from machine-produced records.
+- Party/entity link candidates are materialized from party-name family patterns
+  and AEC money-flow context before review replay, so accepted/rejected
+  decisions can be replayed after a database rebuild without overwriting the
+  original candidate evidence.
 - Vote/policy-topic artifacts should be included on the weekly federal run when
   API keys are available, because reviewed sector-policy links depend on loaded
   `policy_topic` rows. Loads without vote artifacts intentionally skip

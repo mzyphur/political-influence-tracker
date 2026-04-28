@@ -259,6 +259,18 @@ export type PartyProfile = {
     influence_event_count?: number;
     reported_amount_total?: number | null;
   }>;
+  candidate_entities: Array<{
+    entity_id: number;
+    canonical_name: string;
+    entity_type: string | null;
+    link_type: string;
+    method: string;
+    confidence: string;
+    review_status: string;
+    evidence_note: string | null;
+    influence_event_count?: number;
+    reported_amount_total?: number | null;
+  }>;
   money_summary: Array<{
     entity_role: string;
     event_type: string;

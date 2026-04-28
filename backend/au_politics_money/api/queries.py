@@ -10,6 +10,7 @@ from psycopg.rows import dict_row
 
 from au_politics_money.config import API_MIN_FREE_TEXT_QUERY_LENGTH
 from au_politics_money.db.load import connect
+from au_politics_money.db.party_entity_suggestions import party_entity_name_patterns
 
 
 SEARCH_TYPES = {
@@ -58,9 +59,9 @@ ENTITY_PROFILE_CAVEAT = (
 )
 
 PARTY_PROFILE_CAVEAT = (
-    "Party profiles aggregate disclosed money records for reviewed party-entity links "
-    "and clearly labelled name-family candidate entities. These records are party/entity "
-    "context, not claims about individual MPs or senators unless separately person-linked."
+    "Party profile totals aggregate disclosed money records for reviewed party-entity "
+    "links only. Candidate entities are shown separately for review/discovery and are "
+    "not claims about individual MPs or senators unless separately person-linked."
 )
 
 
@@ -1787,51 +1788,16 @@ def get_entity_profile(entity_id: int, *, database_url: str | None = None) -> di
 
 
 def _party_entity_name_patterns(party: dict[str, Any]) -> list[str]:
-    name = str(party.get("name") or "")
-    short_name = str(party.get("short_name") or "")
-    normalized = f"{name} {short_name}".lower()
-    patterns: list[str] = []
-    if "alp" in normalized or "labor" in normalized:
-        patterns.extend(
-            [
-                "Australian Labor Party%",
-                "% Labor Party%",
-                "% ALP%",
-            ]
-        )
-    if "liberal national" in normalized or "lnp" in normalized:
-        patterns.append("Liberal National Party%")
-    elif re.search(r"\blp\b", normalized) or "liberal party" in normalized:
-        patterns.extend(["Liberal Party%", "Liberal Party of Australia%"])
-    if "national party" in normalized or "nats" in normalized:
-        patterns.extend(["National Party%", "The Nationals%"])
-    if "greens" in normalized or re.search(r"\bag\b", normalized):
-        patterns.extend(["%Greens%", "Australian Greens%"])
-    if "one nation" in normalized or re.search(r"\bon\b", normalized):
-        patterns.extend(["%One Nation%"])
-    if "united australia" in normalized or "uap" in normalized:
-        patterns.extend(["United Australia Party%"])
-    if "katter" in normalized or "kap" in normalized:
-        patterns.extend(["Katter%"])
-    if "country liberal" in normalized or "clp" in normalized:
-        patterns.extend(["Country Liberal Party%"])
-    if "jacqui lambie" in normalized or "jln" in normalized:
-        patterns.extend(["Jacqui Lambie Network%"])
-    for value in (name, short_name):
-        cleaned = " ".join(value.split())
-        if len(cleaned) >= 4 and cleaned.upper() not in {"IND", "PRES", "DPRES"}:
-            patterns.append(f"{cleaned}%")
-    deduped: list[str] = []
-    for pattern in patterns:
-        if pattern not in deduped:
-            deduped.append(pattern)
-    return deduped
+    return party_entity_name_patterns(party)
 
 
-def _party_linked_entity_ids(conn, party: dict[str, Any]) -> tuple[list[int], list[dict[str, Any]]]:
-    reviewed_links: list[dict[str, Any]] = []
+def _party_linked_entity_ids(
+    conn,
+    party: dict[str, Any],
+) -> tuple[list[int], list[dict[str, Any]], list[dict[str, Any]]]:
+    materialized_links: list[dict[str, Any]] = []
     if _table_exists(conn, "party_entity_link"):
-        reviewed_links = _fetch_dicts(
+        materialized_links = _fetch_dicts(
             conn,
             """
             SELECT
@@ -1842,11 +1808,15 @@ def _party_linked_entity_ids(conn, party: dict[str, Any]) -> tuple[list[int], li
                 party_entity_link.method,
                 party_entity_link.confidence,
                 party_entity_link.review_status,
-                party_entity_link.evidence_note
+                party_entity_link.evidence_note,
+                NULLIF(party_entity_link.metadata->>'influence_event_count', '')::bigint
+                    AS influence_event_count,
+                NULLIF(party_entity_link.metadata->>'reported_amount_total', '')::numeric
+                    AS reported_amount_total
             FROM party_entity_link
             JOIN entity ON entity.id = party_entity_link.entity_id
             WHERE party_entity_link.party_id = %s
-              AND party_entity_link.review_status = 'reviewed'
+              AND party_entity_link.review_status IN ('reviewed', 'needs_review')
             ORDER BY party_entity_link.link_type, entity.canonical_name
             """,
             (party["id"],),
@@ -1881,6 +1851,12 @@ def _party_linked_entity_ids(conn, party: dict[str, Any]) -> tuple[list[int], li
                  )
              AND influence_event.review_status <> 'rejected'
             WHERE {pattern_clause}
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM party_entity_link existing
+                  WHERE existing.party_id = %s
+                    AND existing.entity_id = entity.id
+              )
             GROUP BY entity.id, entity.canonical_name, entity.entity_type
             ORDER BY
                 reported_amount_total DESC NULLS LAST,
@@ -1888,15 +1864,21 @@ def _party_linked_entity_ids(conn, party: dict[str, Any]) -> tuple[list[int], li
                 entity.canonical_name
             LIMIT 100
             """,
-            tuple(patterns),
+            (*patterns, party["id"]),
         )
 
-    by_id: dict[int, dict[str, Any]] = {}
+    reviewed_by_id: dict[int, dict[str, Any]] = {}
+    candidate_by_id: dict[int, dict[str, Any]] = {}
     for row in candidate_rows:
-        by_id[int(row["entity_id"])] = row
-    for row in reviewed_links:
-        by_id[int(row["entity_id"])] = row
-    return sorted(by_id), list(by_id.values())
+        candidate_by_id[int(row["entity_id"])] = row
+    for row in materialized_links:
+        entity_id = int(row["entity_id"])
+        if row["review_status"] == "reviewed":
+            reviewed_by_id[entity_id] = row
+            candidate_by_id.pop(entity_id, None)
+        else:
+            candidate_by_id[entity_id] = row
+    return sorted(reviewed_by_id), list(reviewed_by_id.values()), list(candidate_by_id.values())
 
 
 def get_party_profile(party_id: int, *, database_url: str | None = None) -> dict[str, Any]:
@@ -1921,7 +1903,7 @@ def get_party_profile(party_id: int, *, database_url: str | None = None) -> dict
             return {}
 
         party = party_rows[0]
-        linked_entity_ids, linked_entities = _party_linked_entity_ids(conn, party)
+        linked_entity_ids, linked_entities, candidate_entities = _party_linked_entity_ids(conn, party)
 
         office_summary = _fetch_dicts(
             conn,
@@ -1945,6 +1927,7 @@ def get_party_profile(party_id: int, *, database_url: str | None = None) -> dict
                     "party": party,
                     "office_summary": office_summary,
                     "linked_entities": [],
+                    "candidate_entities": candidate_entities,
                     "money_summary": [],
                     "by_financial_year": [],
                     "by_return_type": [],
@@ -2185,6 +2168,7 @@ def get_party_profile(party_id: int, *, database_url: str | None = None) -> dict
             "party": party,
             "office_summary": office_summary,
             "linked_entities": linked_entities,
+            "candidate_entities": candidate_entities,
             "money_summary": money_summary,
             "by_financial_year": by_financial_year,
             "by_return_type": by_return_type,

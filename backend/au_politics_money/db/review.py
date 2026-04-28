@@ -18,6 +18,7 @@ REVIEW_SUBJECT_TYPES = {
     "influence_event",
     "entity_industry_classification",
     "sector_policy_topic_link",
+    "party_entity_link",
     "source_document",
     "other",
 }
@@ -26,6 +27,7 @@ GENERATED_REVIEW_SUBJECT_TYPES = {
     "entity_industry_classification",
     "influence_event",
     "sector_policy_topic_link",
+    "party_entity_link",
 }
 PUBLIC_INTEREST_SECTOR_CODES = {sector["code"] for sector in PUBLIC_INTEREST_SECTORS}
 SECTOR_POLICY_RELATIONSHIPS = {
@@ -35,6 +37,14 @@ SECTOR_POLICY_RELATIONSHIPS = {
     "uncertain",
 }
 SECTOR_POLICY_LINK_METHODS = {"manual", "rule_based", "model_assisted", "third_party_civic"}
+PARTY_ENTITY_LINK_TYPES = {
+    "exact_party_entity",
+    "party_branch",
+    "associated_entity",
+    "party_campaigner",
+    "other",
+}
+PARTY_ENTITY_LINK_METHODS = {"official", "manual", "rule_based", "model_assisted"}
 
 
 class ReviewImportError(ValueError):
@@ -396,6 +406,130 @@ ORDER BY link.public_sector, policy_topic.slug, link.relationship, link.method
 """
 
 
+PARTY_ENTITY_LINKS_SQL = """
+SELECT
+    'party_entity_link' AS review_subject_type,
+    link.id AS review_subject_id,
+    (
+        'party_entity_link:' ||
+        COALESCE(jurisdiction.code, '') || ':' ||
+        regexp_replace(lower(party.name), '\\s+', ' ', 'g') || ':' ||
+        entity.normalized_name || ':' ||
+        entity.entity_type || ':' ||
+        link.link_type
+    ) AS subject_external_key,
+    md5(
+        concat_ws(
+            '|',
+            COALESCE(jurisdiction.code, ''),
+            regexp_replace(lower(party.name), '\\s+', ' ', 'g'),
+            COALESCE(party.short_name, ''),
+            entity.normalized_name,
+            entity.canonical_name,
+            entity.entity_type,
+            link.link_type,
+            link.method,
+            link.confidence,
+            COALESCE(link.evidence_note, ''),
+            COALESCE(source_document.url, ''),
+            COALESCE(source_document.final_url, ''),
+            COALESCE(source_document.storage_path, ''),
+            COALESCE(source_document.sha256, '')
+        )
+    ) AS review_subject_fingerprint,
+    link.review_status,
+    party.id AS party_id,
+    party.name AS party_name,
+    party.short_name AS party_short_name,
+    jurisdiction.code AS jurisdiction_code,
+    jurisdiction.level AS jurisdiction_level,
+    entity.id AS entity_id,
+    entity.canonical_name AS entity_name,
+    entity.normalized_name AS entity_normalized_name,
+    entity.entity_type,
+    link.link_type,
+    link.method,
+    link.confidence,
+    link.evidence_note AS candidate_evidence_note,
+    link.source_document_id,
+    source_document.url AS source_url,
+    source_document.final_url,
+    source_document.storage_path AS source_storage_path,
+    source_document.sha256 AS source_sha256,
+    link.metadata,
+    jsonb_build_object(
+        'party_name', party.name,
+        'party_short_name', party.short_name,
+        'jurisdiction_code', jurisdiction.code,
+        'entity_normalized_name', entity.normalized_name,
+        'entity_type', entity.entity_type,
+        'link_type', link.link_type,
+        'method', link.method,
+        'confidence', CASE
+            WHEN link.confidence = 'unreviewed_candidate' THEN 'manual_reviewed'
+            ELSE link.confidence
+        END,
+        'evidence_note', COALESCE(link.evidence_note, '')
+    ) AS draft_proposed_changes,
+    jsonb_build_array(
+        jsonb_build_object(
+            'evidence_role', 'aec_money_flow_context',
+            'source_document_id', link.source_document_id,
+            'url', COALESCE(source_document.final_url, source_document.url, ''),
+            'storage_path', COALESCE(source_document.storage_path, ''),
+            'note', 'Generated context only; reviewer must add party_entity_relationship evidence before accepting.'
+        )
+    ) AS draft_supporting_sources
+FROM party_entity_link link
+JOIN party ON party.id = link.party_id
+LEFT JOIN jurisdiction ON jurisdiction.id = party.jurisdiction_id
+JOIN entity ON entity.id = link.entity_id
+LEFT JOIN source_document ON source_document.id = link.source_document_id
+WHERE link.review_status = 'needs_review'
+  AND NOT EXISTS (
+      SELECT 1
+      FROM manual_review_decision decision
+      WHERE decision.subject_type = 'party_entity_link'
+        AND decision.subject_external_key = (
+            'party_entity_link:' ||
+            COALESCE(jurisdiction.code, '') || ':' ||
+            regexp_replace(lower(party.name), '\\s+', ' ', 'g') || ':' ||
+            entity.normalized_name || ':' ||
+            entity.entity_type || ':' ||
+            link.link_type
+        )
+        AND decision.decision IN ('accept', 'reject', 'revise')
+        AND (
+            decision.metadata->>'expected_subject_fingerprint' IS NULL
+            OR decision.metadata->>'expected_subject_fingerprint' = md5(
+                concat_ws(
+                    '|',
+                    COALESCE(jurisdiction.code, ''),
+                    regexp_replace(lower(party.name), '\\s+', ' ', 'g'),
+                    COALESCE(party.short_name, ''),
+                    entity.normalized_name,
+                    entity.canonical_name,
+                    entity.entity_type,
+                    link.link_type,
+                    link.method,
+                    link.confidence,
+                    COALESCE(link.evidence_note, ''),
+                    COALESCE(source_document.url, ''),
+                    COALESCE(source_document.final_url, ''),
+                    COALESCE(source_document.storage_path, ''),
+                    COALESCE(source_document.sha256, '')
+                )
+            )
+        )
+  )
+ORDER BY
+    jurisdiction.code NULLS LAST,
+    party.name,
+    link.link_type,
+    entity.canonical_name
+"""
+
+
 REVIEW_QUEUES = {
     "official-match-candidates": ReviewQueue(
         name="official-match-candidates",
@@ -420,6 +554,12 @@ REVIEW_QUEUES = {
         description="Sector-to-policy topic links requiring review before vote/influence context display.",
         sql=SECTOR_POLICY_LINKS_SQL,
         subject_type="sector_policy_topic_link",
+    ),
+    "party-entity-links": ReviewQueue(
+        name="party-entity-links",
+        description="Candidate links between political parties and AEC money-flow entities.",
+        sql=PARTY_ENTITY_LINKS_SQL,
+        subject_type="party_entity_link",
     ),
 }
 
@@ -998,6 +1138,392 @@ def _validate_sector_policy_link_supporting_sources(decision: dict[str, Any]) ->
         )
 
 
+def _stable_key_text(value: Any) -> str:
+    return " ".join(str(value or "").strip().lower().split())
+
+
+def _party_entity_link_external_key(
+    *,
+    jurisdiction_code: Any,
+    party_name: Any,
+    entity_normalized_name: Any,
+    entity_type: Any,
+    link_type: Any,
+) -> str:
+    return (
+        "party_entity_link:"
+        f"{str(jurisdiction_code or '')}:"
+        f"{_stable_key_text(party_name)}:"
+        f"{str(entity_normalized_name or '')}:"
+        f"{str(entity_type or '')}:"
+        f"{str(link_type or '')}"
+    )
+
+
+def _party_entity_link_fingerprint(link: dict[str, Any]) -> str:
+    parts = [
+        str(link.get("jurisdiction_code") or ""),
+        _stable_key_text(link.get("party_name")),
+        str(link.get("party_short_name") or ""),
+        str(link.get("entity_normalized_name") or ""),
+        str(link.get("entity_name") or ""),
+        str(link.get("entity_type") or ""),
+        str(link.get("link_type") or ""),
+        str(link.get("method") or ""),
+        str(link.get("confidence") or ""),
+        str(link.get("evidence_note") or ""),
+        str(link.get("source_url") or ""),
+        str(link.get("source_final_url") or ""),
+        str(link.get("source_storage_path") or ""),
+        str(link.get("source_sha256") or ""),
+    ]
+    return hashlib.md5("|".join(parts).encode("utf-8")).hexdigest()
+
+
+def _existing_party_entity_link(conn, decision: dict[str, Any], *, for_update: bool = False):
+    if decision["subject_external_key"]:
+        where_clause = """
+            (
+                'party_entity_link:' ||
+                COALESCE(jurisdiction.code, '') || ':' ||
+                regexp_replace(lower(party.name), '\\s+', ' ', 'g') || ':' ||
+                entity.normalized_name || ':' ||
+                entity.entity_type || ':' ||
+                link.link_type
+            ) = %s
+        """
+        where_value = decision["subject_external_key"]
+    elif decision["subject_id"] is not None:
+        where_clause = "link.id = %s"
+        where_value = decision["subject_id"]
+    else:
+        raise ReviewImportError("party_entity_link decisions require a subject key.")
+    lock_clause = "FOR UPDATE OF link" if for_update else ""
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT
+                link.id,
+                link.party_id,
+                party.name,
+                party.short_name,
+                jurisdiction.code,
+                jurisdiction.level,
+                link.entity_id,
+                entity.canonical_name,
+                entity.normalized_name,
+                entity.entity_type,
+                link.link_type,
+                link.method,
+                link.confidence,
+                link.review_status,
+                link.evidence_note,
+                link.reviewer,
+                link.reviewed_at,
+                link.source_document_id,
+                source_document.url,
+                source_document.final_url,
+                source_document.storage_path,
+                source_document.sha256,
+                link.metadata
+            FROM party_entity_link link
+            JOIN party ON party.id = link.party_id
+            LEFT JOIN jurisdiction ON jurisdiction.id = party.jurisdiction_id
+            JOIN entity ON entity.id = link.entity_id
+            LEFT JOIN source_document ON source_document.id = link.source_document_id
+            WHERE {where_clause}
+            {lock_clause}
+            """,
+            (where_value,),
+        )
+        rows = cur.fetchall()
+    if len(rows) > 1:
+        raise ReviewImportError(
+            f"Review subject key {where_value!r} matched {len(rows)} current "
+            "party_entity_link rows; review identity is ambiguous."
+        )
+    if not rows:
+        return None
+    (
+        link_id,
+        party_id,
+        party_name,
+        party_short_name,
+        jurisdiction_code,
+        jurisdiction_level,
+        entity_id,
+        entity_name,
+        entity_normalized_name,
+        entity_type,
+        link_type,
+        method,
+        confidence,
+        review_status,
+        evidence_note,
+        reviewer,
+        reviewed_at,
+        source_document_id,
+        source_url,
+        source_final_url,
+        source_storage_path,
+        source_sha256,
+        metadata,
+    ) = rows[0]
+    return {
+        "id": link_id,
+        "party_id": party_id,
+        "party_name": party_name,
+        "party_short_name": party_short_name,
+        "jurisdiction_code": jurisdiction_code,
+        "jurisdiction_level": jurisdiction_level,
+        "entity_id": entity_id,
+        "entity_name": entity_name,
+        "entity_normalized_name": entity_normalized_name,
+        "entity_type": entity_type,
+        "link_type": link_type,
+        "method": method,
+        "confidence": confidence,
+        "review_status": review_status,
+        "evidence_note": evidence_note,
+        "reviewer": reviewer,
+        "reviewed_at": reviewed_at,
+        "source_document_id": source_document_id,
+        "source_url": source_url,
+        "source_final_url": source_final_url,
+        "source_storage_path": source_storage_path,
+        "source_sha256": source_sha256,
+        "metadata": metadata or {},
+    }
+
+
+def _party_for_entity_link(conn, proposed: dict[str, Any], existing: dict[str, Any] | None):
+    snapshot = proposed.get("_snapshot") or {}
+    party_name = (
+        proposed.get("party_name")
+        or (existing or {}).get("party_name")
+        or snapshot.get("party_name")
+    )
+    party_short_name = (
+        proposed.get("party_short_name")
+        or (existing or {}).get("party_short_name")
+        or snapshot.get("party_short_name")
+    )
+    jurisdiction_code = (
+        proposed.get("jurisdiction_code")
+        or (existing or {}).get("jurisdiction_code")
+        or snapshot.get("jurisdiction_code")
+        or ""
+    )
+    params: tuple[Any, ...]
+    if party_name:
+        where_clause = """
+            regexp_replace(lower(party.name), '\\s+', ' ', 'g') = %s
+            AND (%s = '' OR jurisdiction.code = %s)
+            AND (%s = '' OR COALESCE(party.short_name, '') = %s)
+        """
+        params = (
+            _stable_key_text(party_name),
+            jurisdiction_code,
+            jurisdiction_code,
+            party_short_name or "",
+            party_short_name or "",
+        )
+    elif proposed.get("party_id") or snapshot.get("party_id") or (existing or {}).get("party_id"):
+        where_clause = "party.id = %s"
+        params = (int(proposed.get("party_id") or snapshot.get("party_id") or existing["party_id"]),)
+    else:
+        raise ReviewImportError("party_entity_link decisions require party_name or party_id.")
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT party.id, party.name, party.short_name, jurisdiction.code, jurisdiction.level
+            FROM party
+            LEFT JOIN jurisdiction ON jurisdiction.id = party.jurisdiction_id
+            WHERE {where_clause}
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+    if not rows:
+        raise ReviewImportError(f"No current party for party_entity_link decision: {party_name!r}.")
+    if len(rows) > 1:
+        raise ReviewImportError(
+            f"Party reference {party_name!r}/{party_short_name!r}/{jurisdiction_code!r} "
+            "is ambiguous."
+        )
+    return {
+        "party_id": rows[0][0],
+        "party_name": rows[0][1],
+        "party_short_name": rows[0][2],
+        "jurisdiction_code": rows[0][3],
+        "jurisdiction_level": rows[0][4],
+    }
+
+
+def _entity_for_party_link(conn, proposed: dict[str, Any], existing: dict[str, Any] | None):
+    snapshot = proposed.get("_snapshot") or {}
+    normalized_name = (
+        proposed.get("entity_normalized_name")
+        or proposed.get("entity_normalized")
+        or (existing or {}).get("entity_normalized_name")
+        or snapshot.get("entity_normalized_name")
+    )
+    entity_type = (
+        proposed.get("entity_type")
+        or (existing or {}).get("entity_type")
+        or snapshot.get("entity_type")
+    )
+    params: tuple[Any, ...]
+    if normalized_name:
+        where_clause = """
+            entity.normalized_name = %s
+            AND (%s = '' OR entity.entity_type = %s)
+        """
+        params = (str(normalized_name), str(entity_type or ""), str(entity_type or ""))
+    elif proposed.get("entity_id") or snapshot.get("entity_id") or (existing or {}).get("entity_id"):
+        where_clause = "entity.id = %s"
+        params = (
+            int(proposed.get("entity_id") or snapshot.get("entity_id") or existing["entity_id"]),
+        )
+    else:
+        raise ReviewImportError(
+            "party_entity_link decisions require entity_normalized_name or entity_id."
+        )
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            SELECT id, canonical_name, normalized_name, entity_type
+            FROM entity
+            WHERE {where_clause}
+            """,
+            params,
+        )
+        rows = cur.fetchall()
+    if not rows:
+        raise ReviewImportError(
+            f"No current entity for party_entity_link decision: {normalized_name!r}."
+        )
+    if len(rows) > 1:
+        raise ReviewImportError(f"Entity reference {normalized_name!r}/{entity_type!r} is ambiguous.")
+    return {
+        "entity_id": rows[0][0],
+        "entity_name": rows[0][1],
+        "entity_normalized_name": rows[0][2],
+        "entity_type": rows[0][3],
+    }
+
+
+def _party_entity_link_from_decision(
+    conn,
+    *,
+    decision: dict[str, Any],
+    existing: dict[str, Any] | None,
+) -> dict[str, Any]:
+    snapshot = decision.get("metadata", {}).get("review_subject_snapshot") or {}
+    proposed = {**decision["proposed_changes"], "_snapshot": snapshot}
+    party = _party_for_entity_link(conn, proposed, existing)
+    entity = _entity_for_party_link(conn, proposed, existing)
+    link_type = str(
+        proposed.get("link_type") or (existing or {}).get("link_type") or snapshot.get("link_type") or ""
+    ).strip()
+    if link_type not in PARTY_ENTITY_LINK_TYPES:
+        raise ReviewImportError(
+            f"Invalid party_entity_link link_type {link_type!r}; expected "
+            f"one of {sorted(PARTY_ENTITY_LINK_TYPES)}."
+        )
+    method = str(
+        proposed.get("method") or (existing or {}).get("method") or snapshot.get("method") or "manual"
+    ).strip()
+    if method not in PARTY_ENTITY_LINK_METHODS:
+        raise ReviewImportError(
+            f"Invalid party_entity_link method {method!r}; expected "
+            f"one of {sorted(PARTY_ENTITY_LINK_METHODS)}."
+        )
+    raw_confidence = str(
+        proposed.get("confidence")
+        or (existing or {}).get("confidence")
+        or snapshot.get("confidence")
+        or "unreviewed_candidate"
+    ).strip()
+    if decision["decision"] in {"accept", "revise"} and raw_confidence == "unreviewed_candidate":
+        confidence = "manual_reviewed"
+    else:
+        confidence = raw_confidence
+    evidence_note = str(
+        (existing or {}).get("evidence_note")
+        or proposed.get("link_evidence_note")
+        or proposed.get("evidence_note")
+        or snapshot.get("candidate_evidence_note")
+        or snapshot.get("evidence_note")
+        or decision["evidence_note"]
+    ).strip()
+    source_document_id = (
+        (existing or {}).get("source_document_id")
+        or proposed.get("source_document_id")
+        or snapshot.get("source_document_id")
+    )
+    if source_document_id in ("", None):
+        source_document_id = None
+    else:
+        source_document_id = int(source_document_id)
+    link = {
+        **party,
+        **entity,
+        "link_type": link_type,
+        "method": method,
+        "confidence": confidence,
+        "evidence_note": evidence_note,
+        "source_document_id": source_document_id,
+        "source_url": (existing or {}).get("source_url") or snapshot.get("source_url"),
+        "source_final_url": (existing or {}).get("source_final_url") or snapshot.get("final_url"),
+        "source_storage_path": (existing or {}).get("source_storage_path")
+        or snapshot.get("source_storage_path"),
+        "source_sha256": (existing or {}).get("source_sha256") or snapshot.get("source_sha256"),
+        "metadata": (existing or {}).get("metadata") or snapshot.get("metadata") or {},
+    }
+    expected_key = _party_entity_link_external_key(
+        jurisdiction_code=link["jurisdiction_code"],
+        party_name=link["party_name"],
+        entity_normalized_name=link["entity_normalized_name"],
+        entity_type=link["entity_type"],
+        link_type=link_type,
+    )
+    if decision["subject_external_key"] and decision["subject_external_key"] != expected_key:
+        raise ReviewImportError(
+            f"Decision {decision['decision_key']}: subject_external_key "
+            f"{decision['subject_external_key']!r} does not match proposed link {expected_key!r}."
+        )
+    return link
+
+
+def _validate_party_entity_link_supporting_sources(decision: dict[str, Any]) -> None:
+    if decision["decision"] not in {"accept", "revise"}:
+        return
+    roles: set[str] = set()
+    for source in decision["supporting_sources"]:
+        if not isinstance(source, dict):
+            raise ReviewImportError("party_entity_link supporting_sources entries must be objects.")
+        role = str(source.get("evidence_role") or source.get("role") or "").strip()
+        if role:
+            roles.add(role)
+        locator = (
+            source.get("url")
+            or source.get("source_url")
+            or source.get("storage_path")
+            or source.get("source_document_id")
+        )
+        if role == "party_entity_relationship" and not str(locator or "").strip():
+            raise ReviewImportError(
+                "party_entity_link supporting source for role 'party_entity_relationship' "
+                "requires url, source_url, storage_path, or source_document_id."
+            )
+    if "party_entity_relationship" not in roles:
+        raise ReviewImportError(
+            "Accepted/revised party_entity_link decisions require supporting_sources "
+            "with evidence_role='party_entity_relationship'."
+        )
+
+
 def validate_review_decision_subject(conn, decision: dict[str, Any]) -> None:
     if decision["subject_type"] == "entity_match_candidate":
         if decision["subject_external_key"]:
@@ -1164,6 +1690,32 @@ def validate_review_decision_subject(conn, decision: dict[str, Any]) -> None:
                 existing=None,
             )
             current_fingerprint = _sector_policy_link_fingerprint(proposed)
+        _validate_subject_fingerprint(
+            decision=decision,
+            current_fingerprint=current_fingerprint,
+        )
+        return
+
+    if decision["subject_type"] == "party_entity_link":
+        if decision["subject_external_key"] is None:
+            raise ReviewImportError("party_entity_link decisions require subject_external_key.")
+        _validate_party_entity_link_supporting_sources(decision)
+        existing = _existing_party_entity_link(conn, decision)
+        if (
+            existing is not None
+            and existing["metadata"].get("last_manual_review_decision_key")
+            == decision["decision_key"]
+        ):
+            return
+        if existing is not None:
+            current_fingerprint = _party_entity_link_fingerprint(existing)
+        else:
+            proposed = _party_entity_link_from_decision(
+                conn,
+                decision=decision,
+                existing=None,
+            )
+            current_fingerprint = _party_entity_link_fingerprint(proposed)
         _validate_subject_fingerprint(
             decision=decision,
             current_fingerprint=current_fingerprint,
@@ -1961,6 +2513,108 @@ def _apply_sector_policy_topic_link(
     }
 
 
+def _apply_party_entity_link(
+    conn,
+    *,
+    decision_id: int,
+    decision: dict[str, Any],
+) -> dict[str, int]:
+    _validate_party_entity_link_supporting_sources(decision)
+    existing = _existing_party_entity_link(conn, decision, for_update=True)
+    review_status = {
+        "accept": "reviewed",
+        "revise": "reviewed",
+        "reject": "rejected",
+        "needs_more_evidence": "needs_review",
+        "defer": "needs_review",
+    }[decision["decision"]]
+    if (
+        existing is not None
+        and existing["metadata"].get("last_manual_review_decision_key")
+        == decision["decision_key"]
+        and existing["review_status"] == review_status
+    ):
+        return {"party_entity_links_already_applied": 1}
+    link = _party_entity_link_from_decision(conn, decision=decision, existing=existing)
+    current_fingerprint = _party_entity_link_fingerprint(existing or link)
+    _validate_subject_fingerprint(
+        decision=decision,
+        current_fingerprint=current_fingerprint,
+    )
+    subject_external_key = _party_entity_link_external_key(
+        jurisdiction_code=link["jurisdiction_code"],
+        party_name=link["party_name"],
+        entity_normalized_name=link["entity_normalized_name"],
+        entity_type=link["entity_type"],
+        link_type=link["link_type"],
+    )
+    metadata = {
+        **_review_metadata(decision_id, decision),
+        "proposed_changes": decision["proposed_changes"],
+        "supporting_sources": decision["supporting_sources"],
+        "subject_external_key": subject_external_key,
+        "review_evidence_note": decision["evidence_note"],
+        "pre_review_fingerprint": current_fingerprint,
+    }
+    if existing is not None:
+        metadata["previous_link"] = {
+            "party_name": existing["party_name"],
+            "party_short_name": existing["party_short_name"],
+            "jurisdiction_code": existing["jurisdiction_code"],
+            "entity_name": existing["entity_name"],
+            "entity_normalized_name": existing["entity_normalized_name"],
+            "entity_type": existing["entity_type"],
+            "link_type": existing["link_type"],
+            "method": existing["method"],
+            "confidence": existing["confidence"],
+            "evidence_note": existing["evidence_note"],
+            "review_status": existing["review_status"],
+            "source_document_id": existing["source_document_id"],
+        }
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO party_entity_link (
+                party_id, entity_id, link_type, method, confidence, review_status,
+                evidence_note, reviewer, reviewed_at, source_document_id, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (party_id, entity_id, link_type)
+            DO UPDATE SET
+                method = EXCLUDED.method,
+                confidence = EXCLUDED.confidence,
+                review_status = EXCLUDED.review_status,
+                reviewer = EXCLUDED.reviewer,
+                reviewed_at = EXCLUDED.reviewed_at,
+                evidence_note = COALESCE(party_entity_link.evidence_note, EXCLUDED.evidence_note),
+                source_document_id = COALESCE(
+                    party_entity_link.source_document_id,
+                    EXCLUDED.source_document_id
+                ),
+                metadata = party_entity_link.metadata || EXCLUDED.metadata
+            RETURNING id
+            """,
+            (
+                link["party_id"],
+                link["entity_id"],
+                link["link_type"],
+                link["method"],
+                link["confidence"],
+                review_status,
+                link["evidence_note"],
+                decision["reviewer"],
+                decision["reviewed_at"],
+                link["source_document_id"],
+                as_jsonb(metadata),
+            ),
+        )
+        cur.fetchone()
+    return {
+        "party_entity_links_upserted": 1,
+        f"party_entity_links_{review_status}": 1,
+    }
+
+
 def _apply_source_document_or_other(
     conn,
     *,
@@ -2092,6 +2746,12 @@ def apply_review_decision(
         return _apply_influence_event(conn, decision_id=decision_id, decision=decision)
     if decision["subject_type"] == "sector_policy_topic_link":
         return _apply_sector_policy_topic_link(
+            conn,
+            decision_id=decision_id,
+            decision=decision,
+        )
+    if decision["subject_type"] == "party_entity_link":
+        return _apply_party_entity_link(
             conn,
             decision_id=decision_id,
             decision=decision,

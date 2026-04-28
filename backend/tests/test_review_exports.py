@@ -4,6 +4,7 @@ from decimal import Decimal
 from au_politics_money.db.review import (
     ENTITY_CLASSIFICATIONS_SQL,
     OFFICIAL_MATCH_CANDIDATES_SQL,
+    PARTY_ENTITY_LINKS_SQL,
     REVIEW_QUEUES,
     SECTOR_POLICY_LINKS_SQL,
     ReviewImportError,
@@ -23,10 +24,12 @@ def test_review_queue_names_are_stable() -> None:
         "benefit-events",
         "entity-classifications",
         "official-match-candidates",
+        "party-entity-links",
         "sector-policy-links",
     ]
     assert REVIEW_QUEUES["benefit-events"].subject_type == "influence_event"
     assert REVIEW_QUEUES["sector-policy-links"].subject_type == "sector_policy_topic_link"
+    assert REVIEW_QUEUES["party-entity-links"].subject_type == "party_entity_link"
 
 
 def test_review_queue_fingerprints_avoid_surrogate_entity_ids() -> None:
@@ -36,6 +39,11 @@ def test_review_queue_fingerprints_avoid_surrogate_entity_ids() -> None:
     assert "entity.entity_type || ':' ||" in ENTITY_CLASSIFICATIONS_SQL
     assert "sector_policy_topic_link:' || link.public_sector" in SECTOR_POLICY_LINKS_SQL
     assert "to_char(link.confidence, 'FM0.000')" in SECTOR_POLICY_LINKS_SQL
+    assert "link.party_id::text" not in PARTY_ENTITY_LINKS_SQL
+    assert "link.entity_id::text" not in PARTY_ENTITY_LINKS_SQL
+    assert "party_entity_link:' ||" in PARTY_ENTITY_LINKS_SQL
+    assert "entity.normalized_name" in PARTY_ENTITY_LINKS_SQL
+    assert "aec_money_flow_context" in PARTY_ENTITY_LINKS_SQL
 
 
 def test_json_safe_preserves_publishable_values() -> None:
@@ -115,6 +123,30 @@ def test_normalize_sector_policy_link_decision_requires_stable_key() -> None:
     assert decision["subject_type"] == "sector_policy_topic_link"
     assert decision["subject_id"] is None
     assert decision["subject_external_key"].startswith("sector_policy_topic_link:fossil_fuels:")
+    assert decision["payload_sha256"] == decision_payload_sha256(decision)
+
+
+def test_normalize_party_entity_link_decision_requires_stable_key() -> None:
+    decision = normalize_review_decision(
+        {
+            "subject_type": "party_entity_link",
+            "subject_external_key": (
+                "party_entity_link:CWLTH:example party:"
+                "example party federal campaign:political_party:party_branch"
+            ),
+            "decision": "reject",
+            "reviewer": "m.zyphur@uq.edu.au",
+            "evidence_note": (
+                "The name is similar but the source does not support a current party/entity "
+                "relationship."
+            ),
+        },
+        line_number=1,
+    )
+
+    assert decision["subject_type"] == "party_entity_link"
+    assert decision["subject_id"] is None
+    assert decision["subject_external_key"].startswith("party_entity_link:CWLTH:")
     assert decision["payload_sha256"] == decision_payload_sha256(decision)
 
 

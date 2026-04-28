@@ -199,14 +199,39 @@ separate source-backed person-linking method supports that assignment.
 
 `/api/parties/{party_id}` is the first surface for AEC party and
 associated-entity money that is too broad to assign to one MP or Senator. It
-uses reviewed `party_entity_link` rows when available and also exposes
-transparent name-family candidate entities as `needs_review` candidates. The UI
-must label those candidates as candidate links until reviewed.
+uses reviewed `party_entity_link` rows for party money totals and exposes
+transparent name-family candidate entities separately as `candidate_entities`.
+Candidate rows are review/discovery context only and must not be added to party
+totals until reviewed.
+
+Party/entity candidates are now materialized during database loading with
+`materialize-party-entity-links`, then reviewed through the standard audit
+workflow:
+
+```bash
+cd backend
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money materialize-party-entity-links
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money export-review-queue party-entity-links
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money import-review-decisions decisions.jsonl
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money import-review-decisions decisions.jsonl --apply
+```
+
+Rejected party/entity links suppress future name-family candidates for that
+party/entity pair. The exported draft support source is labelled
+`evidence_role="aec_money_flow_context"` because AEC money-flow context alone is
+not enough to accept the relationship. Accepted/revised links require a
+reviewer-added supporting source with
+`evidence_role="party_entity_relationship"` and retain the original candidate
+evidence in `party_entity_link.evidence_note`; reviewer rationale is stored in
+`manual_review_decision` and link metadata.
 
 Party profiles include:
 
 - Current office holders for the party.
-- Money summaries where linked party entities appear as recipients or sources.
+- Money summaries where reviewed linked party entities appear as recipients or
+  sources.
+- Candidate entities requiring review, with candidate event counts/amounts kept
+  separate from reviewed totals.
 - Associated-entity return entities detected in AEC metadata.
 - Top sources and recipients for party/entity money flows.
 - Recent source-backed event rows with review and amount-status fields.

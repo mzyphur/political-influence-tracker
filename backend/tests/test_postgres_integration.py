@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 import os
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass
+from pathlib import Path
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import pytest
@@ -17,6 +19,15 @@ from au_politics_money.db.load import (
     apply_schema,
     connect,
     link_aec_direct_representative_money_flows,
+)
+from au_politics_money.db.party_entity_suggestions import (
+    materialize_party_entity_link_candidates,
+)
+from au_politics_money.db.review import (
+    ReviewImportError,
+    export_review_queue,
+    import_review_decisions,
+    reapply_review_decisions,
 )
 
 
@@ -107,6 +118,7 @@ def _assert_expected_indexes(conn) -> None:
             "policy_topic_label_trgm_idx",
             "policy_topic_slug_trgm_idx",
             "entity_industry_public_sector_trgm_idx",
+            "influence_event_recipient_entity_idx",
             "vote_division_external_id_idx",
         ):
             cur.execute("SELECT to_regclass(%s)", (index_name,))
@@ -902,3 +914,219 @@ def test_party_profile_aggregates_reviewed_party_entity_money(
     assert payload["money_summary"][0]["reported_amount_total"] == 3000.0
     assert payload["top_sources"][0]["source_label"] == "Example Donor Pty Ltd"
     assert payload["recent_events"][0]["review_status"] == "not_required"
+
+
+def test_party_entity_link_review_accepts_and_rejects_candidates(
+    integration_db: IntegrationDatabase,
+    tmp_path,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
+            jurisdiction_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM party WHERE name = 'Example Party'")
+            party_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity (
+                    canonical_name, normalized_name, entity_type, country, source_document_id
+                )
+                VALUES ('Example Donor Pty Ltd', 'example donor pty ltd', 'company', 'AU', %s)
+                RETURNING id
+                """,
+                (source_document_id,),
+            )
+            donor_entity_id = cur.fetchone()[0]
+            for label, amount in (
+                ("Example Party Federal Campaign", 3000),
+                ("Example Party Rejected Campaign", 9000),
+            ):
+                normalized = label.lower()
+                cur.execute(
+                    """
+                    INSERT INTO entity (
+                        canonical_name, normalized_name, entity_type, country, source_document_id
+                    )
+                    VALUES (%s, %s, 'political_party', 'AU', %s)
+                    RETURNING id
+                    """,
+                    (label, normalized, source_document_id),
+                )
+                entity_id = cur.fetchone()[0]
+                cur.execute(
+                    """
+                    INSERT INTO influence_event (
+                        external_key, event_family, event_type, source_entity_id,
+                        source_raw_name, recipient_entity_id, recipient_raw_name,
+                        jurisdiction_id, amount, amount_status, event_date,
+                        reporting_period, disclosure_system, evidence_status,
+                        extraction_method, review_status, description,
+                        source_document_id, source_ref, missing_data_flags, metadata
+                    )
+                    VALUES (
+                        %s, 'money', 'donation_or_gift', %s, 'Example Donor Pty Ltd',
+                        %s, %s, %s, %s, 'reported', '2024-06-01', '2023-24',
+                        'pytest fixture', 'official_record_parsed', 'fixture_seed',
+                        'not_required', 'Fixture party disclosure.', %s, %s,
+                        '[]'::jsonb, %s
+                    )
+                    """,
+                    (
+                        f"party-entity-review:{entity_id}",
+                        donor_entity_id,
+                        entity_id,
+                        label,
+                        jurisdiction_id,
+                        str(amount),
+                        source_document_id,
+                        f"party-entity-review:{entity_id}",
+                        Jsonb({"return_type": "Political Party Return"}),
+                    ),
+                )
+        conn.commit()
+
+        materialize_summary = materialize_party_entity_link_candidates(conn)
+        assert materialize_summary["candidates_inserted_or_refreshed"] >= 2
+
+        candidate_response = TestClient(app).get(f"/api/parties/{party_id}")
+        assert candidate_response.status_code == 200
+        candidate_payload = candidate_response.json()
+        assert candidate_payload["linked_entities"] == []
+        assert candidate_payload["money_summary"] == []
+        candidate_names = {
+            entity["canonical_name"] for entity in candidate_payload["candidate_entities"]
+        }
+        assert "Example Party Federal Campaign" in candidate_names
+        assert "Example Party Rejected Campaign" in candidate_names
+
+        queue_path = export_review_queue(
+            conn,
+            "party-entity-links",
+            output_dir=tmp_path,
+        )
+        queue_summary = json.loads(queue_path.read_text(encoding="utf-8"))
+        queue_jsonl_path = Path(queue_summary["jsonl_path"])
+        records = [
+            json.loads(line)
+            for line in queue_jsonl_path.read_text(encoding="utf-8").splitlines()
+            if line.strip()
+        ]
+        by_name = {record["entity_name"]: record for record in records}
+        assert "Example Party Federal Campaign" in by_name
+        assert "Example Party Rejected Campaign" in by_name
+
+        bad_accept_path = tmp_path / "party_entity_bad_accept.jsonl"
+        bad_accept_record = {
+            **by_name["Example Party Federal Campaign"],
+            "decision": "accept",
+            "reviewer": "m.zyphur@uq.edu.au",
+            "evidence_note": "Generated context alone must not satisfy the review gate.",
+            "proposed_changes": by_name["Example Party Federal Campaign"][
+                "draft_proposed_changes"
+            ],
+            "supporting_sources": by_name["Example Party Federal Campaign"][
+                "draft_supporting_sources"
+            ],
+        }
+        bad_accept_path.write_text(json.dumps(bad_accept_record) + "\n", encoding="utf-8")
+        with pytest.raises(ReviewImportError, match="party_entity_relationship"):
+            import_review_decisions(conn, bad_accept_path, apply=False, output_dir=tmp_path)
+
+        decisions_path = tmp_path / "party_entity_decisions.jsonl"
+        decisions = []
+        for entity_name, decision in (
+            ("Example Party Federal Campaign", "accept"),
+            ("Example Party Rejected Campaign", "reject"),
+        ):
+            record = by_name[entity_name]
+            decisions.append(
+                {
+                    **record,
+                    "decision": decision,
+                    "reviewer": "m.zyphur@uq.edu.au",
+                    "evidence_note": (
+                        "Accepted source-backed party/entity relationship."
+                        if decision == "accept"
+                        else "Rejected because the fixture source does not support this link."
+                    ),
+                    "proposed_changes": record["draft_proposed_changes"],
+                    "supporting_sources": (
+                        [
+                            {
+                                "evidence_role": "party_entity_relationship",
+                                "source_document_id": source_document_id,
+                                "note": "Fixture source supports the accepted test link.",
+                            }
+                        ]
+                        if decision == "accept"
+                        else []
+                    ),
+                }
+            )
+        decisions_path.write_text(
+            "".join(json.dumps(decision, sort_keys=True) + "\n" for decision in decisions),
+            encoding="utf-8",
+        )
+
+        dry_run = import_review_decisions(conn, decisions_path, apply=False, output_dir=tmp_path)
+        assert dry_run["records_seen"] == 2
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT count(*) FROM party_entity_link WHERE review_status = 'needs_review'"
+            )
+            assert cur.fetchone()[0] >= 2
+
+        applied = import_review_decisions(conn, decisions_path, apply=True, output_dir=tmp_path)
+        assert applied["decisions_inserted"] == 2
+        assert applied["applied_updates"]["party_entity_links_reviewed"] == 1
+        assert applied["applied_updates"]["party_entity_links_rejected"] == 1
+
+        duplicate = import_review_decisions(conn, decisions_path, apply=True, output_dir=tmp_path)
+        assert duplicate["duplicate_decisions"] == 2
+        assert duplicate["applied_updates"]["party_entity_links_already_applied"] == 2
+
+        replayed = reapply_review_decisions(
+            conn,
+            apply=True,
+            subject_type="party_entity_link",
+            output_dir=tmp_path,
+        )
+        assert replayed["records_reapplied"] == 2
+        assert replayed["applied_updates"]["party_entity_links_already_applied"] == 2
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT entity.canonical_name, link.review_status, link.confidence,
+                       link.evidence_note, link.metadata->>'review_evidence_note'
+                FROM party_entity_link link
+                JOIN entity ON entity.id = link.entity_id
+                WHERE link.party_id = %s
+                ORDER BY entity.canonical_name
+                """,
+                (party_id,),
+            )
+            link_rows = cur.fetchall()
+        assert ("Example Party Federal Campaign", "reviewed") in {
+            (row[0], row[1]) for row in link_rows
+        }
+        assert ("Example Party Rejected Campaign", "rejected") in {
+            (row[0], row[1]) for row in link_rows
+        }
+        accepted_row = next(row for row in link_rows if row[0] == "Example Party Federal Campaign")
+        assert accepted_row[2] == "manual_reviewed"
+        assert "Candidate generated" in accepted_row[3]
+        assert accepted_row[4] == "Accepted source-backed party/entity relationship."
+
+    client = TestClient(app)
+    response = client.get(f"/api/parties/{party_id}")
+    assert response.status_code == 200
+    payload = response.json()
+    linked_names = {entity["canonical_name"] for entity in payload["linked_entities"]}
+    assert "Example Party Federal Campaign" in linked_names
+    assert "Example Party Rejected Campaign" not in linked_names
+    candidate_names = {entity["canonical_name"] for entity in payload["candidate_entities"]}
+    assert "Example Party Rejected Campaign" not in candidate_names
+    assert payload["money_summary"][0]["reported_amount_total"] == 3000.0

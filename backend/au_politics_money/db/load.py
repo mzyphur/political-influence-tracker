@@ -3605,6 +3605,7 @@ def load_processed_artifacts(
     include_official_decision_record_documents: bool = True,
     include_official_aph_divisions: bool = True,
     include_vote_divisions: bool = False,
+    include_party_entity_links: bool = True,
     reapply_reviews: bool = True,
 ) -> dict[str, Any]:
     with connect(database_url) as conn:
@@ -3644,12 +3645,20 @@ def load_processed_artifacts(
             summary["official_aph_divisions"] = load_official_aph_divisions(conn)
         if include_vote_divisions:
             summary["vote_divisions"] = load_they_vote_for_you_divisions(conn)
+        if include_party_entity_links:
+            from au_politics_money.db.party_entity_suggestions import (
+                materialize_party_entity_link_candidates,
+            )
+
+            summary["party_entity_links"] = materialize_party_entity_link_candidates(conn)
         if reapply_reviews:
             from au_politics_money.db.review import reapply_review_decisions
 
-            exclude_review_subject_types = (
-                set() if include_vote_divisions else {"sector_policy_topic_link"}
-            )
+            exclude_review_subject_types = set()
+            if not include_vote_divisions:
+                exclude_review_subject_types.add("sector_policy_topic_link")
+            if not include_party_entity_links:
+                exclude_review_subject_types.add("party_entity_link")
             summary["review_decisions_reapplied"] = reapply_review_decisions(
                 conn,
                 apply=True,

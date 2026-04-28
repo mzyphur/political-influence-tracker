@@ -57,12 +57,12 @@ export function PartyProfilePanel({
             />
             <ProfileFact
               icon={<Building2 size={16} />}
-              label="Linked entities"
+              label="Reviewed entities"
               value={profile.linked_entities.length.toLocaleString("en-AU")}
             />
             <ProfileFact
               icon={<Banknote size={16} />}
-              label="Money records"
+              label="Reviewed money"
               value={summaryCount(profile.money_summary)}
             />
             <ProfileFact
@@ -103,7 +103,7 @@ export function PartyProfilePanel({
           />
 
           <div className="entity-rank-list">
-            <h3>Linked entity candidates</h3>
+            <h3>Reviewed party entities</h3>
             {profile.linked_entities.slice(0, 8).map((entity) => (
               <div className="entity-rank-row" key={entity.entity_id}>
                 <span>{entity.canonical_name}</span>
@@ -112,7 +112,28 @@ export function PartyProfilePanel({
               </div>
             ))}
             {profile.linked_entities.length === 0 && (
-              <p className="muted">No reviewed or candidate party entities are linked yet.</p>
+              <p className="muted">No reviewed party entities are linked yet.</p>
+            )}
+          </div>
+
+          <div className="entity-rank-list">
+            <h3>Entity candidates for review</h3>
+            {profile.candidate_entities.slice(0, 8).map((entity) => (
+              <div className="entity-rank-row" key={`${entity.entity_id}:${entity.link_type}`}>
+                <span>{entity.canonical_name}</span>
+                <strong>{entity.review_status.replaceAll("_", " ")}</strong>
+                <small>
+                  {[
+                    entity.link_type.replaceAll("_", " "),
+                    entity.reported_amount_total ? formatMoney(entity.reported_amount_total) : null
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </small>
+              </div>
+            ))}
+            {profile.candidate_entities.length === 0 && (
+              <p className="muted">No party/entity candidates are queued for review.</p>
             )}
           </div>
 

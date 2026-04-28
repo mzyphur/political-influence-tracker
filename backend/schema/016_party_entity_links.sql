@@ -23,6 +23,10 @@ CREATE TABLE IF NOT EXISTS party_entity_link (
     reviewed_at TIMESTAMPTZ,
     source_document_id BIGINT REFERENCES source_document(id),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT party_entity_link_review_requires_reviewer_check CHECK (
+        review_status NOT IN ('reviewed', 'rejected')
+        OR (reviewer IS NOT NULL AND reviewed_at IS NOT NULL)
+    ),
     UNIQUE (party_id, entity_id, link_type)
 );
 

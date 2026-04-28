@@ -12,6 +12,7 @@ from au_politics_money.db.review import (
     reapply_review_decisions,
     review_queue_names,
 )
+from au_politics_money.db.party_entity_suggestions import materialize_party_entity_link_candidates
 from au_politics_money.db.sector_policy_suggestions import export_sector_policy_link_suggestions
 from au_politics_money.ingest.discovered_sources import (
     child_source_id,
@@ -357,6 +358,7 @@ def load_postgres_command(
     skip_official_decision_record_documents: bool,
     skip_official_aph_divisions: bool,
     include_vote_divisions: bool,
+    skip_party_entity_links: bool,
     skip_review_reapply: bool,
 ) -> int:
     summary = load_processed_artifacts(
@@ -373,6 +375,7 @@ def load_postgres_command(
         include_official_decision_record_documents=not skip_official_decision_record_documents,
         include_official_aph_divisions=not skip_official_aph_divisions,
         include_vote_divisions=include_vote_divisions,
+        include_party_entity_links=not skip_party_entity_links,
         reapply_reviews=not skip_review_reapply,
     )
     print(json.dumps(summary, indent=2, sort_keys=True))
@@ -396,6 +399,13 @@ def export_review_queue_command(queue_name: str, limit: int | None) -> int:
 def suggest_sector_policy_links_command(limit: int | None) -> int:
     summary_path = export_sector_policy_link_suggestions(limit=limit)
     print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def materialize_party_entity_links_command(limit_per_party: int | None) -> int:
+    with connect() as conn:
+        summary = materialize_party_entity_link_candidates(conn, limit_per_party=limit_per_party)
+    print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
@@ -537,6 +547,9 @@ def build_parser() -> argparse.ArgumentParser:
     suggestions_parser = subparsers.add_parser("suggest-sector-policy-links")
     suggestions_parser.add_argument("--limit", type=int)
 
+    party_entity_parser = subparsers.add_parser("materialize-party-entity-links")
+    party_entity_parser.add_argument("--limit-per-party", type=int)
+
     import_review_parser = subparsers.add_parser("import-review-decisions")
     import_review_parser.add_argument("input_path")
     import_review_parser.add_argument(
@@ -583,6 +596,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Load processed They Vote For You division/vote artifacts if present.",
     )
+    load_parser.add_argument("--skip-party-entity-links", action="store_true")
     load_parser.add_argument("--skip-review-reapply", action="store_true")
 
     return parser
@@ -663,6 +677,8 @@ def main() -> int:
         return export_review_queue_command(args.queue_name, args.limit)
     if args.command == "suggest-sector-policy-links":
         return suggest_sector_policy_links_command(args.limit)
+    if args.command == "materialize-party-entity-links":
+        return materialize_party_entity_links_command(args.limit_per_party)
     if args.command == "import-review-decisions":
         return import_review_decisions_command(args.input_path, args.apply)
     if args.command == "reapply-review-decisions":
@@ -695,6 +711,7 @@ def main() -> int:
             args.skip_official_decision_record_documents,
             args.skip_official_aph_divisions,
             args.include_vote_divisions,
+            args.skip_party_entity_links,
             args.skip_review_reapply,
         )
     raise ValueError(f"Unhandled command: {args.command}")

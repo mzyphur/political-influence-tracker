@@ -279,6 +279,10 @@ CREATE TABLE party_entity_link (
     reviewed_at TIMESTAMPTZ,
     source_document_id BIGINT REFERENCES source_document(id),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    CONSTRAINT party_entity_link_review_requires_reviewer_check CHECK (
+        review_status NOT IN ('reviewed', 'rejected')
+        OR (reviewer IS NOT NULL AND reviewed_at IS NOT NULL)
+    ),
     UNIQUE (party_id, entity_id, link_type)
 );
 
@@ -411,6 +415,7 @@ CREATE TABLE influence_event (
 
 CREATE INDEX influence_event_family_type_idx ON influence_event (event_family, event_type);
 CREATE INDEX influence_event_source_entity_idx ON influence_event (source_entity_id);
+CREATE INDEX influence_event_recipient_entity_idx ON influence_event (recipient_entity_id);
 CREATE INDEX influence_event_recipient_person_idx ON influence_event (recipient_person_id);
 CREATE INDEX influence_event_recipient_party_idx ON influence_event (recipient_party_id);
 CREATE INDEX influence_event_date_idx ON influence_event (event_date);
@@ -426,6 +431,7 @@ CREATE TABLE manual_review_decision (
             'influence_event',
             'entity_industry_classification',
             'sector_policy_topic_link',
+            'party_entity_link',
             'source_document',
             'other'
         )
