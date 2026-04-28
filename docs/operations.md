@@ -1,6 +1,6 @@
 # Operations
 
-Last updated: 2026-04-27
+Last updated: 2026-04-28
 
 ## Local Setup
 
@@ -17,7 +17,8 @@ Production-style full run:
 
 ```bash
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
-.venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline --include-votes
 ```
 
 Development smoke run:
@@ -36,6 +37,8 @@ scripts/run_weekly_federal_pipeline.sh
 ```
 
 Run it from cron, systemd, launchd, or a CI runner.
+The script loads `backend/.env` and includes optional vote ingestion so TVFY
+division data updates when `THEY_VOTE_FOR_YOU_API_KEY` is present.
 
 Example cron entry for a server using UTC, running Sundays at 18:00 UTC
 which is Monday morning in eastern Australia depending on daylight saving:
@@ -64,8 +67,10 @@ Initial schema:
 psql "$DATABASE_URL" -f schema/001_initial.sql
 ```
 
-Load the latest processed roster, AEC annual money-flow artifacts, House
-interest records, and Senate interest records:
+Load the latest processed roster, AEC annual money-flow artifacts, AEC federal
+boundaries, House interest records, Senate interest records, and the derived
+unified influence event surface. By default this also loads the latest official
+APH House Votes and Proceedings / Senate Journals index artifacts when present:
 
 ```bash
 cd backend
@@ -73,15 +78,27 @@ cd backend
 ```
 
 The loader is idempotent for the current schema: source documents, people,
-office terms, parties, electorates, entities, AEC annual money-flow rows, House
-interest records, and Senate interest records use stable keys or uniqueness
-constraints.
+office terms, parties, electorates, boundaries, entities, AEC annual money-flow
+rows, House interest records, Senate interest records, and official APH
+decision-record index rows use stable keys or uniqueness constraints.
 
 To skip a layer during development:
 
 ```bash
 cd backend
 .venv/bin/python -m au_politics_money.cli load-postgres --skip-senate-interests
+```
+
+Regenerate only the derived unified influence events after `money_flow` and
+`gift_interest` already exist:
+
+```bash
+cd backend
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money load-postgres \
+  --skip-roster --skip-money-flows --skip-house-interests \
+  --skip-senate-interests --skip-entity-classifications \
+  --skip-official-identifiers --skip-official-decision-records \
+  --skip-official-decision-record-documents
 ```
 
 Regenerate only the House PDF-derived layers after PDF text has already been
@@ -101,6 +118,243 @@ cd backend
 .venv/bin/python -m au_politics_money.cli classify-entities
 ```
 
+Regenerate only AEC current federal House boundaries:
+
+```bash
+cd backend
+.venv/bin/au-politics-money fetch-current-aec-boundaries
+.venv/bin/au-politics-money extract-aec-boundaries
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money load-postgres \
+  --skip-roster --skip-money-flows --skip-house-interests \
+  --skip-senate-interests --skip-influence-events \
+  --skip-entity-classifications --skip-official-identifiers \
+  --skip-official-decision-records --skip-official-decision-record-documents
+```
+
+The canonical boundary layer uses the full AEC national ESRI shapefile. The
+processed GeoJSON and PostGIS rows are SRID 4326; the raw AEC shapefile source
+CRS and DBF attributes remain in metadata. Frontend map tiles should use a later
+simplified derivative, not the full 49 MB canonical GeoJSON.
+
+They Vote For You division/vote ingestion:
+
+```bash
+cd backend
+# Add THEY_VOTE_FOR_YOU_API_KEY=... to .env first. Do not commit the value.
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money \
+  fetch-they-vote-for-you-divisions \
+  --start-date 2026-01-01 --end-date 2026-04-28
+.venv/bin/au-politics-money extract-they-vote-for-you-divisions
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money load-postgres \
+  --skip-roster --skip-money-flows --skip-house-interests \
+  --skip-senate-interests --skip-electorate-boundaries \
+  --skip-influence-events --skip-entity-classifications \
+  --skip-official-identifiers --skip-official-decision-records \
+  --skip-official-decision-record-documents --include-vote-divisions
+```
+
+They Vote For You returns at most 100 divisions per list request. The fetcher
+automatically splits capped date windows and records both the split probes and
+accepted child windows in the processed summary. It still fails closed if a
+single-day request returns 100 records, unless `--allow-truncated` is passed
+after confirming the expected loss. This source is labelled
+`third_party_civic`, not official parliamentary record.
+
+Official APH decision-record indexes:
+
+```bash
+cd backend
+.venv/bin/au-politics-money extract-aph-decision-record-index --all
+.venv/bin/au-politics-money fetch-aph-decision-record-documents --only-missing
+.venv/bin/au-politics-money extract-official-aph-divisions
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money load-postgres \
+  --skip-roster --skip-money-flows --skip-house-interests \
+  --skip-senate-interests --skip-electorate-boundaries \
+  --skip-influence-events --skip-entity-classifications \
+  --skip-official-identifiers --skip-review-reapply
+```
+
+Current index extraction is deliberately date-record scoped: House consolidated
+PDFs and other related links are not loaded as separate sitting-day records.
+Senate rows merge the PDF and HTML ParlInfo representations for the same
+journal into one canonical index record. These rows have evidence status
+`official_record_index`. `fetch-aph-decision-record-documents` archives the
+linked ParlInfo HTML/PDF bodies as raw source snapshots and records the request
+headers used for reproducible public access. `extract-official-aph-divisions`
+currently parses Senate Journals PDF division blocks into official
+division/person-vote rows; House vote-content parsing remains a later source
+format task.
+
+Official identifier enrichment:
+
+```bash
+cd backend
+.venv/bin/au-politics-money fetch-lobbyist-register
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money migrate-postgres
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money load-postgres \
+  --skip-roster --skip-money-flows --skip-house-interests \
+  --skip-senate-interests --skip-entity-classifications \
+  --skip-official-decision-records --skip-official-decision-record-documents
+```
+
+Targeted ABN Lookup web-service enrichment for a reviewed ABN or ACN:
+
+```bash
+cd backend
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/au-politics-money fetch-abn-lookup-web abn "51 824 753 556"
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/au-politics-money fetch-abn-lookup-web acn "123 456 780"
+```
+
+This uses the current ABN Lookup document-style methods
+`SearchByABNv202001` and `SearchByASICv201408`, archives the returned XML,
+writes redacted metadata under `data/raw/abn_lookup/`, and emits
+`official_identifier_record_v1` JSONL under `data/processed/official_identifiers/`.
+These targeted web-service JSONL files are treated as incremental artifacts in
+raw/processed storage. The loader selects all incremental ABN/ACN lookup files
+but upserts repeated refreshes of the same ABN/ACN to one current database
+observation keyed by the official identifier.
+`ABN_LOOKUP_GUID` is read from the environment only and is redacted if the
+service echoes it. The web-service path is for targeted, cached enrichment of
+reviewed identifiers; do not run high-volume sweeps until ABN Lookup terms,
+permitted use, and rate limits are documented. Trading names from ABN Lookup
+must be treated as historical-only evidence because the ABR stopped collecting
+or updating them in May 2012 and gives them no legal status.
+ABN web-service responses containing ABR exception payloads, including
+`No records found`, fail closed and write a failure summary rather than a
+loadable official-identifier artifact.
+
+The loader stores official identifier observations and match candidates first.
+It does not attach ABNs/ACNs/register IDs to existing money-flow entities on
+name alone. Exact-name-only matches remain `needs_review` until an identifier
+or manual decision supports the mapping.
+
+Review queues for ambiguous or incomplete evidence:
+
+```bash
+cd backend
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money export-review-queue official-match-candidates
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money export-review-queue benefit-events
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money export-review-queue entity-classifications
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money export-review-queue sector-policy-links
+```
+
+Add `--limit 5000` or similar for a working slice. Exports write JSONL plus a
+summary file under `data/audit/review_queues/`; the database also has
+`manual_review_decision` for later reviewer decisions without overwriting the
+machine-produced record.
+
+Sector-policy link suggestions:
+
+```bash
+cd backend
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money suggest-sector-policy-links
+```
+
+This writes review prompts under `data/audit/sector_policy_link_suggestions/`.
+Suggestions do not mutate the database and do not create
+`sector_policy_topic_link` rows. Draft review decisions are intentionally set to
+`needs_more_evidence` and include a blank `sector_material_interest` source so a
+reviewer must add independent sector-interest evidence before importing an
+accepted/revised decision.
+
+Reviewed decision import:
+
+```bash
+cd backend
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money import-review-decisions reviewed_decisions.jsonl
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money import-review-decisions reviewed_decisions.jsonl --apply
+```
+
+The first command is the default dry run. It validates the JSONL, computes the
+input checksum, computes per-row decision hashes, and writes a summary under
+`data/audit/review_imports/` without mutating PostgreSQL. `--apply` inserts
+append-only `manual_review_decision` rows and applies only allowlisted side
+effects:
+
+- accepted official match candidates become `manual_accepted`, and identifiers,
+  aliases, and official classifications are attached only when no identifier
+  conflict exists;
+- rejected official match candidates become `rejected`;
+- accepted/revised entity classifications create a separate `method = 'manual'`
+  classification row rather than overwriting the generated rule-based row;
+- benefit/influence events only have review status/metadata updated. Raw source
+  text, source documents, source references, and machine-derived fields are not
+  overwritten;
+- accepted/revised sector-policy link decisions upsert a reviewed
+  `sector_policy_topic_link` row with confidence, evidence note, reviewer, and
+  timestamp. These links gate the vote/influence context view and do not mutate
+  vote records or influence events.
+  Automatic `load-postgres` review replay defers sector-policy link decisions
+  unless `--include-vote-divisions` is used, because those decisions depend on
+  loaded `policy_topic` rows.
+
+Manual sector-policy link decisions can be authored after policy topics exist:
+
+```json
+{
+  "subject_type": "sector_policy_topic_link",
+  "subject_external_key": "sector_policy_topic_link:fossil_fuels:they_vote_for_you_policy_99:direct_material_interest:manual",
+  "decision": "accept",
+  "reviewer": "m.zyphur@uq.edu.au",
+  "evidence_note": "The policy topic concerns fossil-fuel regulation; fossil-fuel producers have a direct material interest in the policy outcome.",
+  "proposed_changes": {
+    "public_sector": "fossil_fuels",
+    "topic_slug": "they_vote_for_you_policy_99",
+    "relationship": "direct_material_interest",
+    "method": "manual",
+    "confidence": "0.900"
+  },
+  "supporting_sources": [
+    {
+      "evidence_role": "topic_scope",
+      "url": "https://theyvoteforyou.org.au/policies/99",
+      "note": "Specific policy/topic or division source; use the actual topic/division URL from the reviewed export."
+    },
+    {
+      "evidence_role": "sector_material_interest",
+      "url": "https://www.aph.gov.au/Parliamentary_Business/Chamber_documents/HoR/Votes_and_Proceedings",
+      "note": "Replace with the specific official, academic, regulator, company, or industry source supporting the sector's material interest."
+    }
+  ]
+}
+```
+
+Accepted or revised sector-policy link decisions require role-specific
+`supporting_sources` for both `topic_scope` and `sector_material_interest`; a
+generic API documentation URL is not enough for public display.
+
+Review exports include stable `subject_external_key` values and
+`review_subject_fingerprint` values. Numeric row IDs are treated as hints, not
+the durable identity of a reviewed subject; entity-based keys and fingerprints
+use normalized names, entity type, and source stable keys rather than database
+surrogate IDs.
+If a fingerprint changes between export and import, the importer fails so the
+row can be re-exported and reviewed against the current evidence.
+
+After a normal data reload, replay stored decisions so regenerated machine rows
+receive the current manual overlays again:
+
+```bash
+cd backend
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money reapply-review-decisions
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money reapply-review-decisions --apply
+```
+
+Use `--subject-type entity_match_candidate`, `--subject-type influence_event`,
+or `--subject-type entity_industry_classification` to replay a narrower slice.
+The first command is a dry run; `--apply` mutates PostgreSQL. The command is
+idempotent and uses the same conflict checks as the importer. Review queues also
+suppress rows with existing accepted/rejected/revised decisions by stable
+`subject_external_key` only while the reviewed fingerprint still matches, so
+changed evidence is re-queued instead of hidden.
+
+`load-postgres` runs this replay step in apply mode by default after the
+selected load layers.
+Use `--skip-review-reapply` only when debugging loader behavior before manual
+overlays are applied.
+
 If Docker is unavailable on a development machine, still run the unit tests and
 smoke pipeline; the database loader should then be verified on the first machine
 with PostgreSQL/PostGIS available.
@@ -113,15 +367,48 @@ docker compose exec -T postgres psql -U au_politics -d au_politics \
   -c "select count(*) from money_flow;"
 ```
 
-Current local baseline after the 2026-04-27 federal load:
+Current local baseline after the 2026-04-28 federal load:
 
 - `person`: 226, including one House-register-derived fallback person for Sussan Ley/Farrer because the APH contact CSV omitted that seat.
 - `office_term`: 226.
 - `money_flow`: 192,201 AEC annual rows.
 - `gift_interest`: 7,605 total rows: 5,853 House and 1,752 Senate.
 - `gift_interest` gift/travel subset: House gifts 538, House sponsored travel/hospitality 317, Senate gifts 227, Senate sponsored travel/hospitality 263.
+- `electorate_boundary`: 150 current federal House boundaries in `aec_federal_2025_current`; all geometries are SRID 4326, valid, and non-empty.
+- `influence_event`: 199,806 derived rows: 192,201 money events, 1,390 benefit events, 4,700 private-interest events, 1,413 organisational-role events, and 102 other declared interests.
+- `influence_event` benefit subtypes include 389 membership/lounge access rows, 225 event ticket/pass rows, 67 private-aircraft/flight rows, 43 meal/reception rows, 24 accommodation rows, and 83 subscription/service rows; most benefit records do not disclose value.
 - `entity_industry_classification`: 35,874 generated rows from `public_interest_sector_rules_v1`.
+- `official_identifier_observation`: 3,591 unique official observations: 3,590 current lobbyist-register observations from 3,602 parsed rows plus one ABN Lookup web-service smoke record for BHP Group Limited.
+- `entity_match_candidate`: 393 exact-name candidates needing manual review; no official identifiers are attached by name alone.
+- `official_parliamentary_decision_record`: 72 APH current decision-record
+  index rows: 53 House Votes and Proceedings records and 19 Senate Journal
+  records, all dated, with Senate PDF/HTML ParlInfo alternatives retained as
+  representations on one canonical row per sitting day.
+- `official_parliamentary_decision_record_document`: 91 linked ParlInfo raw
+  snapshots: 72 HTML representations and 19 Senate PDF representations, linked
+  to all 72 APH current decision-record rows through `source_document`.
+- `vote_division`: 335 official APH Senate divisions parsed from Senate
+  Journals PDFs across 19 sitting dates from 2026-01-19 to 2026-04-01.
+- `person_vote`: 18,715 official APH senator-vote rows, all matched to current
+  senator records.
+- They Vote For You civic-source load after adding
+  `THEY_VOTE_FOR_YOU_API_KEY`: 399 divisions for 2026-01-01 through
+  2026-04-28, including 55 House divisions, 24 TVFY-only Senate divisions, and
+  TVFY enrichment attached to 320 official APH Senate divisions. Person-vote
+  context from TVFY is attached to 17,263 official APH senator-vote rows, with
+  8,084 TVFY-only person-vote rows retained mainly for House divisions pending
+  official House person-vote parsing.
+- Current review queue exports: 393 official match candidates, 1,390 benefit events with extraction or missing-data review flags, and 27,059 inferred entity classifications recommended for review.
 - Current classifier sector totals include 14,833 `individual_uncoded`, 1,482 `unions`, 1,017 `finance`, 904 `political_entity`, 582 `property_development`, 278 `mining`, and 205 `fossil_fuels`.
+- They Vote For You list requests are recursively split when the API returns
+  its 100-record cap; a one-day capped response still fails closed unless
+  `--allow-truncated` is explicitly supplied.
+- `person_policy_vote_summary`, `person_influence_sector_summary`, and
+  `person_policy_influence_context` are analytical views for the future app.
+  The context view only emits rows after a reviewed `sector_policy_topic_link`
+  record exists, so money/gift/interest sectors are not linked to policy topics
+  by implication alone. Context rows also bucket influence events as before,
+  during, after, or unknown relative to the linked topic-vote span.
 
 ## Operational Checks
 
@@ -138,12 +425,40 @@ After each scheduled run, check:
 - House structured extraction summaries are checked for explanatory-note/header leakage and duplicate external keys.
 - Entity classification summaries are checked for broad-rule false positives before database load.
 - Any sector used for public-facing claims is marked as inferred unless backed by official identifiers or manual review.
+- Any sector-to-policy linkage used to place influence evidence beside vote
+  behaviour is stored in `sector_policy_topic_link` with method, confidence,
+  evidence note, review status, and reviewer fields.
+- Review-queue exports are generated and archived for any public snapshot.
+- Boundary load checks show 150 geometries, 150 distinct electorates, SRID 4326,
+  and no current House electorate missing a boundary.
+- Official APH decision-record index checks show non-zero House and Senate
+  counts, zero missing `record_date`, and no duplicate Senate rows for PDF/HTML
+  alternatives.
+- Official APH decision-record document checks show zero failed fetches and a
+  document link count matching current index representations: 72 HTML and 19
+  PDF in the current local baseline. Validation should show 72 `html_signature`
+  rows and 19 `pdf_signature` rows.
+- Official APH division checks show zero count-mismatch divisions and zero
+  unmatched senator votes before database loading.
 
 ## Known Current Limitations
 
 - House PDF records are structured into declaration lines, but table interpretation remains heuristic and should be sampled before public analytical claims.
 - OCR fallback is implemented for low-text House PDF pages, but OCR-derived names/electorates still need QA sampling.
 - Senate interests API ingestion is implemented; House interests rely on PDF text/OCR extraction.
-- Entity/industry classification is currently rule-based and not yet official ANZSIC/ABN/ASIC-backed.
-- AEC GIS ZIPs are discovered but not yet transformed into GeoJSON/PostGIS.
-- They Vote For You API needs an API key before vote ingestion can run.
+- Entity/industry classification is currently rule-based unless a row is explicitly `method = 'official'`. The first official lobbyist-register observations are loaded, but exact-name-only matches remain in a manual-review queue.
+- Local data.gov.au CKAN access for ASIC, ACNC, and ABN Bulk Extract returned HTTP 403 in this environment on 2026-04-27. Discovery now fails closed after writing the failure artifact so weekly runs do not silently proceed without those sources.
+- AEC boundary ingestion currently loads the full-resolution canonical boundary
+  layer only; simplified web-map derivatives/vector tiles still need to be
+  generated for frontend use.
+- They Vote For You is a civic data source, not the official parliamentary
+  source of record. The importer preserves that caveat and should later be
+  cross-checked against official Hansard, Votes and Proceedings, and Senate
+  Journals data.
+- Current APH official vote parsing covers Senate Journals PDF division blocks.
+  House Votes and Proceedings parsing is not yet person-vote complete, and
+  voice votes/party-room decisions remain outside division-level data.
+- Current APH decision-record discovery covers the present House/Senate index
+  pages. Historical House parliament pages and Senate year pages still need
+  date-range-aware discovery before older vote backfills can be fully checked
+  against official records.

@@ -56,6 +56,9 @@ docker compose up -d
 ```
 
 The initial schema is in `backend/schema/001_initial.sql`.
+Additive local migrations start at `backend/schema/002_official_identifiers.sql`;
+`backend/schema/003_influence_events.sql` adds the unified event surface used by
+the future API/frontend.
 
 Load the latest reproducible artifacts into PostgreSQL:
 
@@ -65,13 +68,53 @@ export DATABASE_URL=postgresql://au_politics:change-me-local-only@localhost:5432
 .venv/bin/python -m au_politics_money.cli load-postgres --apply-schema
 ```
 
+For an existing local database, apply additive migrations without rerunning the
+initial schema:
+
+```bash
+cd backend
+.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money migrate-postgres
+```
+
 Current local federal baseline loaded into PostgreSQL:
 
 - 192,201 AEC annual money-flow rows.
 - 5,853 House interest records from PDF text/OCR extraction.
 - 1,752 Senate interest records from the official APH-backed Senate interests API.
+- 199,806 unified `influence_event` rows derived from the money-flow and
+  interests tables: 192,201 money events, 1,390 benefit events, 4,700 private
+  interest events, 1,413 organisational-role events, and 102 other declared
+  interests.
 - 226 people/office terms, including one documented House-register-derived fallback for Sussan Ley/Farrer because the APH contact CSV omitted that House seat.
+- 150 current federal House electorate boundaries from the AEC March 2025
+  national ESRI shapefile transformed from GDA94/EPSG:4283 to GeoJSON/PostGIS
+  SRID 4326.
 - 35,874 generated entity-sector classifications from `public_interest_sector_rules_v1`; these are inferred rule-based labels pending official identifier/manual-review enrichment.
+- 3,591 unique official identifier observations: the Australian Government Register of Lobbyists full current snapshot plus one live ABN Lookup web-service smoke record for BHP Group Limited.
+- Targeted ABN Lookup web-service enrichment is implemented for reviewed ABN/ACN lookups, with raw XML archiving, secret redaction, and trading-name caveats.
+- 393 exact-name official match candidates are queued for manual review. No official identifiers are attached to money-flow entities until an existing identifier or a reviewed mapping supports the match.
+- 72 official APH decision-record index rows: 53 current House Votes and
+  Proceedings links and 19 current Senate Journals links. These are
+  `official_record_index` rows linked to 91 archived raw ParlInfo snapshots:
+  72 HTML representations and 19 Senate PDF representations. The official
+  documents are snapshotted and format-validated.
+- 335 official APH Senate divisions parsed from Senate Journals PDFs, with
+  18,715 matched senator-vote rows and zero unmatched current-senator votes.
+- 399 They Vote For You civic-source divisions loaded for 2026-01-01 through
+  2026-04-28: 55 House divisions, 24 Senate divisions not already represented
+  by official APH keys, and TVFY enrichment attached to 320 official APH Senate
+  divisions. TVFY person-vote context is attached to 17,263 official APH
+  senator-vote rows, with 8,084 TVFY-only person-vote rows retained mainly for
+  House divisions pending official House person-vote parsing.
+- Review-queue export commands now write auditable JSONL artifacts for official
+  match candidates, benefit events, and inferred entity classifications under
+  `data/audit/review_queues/`.
+- Reviewed decisions can be imported with a dry-run-first command that stores
+  append-only decision records and applies only conflict-checked/manual overlay
+  updates.
+- Sector-policy link suggestions can be exported for human review with
+  `suggest-sector-policy-links`; suggestions do not mutate the database and do
+  not make source-to-effect claims until reviewed evidence is imported.
 
 ## Reproducible Pipeline
 
@@ -88,9 +131,23 @@ The pipeline currently archives and normalizes:
 
 - APH current MP/Senator roster CSVs.
 - AEC annual disclosure bulk data.
+- AEC current national federal electorate boundary shapefile and GeoJSON/PostGIS
+  boundary layer.
 - Senate register JSON records from the official APH-backed Senate interests API.
 - House register PDF text/OCR, numbered sections, and structured interest records.
+- Official APH House Votes and Proceedings and Senate Journals current
+  decision-record indexes plus linked ParlInfo HTML/PDF snapshots. Current
+  Senate Journals PDFs are parsed into official Senate division/person-vote
+  records.
 - Rule-based entity and public-interest-sector classifications.
+- Official identifier source discovery and the Australian Government Register of
+  Lobbyists API snapshot. ASIC, ABN Bulk Extract, and ACNC parsers are implemented
+  for official extracts; local data.gov.au access currently returned HTTP 403 in
+  this environment, so those bulk extracts are staged but not yet loaded here.
+- Optional They Vote For You division/vote API ingestion. This is a third-party
+  civic source and requires `THEY_VOTE_FOR_YOU_API_KEY`; stored metadata omits
+  only the key while preserving the public API response body. The fetcher
+  automatically splits capped date windows to avoid silent API truncation.
 
 For CI/development:
 
@@ -100,6 +157,20 @@ cd backend
 ```
 
 See `docs/reproducibility.md` and `docs/operations.md`.
+
+## Local API
+
+The first read-only FastAPI layer is available for frontend development:
+
+```bash
+cd backend
+make api-dev
+```
+
+It serves global search and source-to-policy context endpoints at
+`http://127.0.0.1:8008`; see `docs/api.md`. Postcode search is exposed with a
+limitation response until a source-backed postcode/locality-to-electorate
+crosswalk is ingested.
 
 ## Standards
 

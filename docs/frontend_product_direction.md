@@ -7,6 +7,9 @@ The first screen should be the national explorer, not a marketing landing page.
 Core layout:
 
 - Australia map with House electorates.
+- Global search for representatives, electorates, states/territories, parties,
+  source entities, sectors, policy topics, and postcodes once a source-backed
+  postcode crosswalk is loaded.
 - Senate state/territory selector.
 - Filters for party, chamber, state, year, industry, source type, and evidence
   confidence.
@@ -22,6 +25,8 @@ Core layout:
   entities?
 - How does this person's voting record line up with sectors that appear in their
   money/interests record?
+- Which disclosed source entities appear before, during, or after a linked vote
+  topic, and what evidence supports the sector-topic link?
 - What is known, what is inferred, and what cannot be known from public data?
 
 ## Visual Standards
@@ -37,6 +42,7 @@ Core layout:
 ## MVP Views
 
 - National map.
+- Global search.
 - MP/Senator profile.
 - Donor/entity profile.
 - Party profile.
@@ -45,4 +51,3 @@ Core layout:
 - Vote-topic explorer.
 - Source document viewer.
 - Methodology and limitations page.
-

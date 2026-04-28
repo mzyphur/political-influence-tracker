@@ -112,6 +112,35 @@ This classifier does not yet use official ANZSIC, ABN, ACN, ASIC, ACNC, or
 manual review evidence. Public-facing analysis should label these values as
 inferred classifications until reviewed or supported by official identifiers.
 
+## Official Identifier Enrichment
+
+Implemented first stage:
+
+- ASIC, ACNC, ABN Bulk Extract, and lobbyist-register parsers produce
+  `official_identifier_record_v1` JSONL records.
+- The Australian Government Register of Lobbyists API is snapshotted by
+  organisation profile, including registered lobbying organisations, clients,
+  ABNs where present, and public lobbyist-person observations.
+- `official_identifier_observation` stores official observations separately
+  from canonical `entity` rows.
+- `entity_match_candidate` stores exact-name candidates for review.
+- Existing entities are not assigned ABNs, ACNs, lobbyist-register IDs, or
+  official classifications from name-only matches. Auto-acceptance requires an
+  existing identifier match or a later manual-review workflow.
+- Manual review subjects use stable external keys. Numeric database IDs may be
+  exported for operator context, but accepted/rejected/revised decisions replay
+  and suppress queues by stable source/entity keys, entity type, and matching
+  fingerprints.
+
+Current 2026-04-28 official identifier load:
+
+- 3,602 parsed records: 378 lobbying organisations, 2,498 clients, and 726
+  lobbyist-person observations.
+- 1 targeted ABN Lookup web-service record for BHP Group Limited.
+- 3,591 unique database observations after stable-key de-duplication.
+- 393 exact-name match candidates requiring review.
+- 0 identifiers auto-attached from name-only matches.
+
 Current 2026-04-27 artifact:
 
 - 35,874 normalized entity names.

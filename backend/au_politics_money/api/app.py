@@ -1,0 +1,113 @@
+from __future__ import annotations
+
+import time
+from collections import defaultdict, deque
+from typing import Annotated
+
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from au_politics_money import __version__
+from au_politics_money.api import queries
+from au_politics_money.config import API_CORS_ALLOW_ORIGINS, API_RATE_LIMIT_PER_MINUTE
+
+
+app = FastAPI(
+    title="Australian Political Influence Transparency API",
+    version=__version__,
+    description=(
+        "Search and context API for source-backed Australian political money, "
+        "gifts, interests, lobbying, and voting records."
+    ),
+)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=list(API_CORS_ALLOW_ORIGINS),
+    allow_credentials=False,
+    allow_methods=["GET"],
+    allow_headers=["Accept", "Content-Type"],
+)
+
+_RATE_WINDOW_SECONDS = 60.0
+_rate_limit_hits: defaultdict[str, deque[float]] = defaultdict(deque)
+
+
+@app.middleware("http")
+async def rate_limit_api_requests(request: Request, call_next):
+    if API_RATE_LIMIT_PER_MINUTE > 0 and request.url.path.startswith("/api/"):
+        client_host = request.client.host if request.client else "unknown"
+        now = time.monotonic()
+        hits = _rate_limit_hits[client_host]
+        while hits and now - hits[0] > _RATE_WINDOW_SECONDS:
+            hits.popleft()
+        if len(hits) >= API_RATE_LIMIT_PER_MINUTE:
+            return JSONResponse(
+                status_code=429,
+                content={"detail": "Rate limit exceeded"},
+                headers={"Retry-After": str(int(_RATE_WINDOW_SECONDS))},
+            )
+        hits.append(now)
+    return await call_next(request)
+
+
+@app.get("/health")
+def root_health() -> dict:
+    return {"status": "ok", "version": __version__}
+
+
+@app.get("/api/health")
+def api_health() -> dict:
+    try:
+        return {**queries.healthcheck(), "version": __version__}
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+
+@app.get("/api/search")
+def search(
+    q: Annotated[str, Query(min_length=1, description="Search text, name, party, sector, or postcode.")],
+    types: Annotated[
+        list[str] | None,
+        Query(description="Optional repeated filter: representative, electorate, party, entity, sector, policy_topic, postcode."),
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 10,
+) -> dict:
+    return queries.search_database(q, result_types=set(types) if types else None, limit=limit)
+
+
+@app.get("/api/representatives/{person_id}")
+def representative_profile(person_id: int) -> dict:
+    profile = queries.get_representative_profile(person_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Representative not found")
+    return profile
+
+
+@app.get("/api/electorates/{electorate_id}")
+def electorate_profile(electorate_id: int) -> dict:
+    profile = queries.get_electorate_profile(electorate_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Electorate not found")
+    return profile
+
+
+@app.get("/api/influence-context")
+def influence_context(
+    person_id: int | None = None,
+    topic_id: int | None = None,
+    public_sector: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> dict:
+    return queries.get_influence_context(
+        person_id=person_id,
+        topic_id=topic_id,
+        public_sector=public_sector,
+        limit=limit,
+    )
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run("au_politics_money.api.app:app", host="127.0.0.1", port=8008, reload=True)

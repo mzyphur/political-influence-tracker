@@ -6,15 +6,25 @@ import subprocess
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Any
 
 from au_politics_money import __version__
 from au_politics_money.config import AUDIT_DIR
+from au_politics_money.ingest.aec_boundaries import (
+    extract_current_aec_boundaries,
+    fetch_current_aec_boundary_zip,
+)
 from au_politics_money.ingest.aec_annual import (
     normalize_aec_annual_money_flows,
     summarize_aec_annual_zip,
 )
+from au_politics_money.ingest.aph_decision_records import (
+    extract_aph_decision_record_index,
+    fetch_aph_decision_record_documents,
+)
+from au_politics_money.ingest.aph_official_divisions import extract_official_aph_divisions
 from au_politics_money.ingest.aph_roster import build_current_parliament_roster
 from au_politics_money.ingest.discovered_sources import source_from_discovered_link
 from au_politics_money.ingest.discovery import (
@@ -28,12 +38,34 @@ from au_politics_money.ingest.entity_classification import classify_entity_names
 from au_politics_money.ingest.fetch import fetch_source
 from au_politics_money.ingest.house_interests import extract_house_interest_sections
 from au_politics_money.ingest.house_interest_records import extract_house_interest_records
+from au_politics_money.ingest.official_identifiers import (
+    discover_official_identifier_sources,
+    fetch_lobbyist_register_snapshot,
+)
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
 from au_politics_money.ingest.senate_interests import (
     extract_senate_interest_records,
     fetch_senate_interest_statements,
 )
 from au_politics_money.ingest.sources import get_source
+from au_politics_money.ingest.they_vote_for_you import (
+    extract_they_vote_for_you_divisions,
+    fetch_they_vote_for_you_divisions,
+)
+
+DEPENDENCY_DISTRIBUTIONS = (
+    "beautifulsoup4",
+    "httpx",
+    "pandas",
+    "pdfplumber",
+    "psycopg",
+    "pydantic",
+    "pyproj",
+    "pyshp",
+    "pytesseract",
+    "python-dotenv",
+    "rapidfuzz",
+)
 
 
 def utc_now() -> datetime:
@@ -67,6 +99,7 @@ class PipelineManifest:
     python_version: str = platform.python_version()
     platform: str = platform.platform()
     git_commit: str = ""
+    dependency_versions: dict[str, str] = field(default_factory=dict)
     parameters: dict[str, Any] = field(default_factory=dict)
     steps: list[StepResult] = field(default_factory=list)
 
@@ -83,6 +116,16 @@ def _git_commit() -> str:
     except Exception:
         return ""
     return result.stdout.strip()
+
+
+def _dependency_versions() -> dict[str, str]:
+    versions: dict[str, str] = {}
+    for distribution in DEPENDENCY_DISTRIBUTIONS:
+        try:
+            versions[distribution] = importlib_metadata.version(distribution)
+        except importlib_metadata.PackageNotFoundError:
+            versions[distribution] = "not_installed"
+    return versions
 
 
 def _run_step(name: str, func: Callable[[], Any]) -> StepResult:
@@ -171,6 +214,9 @@ def run_federal_foundation_pipeline(
     smoke: bool = False,
     skip_house_pdfs: bool = False,
     skip_pdf_text: bool = False,
+    include_votes: bool = False,
+    votes_start_date: str | None = None,
+    votes_end_date: str | None = None,
 ) -> Path:
     started = utc_now()
     manifest = PipelineManifest(
@@ -179,16 +225,22 @@ def run_federal_foundation_pipeline(
         status="running",
         started_at=started.isoformat(),
         git_commit=_git_commit(),
+        dependency_versions=_dependency_versions(),
         parameters={
             "smoke": smoke,
             "skip_house_pdfs": skip_house_pdfs,
             "skip_pdf_text": skip_pdf_text,
+            "include_votes": include_votes,
+            "votes_start_date": votes_start_date,
+            "votes_end_date": votes_end_date,
         },
     )
 
     house_pdf_limit = 5 if smoke else None
     pdf_text_limit = 5 if smoke else None
     senate_statement_limit = 5 if smoke else None
+    lobbyist_org_limit = 25 if smoke else None
+    decision_record_document_limit = 10 if smoke else None
 
     steps: list[tuple[str, Callable[[], Any]]] = [
         (
@@ -202,6 +254,8 @@ def run_federal_foundation_pipeline(
                     "aph_senators_interests",
                     "aec_federal_boundaries_gis",
                     "aec_download_all_annual_data",
+                    "aph_house_votes_and_proceedings",
+                    "aph_senate_journals",
                 )
             ],
         ),
@@ -215,6 +269,8 @@ def run_federal_foundation_pipeline(
                     "aph_members_interests_48",
                     "aph_senators_interests",
                     "aec_federal_boundaries_gis",
+                    "aph_house_votes_and_proceedings",
+                    "aph_senate_journals",
                 )
             ],
         ),
@@ -222,6 +278,24 @@ def run_federal_foundation_pipeline(
         ("build_current_parliament_roster", build_current_parliament_roster),
         ("summarize_aec_annual_zip", summarize_aec_annual_zip),
         ("normalize_aec_annual_money_flows", normalize_aec_annual_money_flows),
+        ("fetch_current_aec_boundaries_zip", fetch_current_aec_boundary_zip),
+        ("extract_aec_federal_boundaries", extract_current_aec_boundaries),
+        (
+            "extract_house_votes_and_proceedings_index",
+            lambda: extract_aph_decision_record_index("aph_house_votes_and_proceedings"),
+        ),
+        (
+            "extract_senate_journals_index",
+            lambda: extract_aph_decision_record_index("aph_senate_journals"),
+        ),
+        (
+            "fetch_aph_decision_record_documents",
+            lambda: fetch_aph_decision_record_documents(
+                only_missing=True,
+                limit=decision_record_document_limit,
+            ),
+        ),
+        ("extract_official_aph_divisions", extract_official_aph_divisions),
         (
             "fetch_senate_interests_api",
             lambda: fetch_senate_interest_statements(limit=senate_statement_limit),
@@ -253,6 +327,28 @@ def run_federal_foundation_pipeline(
         )
 
     steps.append(("classify_entities", classify_entity_names))
+    steps.append(("discover_official_identifier_sources", discover_official_identifier_sources))
+    steps.append(
+        (
+            "fetch_lobbyist_register_snapshot",
+            lambda: fetch_lobbyist_register_snapshot(limit=lobbyist_org_limit),
+        )
+    )
+    if include_votes:
+        tvfy_limit = 5 if smoke else None
+        steps.extend(
+            [
+                (
+                    "fetch_they_vote_for_you_divisions",
+                    lambda: fetch_they_vote_for_you_divisions(
+                        start_date=votes_start_date,
+                        end_date=votes_end_date,
+                        limit=tvfy_limit,
+                    ),
+                ),
+                ("extract_they_vote_for_you_divisions", extract_they_vote_for_you_divisions),
+            ]
+        )
 
     try:
         for name, func in steps:

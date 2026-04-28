@@ -19,6 +19,8 @@ def test_core_federal_sources_exist() -> None:
         "aph_senators_interests",
         "aph_contacts_csv",
         "aec_federal_boundaries_gis",
+        "aph_house_votes_and_proceedings",
+        "aph_senate_journals",
     }
     known = {source.source_id for source in all_sources()}
     assert required <= known

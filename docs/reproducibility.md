@@ -1,6 +1,6 @@
 # Reproducibility and Auto-Update Standard
 
-Last updated: 2026-04-27
+Last updated: 2026-04-28
 
 ## Core Rule
 
@@ -64,21 +64,43 @@ The federal foundation pipeline currently performs:
    - APH Senate interests register app page.
    - AEC federal boundary GIS index.
    - AEC annual disclosure bulk ZIP.
+   - APH House Votes and Proceedings current index.
+   - APH Senate Journals current index.
 2. Discover child links:
    - AEC bulk annual/election/referendum download links.
    - APH MP/Senator CSV links.
    - APH House interests PDF links.
    - APH Senate register `env.js` API configuration asset.
    - AEC GIS ZIP links.
+   - APH current decision-record links for House Votes and Proceedings and
+     Senate Journals.
 3. Fetch APH roster CSV child files.
 4. Build current federal Parliament roster JSON.
 5. Summarize AEC annual disclosure ZIP schemas.
 6. Normalize key AEC annual money-flow tables.
-7. Fetch House interests PDFs.
-8. Extract House interests PDF text.
-9. Split House interests into numbered register sections.
-10. Fetch Senate statement-list JSON and per-senator statement-detail JSON from the official APH-backed API.
-11. Flatten Senate interest categories, gifts, travel/hospitality, liabilities, and alterations into JSONL records.
+7. Fetch the current national AEC ESRI federal-boundary ZIP.
+8. Transform AEC federal boundaries from source CRS to GeoJSON/PostGIS SRID 4326.
+9. Extract official APH decision-record indexes for House Votes and
+   Proceedings and Senate Journals.
+10. Archive linked ParlInfo HTML/PDF decision-record representations as raw
+    source snapshots, using source-specific transparent request headers where a
+    public source requires browser-compatible access.
+    The processed fetch summary stores the APH index-to-document linkage and
+    validation result, so existing raw metadata does not need to be rewritten
+    when an already-fetched snapshot is reused.
+11. Parse current official APH Senate Journals PDF division blocks into
+    division and senator-vote JSONL records.
+12. Fetch House interests PDFs.
+13. Extract House interests PDF text.
+14. Split House interests into numbered register sections.
+15. Fetch Senate statement-list JSON and per-senator statement-detail JSON from the official APH-backed API.
+16. Flatten Senate interest categories, gifts, travel/hospitality, liabilities, and alterations into JSONL records.
+17. Optional, when `THEY_VOTE_FOR_YOU_API_KEY` is available: fetch They Vote For
+    You division lists/details, archive raw public JSON with API-key-free
+    request metadata, and normalize divisions, votes, linked civic policies,
+    and bills into JSONL. Date windows that hit the API's 100-record cap are
+    split recursively; the fetcher still fails closed if a one-day window is
+    capped.
 
 ## Audit Manifests
 
@@ -116,6 +138,13 @@ Each raw source metadata file records:
 - SHA-256 checksum.
 - Raw body path.
 - Response headers.
+- Request headers used by the fetcher. This includes source-specific
+  browser-compatible headers for ParlInfo, while retaining the project contact
+  string for transparency.
+
+Processed APH decision-record document summaries additionally record the current
+APH index row, the linked ParlInfo representation URL, the raw metadata path,
+and the HTML/PDF validation result used by the database loader.
 
 ## Delete-and-Rebuild Test
 
@@ -153,10 +182,14 @@ Potentially publish separately:
 
 Be cautious with:
 
-- Raw files containing addresses, signatures, or redacted-sensitive fields.
+- Public records containing addresses, signatures, or fields that are legally
+  public but personally sensitive in context.
 - Personal donor addresses where official sites publish them but reuse may raise
   privacy concerns.
 - Any inferred entity resolution that has not been reviewed.
+- Manual review decisions that include reviewer notes should be checked for
+  private comments before public release, while preserving the reproducible
+  decision logic and public evidence.
 
 ## Auto-Update Policy
 
@@ -170,5 +203,15 @@ Recommended initial schedule:
 - Weekly full run.
 - Daily lightweight source-index check.
 - Manual review queue after each run.
+- Manual review decisions stored separately from machine-produced records.
+- Vote/policy-topic artifacts should be included on the weekly federal run when
+  API keys are available, because reviewed sector-policy links depend on loaded
+  `policy_topic` rows. Loads without vote artifacts intentionally skip
+  sector-policy link replay.
 - Alert on source checksum changes, parser failures, large count shifts, or new
   unparsed source formats.
+- For official APH decision records, weekly runs should refetch current
+  representation URLs with `--only-missing` for routine operation, and full
+  refetches should be scheduled periodically to detect changed hashes. The
+  database links source-document snapshots by checksum so changed public bodies
+  are added as new evidence rather than overwriting prior raw evidence.

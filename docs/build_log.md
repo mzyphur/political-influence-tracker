@@ -1,5 +1,54 @@
 # Build Log
 
+## 2026-04-28
+
+Completed:
+
+- Added APH linked decision-record document archival. The pipeline now fetches
+  ParlInfo HTML/PDF representations referenced by the current official House
+  Votes and Proceedings and Senate Journals indexes, preserving raw bodies,
+  checksums, request headers, and APH index provenance in processed summaries
+  and database link rows.
+- Added `official_parliamentary_decision_record_document` plus a loader that
+  links each archived raw ParlInfo snapshot back to its APH index row without
+  overwriting original raw evidence.
+- Added `fetch-aph-decision-record-documents` with `--only-missing`, HTML/PDF
+  filters, and a smoke `--limit` option. The weekly federal pipeline now runs
+  this after APH index extraction; smoke runs fetch only 10 representations.
+- Hardened the generic fetcher for ParlInfo by using a source-specific
+  browser-compatible user agent that still includes the project name/contact,
+  and by storing request headers in raw fetch metadata.
+- Hardened the APH document layer after reviewer feedback: routine scheduled
+  runs now use `--only-missing`, existing raw metadata is not rewritten when
+  linking current index rows to existing source snapshots, linked HTML/PDF
+  bodies are signature/content-type validated before DB loading, missing parent
+  decision records no longer create orphan source-document rows, and pipeline
+  manifests now include dependency package versions.
+
+Verification:
+
+- Focused tests: 21 passed for APH decision-record parsing/fetching and DB
+  loading.
+- Focused `ruff check`: passed.
+- Live ParlInfo smoke fetch: 5 of 5 representations fetched after header
+  hardening; the previous 403 failure summary is preserved as failed raw fetch
+  evidence.
+- Full initial ParlInfo fetch: 91 selected, 86 newly fetched, 5 skipped as
+  already present, 0 failed; 72 HTML and 19 PDF representations.
+- Regenerated non-mutating incremental summary: 91 selected, 0 newly fetched,
+  91 skipped as already present, 0 failed; 72 HTML signatures and 19 PDF
+  signatures validated.
+- Migration `013_official_parliamentary_decision_record_documents.sql` applied.
+- PostgreSQL load linked 91 official decision-record document snapshots to all
+  72 current APH decision-record index rows.
+- Added `aph_official_divisions_v1`, which parses current Senate Journals PDF
+  division blocks from archived APH source snapshots, including AYES/NOES
+  counts, senator names, teller markers, raw block evidence, and count-mismatch
+  validation.
+- Parsed and loaded 335 official APH Senate divisions across 19 sitting dates
+  from 2026-01-19 to 2026-04-01, with 18,715 senator-vote rows, zero
+  count-mismatch divisions, and zero unmatched current-senator votes.
+
 ## 2026-04-27
 
 Initial federal backend foundation created.
@@ -49,6 +98,113 @@ Verification:
 - Docker/PostGIS load succeeded: 226 people, 226 office terms, 192,201 AEC money-flow rows, 5,853 House interest records, 1,752 Senate interest records, 7,605 total `gift_interest` rows.
 - Full entity classification artifact: 35,874 normalized entity names, 23,648 non-unknown sector classifications, 12,226 unknown/uncoded names.
 - Entity classification database load: 35,874 generated `entity_industry_classification` rows; repeat load verified as idempotent at 35,874 rows.
+- Added official identifier enrichment scaffolding for ASIC, ABN Bulk Extract, ACNC, ABS ANZSIC sections, and the Australian Government Register of Lobbyists.
+- Snapshotted the current federal lobbyist register via the public official API: 378 lobbying organisations, 2,498 client rows, and 726 lobbyist-person rows flattened into 3,602 official identifier records.
+- Loaded 3,590 unique official lobbyist-register observations into PostgreSQL and created 392 exact-name match candidates for manual review. The loader now refuses to attach identifiers from name-only matches.
+- Hardened official enrichment based on Codex/Claude review: tab-delimited ASIC parsing, source-discovery fail-closed behavior, stable official-ID observation keys, public lobbyist-person record preservation, a migration ledger, safer Docker loopback binding, and HTTP failure fail-closed fetch behavior.
+- Local data.gov.au CKAN/source download access returned HTTP 403 for ASIC, ACNC, and ABN Bulk Extract discovery on 2026-04-27. The failure artifact is preserved under `data/processed/official_identifier_sources/`, and the command now fails instead of silently proceeding.
+- Added unified `influence_event` schema and loader so AEC money flows and APH interests/gifts become comparable event records with source links, evidence status, review status, amount status, and missing-data flags.
+- Materialized 199,806 local influence events: 192,201 money events, 1,390 benefit events, 4,700 private-interest events, 1,413 organisational-role events, and 102 other declared interests.
+- Benefit-event taxonomy now separates flights/upgrades, event tickets/passes, meals/receptions, accommodation, membership/lounge access, subscriptions/services, generic gifts, and sponsored travel/hospitality. Ordinary organisational memberships are kept as organisational-role events unless the text indicates benefit-style lounge/access treatment.
+- Added `manual_review_decision` schema and reproducible review-queue exports for `official-match-candidates`, `benefit-events`, and `entity-classifications`.
+- Generated current review queues under `data/audit/review_queues/`: 392 official identifier match candidates, 1,390 benefit events, and 27,059 inferred entity classifications recommended for review.
+- Added reviewed-decision importer with dry-run default, input checksums, deterministic decision keys, payload hashes, stable subject keys, stale-subject fingerprint checks, identifier-conflict blocking, and append-only decision storage.
+- The importer applies only conservative side effects: accepted official matches attach identifiers/aliases/classifications after conflict checks; manual classification decisions create separate `method = 'manual'` rows; influence events only receive review status/metadata updates.
+- Added a table-level unique constraint migration for `manual_review_decision.decision_key` so importer `ON CONFLICT` behavior is consistent on upgraded and fresh databases.
+- Added queue suppression for accepted/rejected/revised decisions by stable `subject_external_key` and a `reapply-review-decisions` command to replay stored manual decisions after regenerated loader output.
+- Hardened review replay after Codex reviewer checks: standalone replay is dry-run by default, `load-postgres` reapplies decisions after refresh by default, replay has per-decision savepoints for `--continue-on-error`, queue suppression is fingerprint-aware so changed evidence is re-queued, entity-based review keys/fingerprints use normalized names plus entity type rather than surrogate database IDs, ambiguous key matches fail closed, and accepted/revised classifications are conflict-checked against existing manual/official rows.
+- Added reproducible AEC federal boundary ingestion: selected the current national ESRI ZIP, archived the March 2025 shapefile, transformed 150 House division geometries from GDA94/EPSG:4283 to GeoJSON/PostGIS SRID 4326, and loaded an idempotent `aec_federal_2025_current` boundary set.
+- Boundary load QA: 150 valid non-empty geometries, 150 current House electorates matched after normalized-name joins, zero missing House boundaries, and four boundary-only duplicate electorate rows from an initial exact-name pass were removed.
+- Added optional They Vote For You vote/division ingestion: API-key-free raw fetch metadata with public response bodies preserved, division detail normalization, person-level vote normalization, civic policy-topic linkage, database loader for `vote_division`, `person_vote`, `policy_topic`, and `division_topic`, and a schema migration allowing `third_party_civic` topic links.
+- The local `.env` does not yet include `THEY_VOTE_FOR_YOU_API_KEY`, so no real vote records were fetched or loaded in this pass.
+- Added vote-behaviour analytical scaffolding: explicit `sector_policy_topic_link`
+  records plus views for person-topic vote summaries, person-sector influence
+  summaries, and context-only influence/vote displays that require reviewed or
+  otherwise explicit sector-topic links before combining the evidence streams.
+- Hardened the vote/influence context scaffold after review: sector-topic links
+  now require confidence and evidence notes, reviewed links require reviewer and
+  timestamp fields, and the context view exposes temporal buckets plus
+  uncertainty counts instead of joining lifetime influence to votes without
+  timing labels.
+- Added `sector_policy_topic_link` as a manual-review subject type with
+  append-only decision import/replay support and a `sector-policy-links` review
+  queue. A disposable database smoke test confirmed dry-run validation and apply
+  mode can create a reviewed sector-topic link without modifying raw evidence.
+- Hardened sector-policy review after reviewer feedback: reviewed links now
+  require role-specific supporting sources for both topic scope and sector
+  material interest, review keys include the reviewed fingerprint so changed
+  evidence can be re-reviewed as a new decision, and APH source registration now
+  separates Hansard transcript context from House Votes and Proceedings and
+  Senate Journals decision records.
+- Added APH official decision-record index extraction and loading for current
+  House Votes and Proceedings and Senate Journals. The parser uses APH
+  `aria-label` dates where available, fails closed on empty/missing-date parses,
+  excludes related consolidated PDFs from sitting-day records, and merges Senate
+  PDF/HTML ParlInfo alternatives into one canonical row.
+- Loaded 72 `official_parliamentary_decision_record` rows locally: 53 current
+  House records and 19 current Senate records, zero missing dates. These are
+  `official_record_index` rows that support official cross-checking once the
+  linked ParlInfo records are archived and parsed.
+- Added live They Vote For You API ingestion after `THEY_VOTE_FOR_YOU_API_KEY`
+  was configured. The fetcher now recursively splits date windows that hit the
+  API's 100-record cap, archives all raw public JSON with API-key-free metadata,
+  and still fails closed if a one-day request is capped.
+- Loaded 399 TVFY civic-source divisions for 2026-01-01 through 2026-04-28:
+  55 House divisions, 24 TVFY-only Senate divisions, and TVFY enrichment on 320
+  official APH Senate divisions. The loader preserves official APH evidence as
+  primary on conflicts and attaches TVFY details under enrichment metadata.
+- Fixed TVFY person-vote normalization for API responses that provide
+  `member.first_name` and `member.last_name` instead of a full name, cached
+  roster matching during loads, and added cleanup for stale TVFY fallback
+  identities. The corrected local load created zero new fallback people,
+  attached TVFY context to 17,263 official APH senator-vote rows, retained
+  8,084 TVFY-only person-vote rows, and deleted 225 stale fallback people/office
+  terms from the initial failed matching pass.
+- Added the first read-only FastAPI backend for frontend development:
+  `/api/search`, `/api/representatives/{person_id}`,
+  `/api/electorates/{electorate_id}`, and `/api/influence-context`. Search
+  spans representatives, electorates, parties, source entities, sectors, and
+  policy topics, while postcode queries return an explicit limitation until a
+  source-backed postcode/locality crosswalk is ingested.
+- Added API documentation, a local `make api-dev` target, and dependency
+  wiring for FastAPI/Uvicorn.
+- Added reproducible sector-policy link suggestion exports. The command
+  `suggest-sector-policy-links` scans loaded policy topics, applies conservative
+  transparent keyword rules, writes audit JSONL under
+  `data/audit/sector_policy_link_suggestions/`, and deliberately leaves draft
+  decisions as `needs_more_evidence` until a reviewer supplies independent
+  sector-material-interest support. The first corrected local run reviewed 26
+  policy topics and produced 18 suggestions across fossil fuels, mining,
+  renewable energy, finance, healthcare, law, and technology.
+- Added targeted ABN Lookup web-service enrichment. The new
+  `fetch-abn-lookup-web` command uses the current document-style
+  `SearchByABNv202001` and `SearchByASICv201408` methods, posts the GUID from
+  the environment, redacts secrets from metadata/raw XML, writes archived XML
+  under `data/raw/abn_lookup/`, and emits normal
+  `official_identifier_record_v1` JSONL for loader/review use. Trading-name
+  caveats and high-volume terms/rate-limit warnings are now documented.
+  Official-identifier artifact selection now includes every incremental ABN
+  web-service JSONL while retaining only the latest full-snapshot artifact for
+  snapshot sources; repeated refreshes of the same ABN/ACN upsert one current
+  database observation.
+- Live ABN Lookup smoke test on 2026-04-28 for BHP Group Limited succeeded:
+  one `abn_web_service_entity` record was archived, parsed, and loaded. Local
+  official-identifier counts are now 3,591 observations and 393 exact-name
+  candidates needing review.
+- Hardened ABN Lookup web-service ingestion after reviewer feedback: ABR
+  exception XML now fails closed, collision-resistant artifact names include the
+  lookup slug, incremental lookup loads no longer delete the whole `abn_lookup`
+  source, and historical/trading names are stored as typed metadata rather than
+  normal entity aliases.
+- Hardened the public API and fetch surface after external review: response
+  headers are whitelisted before metadata persistence, FastAPI has an explicit
+  CORS allow-list plus process-local rate limit, free-text search defaults to a
+  three-character minimum, public-search trgm indexes were added in migration
+  `014_search_api_indexes.sql`, weekly federal runs include vote ingestion
+  through the local `.env`, sector-policy lexical rules were tightened, TVFY
+  provisional topic links receive lower confidence, incremental migrations fail
+  clearly on a missing baseline schema, and source-document fetched timestamps
+  no longer move backwards on out-of-order replay.
 
 Notable data observations:
 
@@ -58,3 +214,5 @@ Notable data observations:
 - House interests text extraction needed OCR fallback for scanned/low-text pages, including `Gosling_48P.pdf` and `Katter_48P.pdf`; OCR artifacts are handled in the metadata extractor and record filters.
 - The Senate register currently exposes structured JSON through a public API used by the official APH React app; this is preferable to PDF scraping for current Senate interests, but the API should be monitored for schema changes.
 - `public_interest_sector_rules_v1` is useful for exploratory filtering but remains inferred. Any public claim about an entity's sector should retain the classifier/method/confidence caveat until ABN/ASIC/ANZSIC or manual-review evidence is added.
+- Most benefit events do not disclose a value or a parsed provider. The new `missing_data_flags` field makes those limitations queryable instead of hiding them.
+- The AEC national boundary file does not include a state/territory column, so state remains sourced from the APH roster/electorate table rather than the shapefile.

@@ -16,11 +16,11 @@ if [[ ! -x ".venv/bin/python" ]]; then
   .venv/bin/python -m pip install -e '.[dev]'
 fi
 
-.venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline \
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline --include-votes \
   > "${LOG_DIR}/weekly_federal_pipeline_${TIMESTAMP}.stdout.log" \
   2> "${LOG_DIR}/weekly_federal_pipeline_${TIMESTAMP}.stderr.log"
 
 .venv/bin/python -m pytest \
   > "${LOG_DIR}/weekly_federal_pipeline_tests_${TIMESTAMP}.stdout.log" \
   2> "${LOG_DIR}/weekly_federal_pipeline_tests_${TIMESTAMP}.stderr.log"
-

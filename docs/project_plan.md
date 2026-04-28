@@ -31,10 +31,16 @@ Work items:
 - Create PostgreSQL/PostGIS schema for people, offices, entities, money flows,
   gifts/interests, votes, source documents, and evidence claims.
 - Ingest current MP/Senator rosters from Parliament CSVs.
-- Ingest AEC federal electoral boundary GIS data.
+- Ingest AEC federal electoral boundary GIS data. Current federal 2025 national
+  boundaries are now transformed to GeoJSON/PostGIS; later frontend work should
+  create simplified/vector-tile derivatives from the canonical full-resolution
+  boundary table.
 - Ingest AEC Transparency Register downloads and detailed receipts.
 - Scrape House and Senate interests register landing pages and PDFs.
 - Store all source artifacts with timestamps, checksums, and parser versions.
+- Maintain a unified `influence_event` surface so large money flows and small
+  disclosed benefits can be queried with the same provenance and uncertainty
+  fields.
 
 Deliverable:
 
@@ -79,6 +85,10 @@ Work items:
 Deliverable:
 
 - Structured gift/interest records linked to PDF page references.
+- Benefit events for disclosed gifts, hospitality, sponsored travel, flights,
+  tickets, meals, memberships/lounges, subscriptions, and other traceable
+  non-cash items, with disclosure-gap flags when value, provider, or date is
+  missing.
 
 ## Phase 4: Entity Resolution and Industry Classification
 
@@ -94,6 +104,8 @@ Work items:
   gambling, finance, tech, defence, healthcare, pharmaceuticals, education,
   media, unions, agribusiness, consulting, law, foreign government, and other.
 - Store classification confidence and reviewer.
+- Export review queues and store manual-review decisions separately from raw
+  and machine-produced records.
 
 Deliverable:
 
@@ -123,10 +135,13 @@ Goal: expose clean data for frontend and researchers.
 Work items:
 
 - Build FastAPI endpoints for people, parties, electorates, donors, industries,
-  money flows, gifts/interests, votes, and source documents.
+  influence events, money flows, gifts/interests, votes, and source documents.
 - Add API-level filtering by date, party, state, chamber, source type, industry,
   and evidence confidence.
 - Add CSV/JSON exports with citation fields.
+- Add source-backed postcode/locality search using AEC electorate-finder files
+  and/or caveated ABS Postal Area overlays; do not infer a single electorate
+  from postcode alone where the source indicates ambiguity.
 
 Deliverable:
 
@@ -179,4 +194,3 @@ Goal: extend to local government.
 This is a separate major effort. Council data is likely fragmented by state,
 election commission, and council-level disclosure practices. Start only after
 state ingestion patterns are stable.
-

@@ -1,6 +1,6 @@
 # Data Sources
 
-Last updated: 2026-04-27
+Last updated: 2026-04-28
 
 ## Federal Sources
 
@@ -15,13 +15,19 @@ Last updated: 2026-04-27
 | `aph_members_interests_48` | House Register of Members' Interests | https://www.aph.gov.au/senators_and_members/members/register | Gifts, interests, travel, holdings | PDFs by member. |
 | `aph_senators_interests` | Senate Register of Senators' Interests | https://www.aph.gov.au/Parliamentary_Business/Committees/Senate/Senators_Interests/Senators_Interests_Register | Senator interests | Official page loads a React app backed by a public JSON API discovered through `env.js`; archive the page, env asset, query JSON, and detail JSON. |
 | `aph_contacts_csv` | Parliament CSV files | https://www.aph.gov.au/Senators_and_Members/Contacting_Senators_and_Members/Address_labels_and_CSV_files | Current MP/Senator roster seed | CSV files by name, state, party, gender. |
-| `aec_federal_boundaries_gis` | AEC federal boundary GIS data | https://www.aec.gov.au/Electorates/gis/gis_datadownload.htm | Electorate maps | Current 2025 boundaries and superseded shapefiles. |
-| `they_vote_for_you_api` | They Vote For You API | https://theyvoteforyou.org.au/help/data | Division and vote data | Requires API key. Civic source, not official source of record. |
+| `aec_federal_boundaries_gis` | AEC federal boundary GIS data | https://www.aec.gov.au/Electorates/gis/gis_datadownload.htm | Electorate maps | Current 2025 national ESRI shapefile is archived and transformed to GeoJSON/PostGIS; source CRS is GDA94/EPSG:4283 and loaded geometry SRID is 4326. |
+| `aec_electorate_finder` | AEC electorate finder | https://electorate.aec.gov.au/ | Address/locality/postcode to federal electorate lookup | Planned source for postcode/locality search. Must preserve ambiguity because a postcode or locality may map to more than one federal electorate. |
+| `abs_postal_areas` | ABS ASGS Postal Areas | https://www.abs.gov.au/statistics/standards/australian-statistical-geography-standard-asgs-edition-3/jul2021-jun2026/access-and-downloads/digital-boundary-files | Postal Area geometry approximation | Planned secondary search/map approximation. Postal Areas are not identical to Australia Post delivery postcodes and must be labelled as approximate. |
+| `they_vote_for_you_api` | They Vote For You API | https://theyvoteforyou.org.au/help/data | Division and person-level vote data | Requires API key. Implemented as optional ingestion with API-key-free metadata and public response bodies preserved; civic source, not official source of record. |
+| `aph_hansard` | Parliament of Australia Hansard | https://www.aph.gov.au/Hansard | Official transcript/report context | Useful for speech and proceeding context; not the sole formal division record. |
+| `aph_house_votes_and_proceedings` | House Votes and Proceedings | https://www.aph.gov.au/Parliamentary_Business/Chamber_documents/HoR/Votes_and_Proceedings | Official House decision record | Formal record for House proceedings, decisions, attendance, and divisions. Current index links and ParlInfo snapshots are archived; person-vote parsing is still pending for House formats. |
+| `aph_senate_journals` | Journals of the Senate | https://www.aph.gov.au/About_Parliament/Senate/Powers_practice_n_procedures/~/~/link.aspx?_id=732F8182C02D4B3699E417F33843A933 | Official Senate decision record | Current/historical journal links; records include senators voting in divisions. Current Senate PDF snapshots are parsed into official division/person-vote rows. |
 | `open_australia_api` | OpenAustralia API | https://www.openaustralia.org.au/api/ | Hansard and member data context | Legacy civic source. |
 | `australian_lobbyists_register` | Australian Government Register of Lobbyists | https://www.ag.gov.au/integrity/australian-government-register-lobbyists | Lobbyists and clients | Important for money plus access analysis. |
 | `centre_public_integrity_lobbyists` | Centre for Public Integrity Lobbyist Register | https://publicintegrity.org.au/lobbyist-register/about-2/ | Searchable lobbying context | Civic enhancement of official lobbyist data. |
 | `asic_companies_dataset` | ASIC company dataset | https://www.data.gov.au/data/dataset/asic-companies | Company identifiers and names | Weekly company register extract. |
-| `abn_lookup` | ABN Lookup | https://abr.business.gov.au/home | ABN public lookup | Public ABR view; ANZSIC is not public in standard ABN Lookup. |
+| `acnc_register` | ACNC Registered Charities | https://data.gov.au/data/dataset/acnc-register | Charity ABNs, names, purposes | Weekly charity-register extract; some withheld records are absent. |
+| `abn_lookup` | ABN Lookup | https://abr.business.gov.au/home | ABN public lookup | Public ABR view plus targeted document-style web-service lookups using `SearchByABNv202001` and `SearchByASICv201408`; ANZSIC is not public in standard ABN Lookup. Trading names are historical-only after May 2012 and have no legal status. |
 | `abs_anzsic` | ABS ANZSIC classification | https://www.abs.gov.au/statistics/classifications/australian-and-new-zealand-standard-industrial-classification-anzsic | Industry taxonomy | Official industry code hierarchy. |
 | `nacc_corrupt_conduct` | NACC corrupt conduct guidance | https://www.nacc.gov.au/reporting-and-investigating-corruption/what-corrupt-conduct | Integrity language and legal caution | Helps keep public claims precise. |
 
@@ -50,4 +56,11 @@ Last updated: 2026-04-27
 - Voting records capture divisions, not all voice votes or party-room decisions.
 - Industry classification often requires inference because public ABR data does
   not expose all ANZSIC details.
+- ABN Lookup web-service enrichment must remain targeted and cached unless the
+  ABN Lookup terms, permitted use, and rate limits support broader automation.
+- ABN Lookup trading names collected before 28 May 2012 are historical reference
+  only and cannot be relied on as current legal identity evidence.
+- ABN Lookup may notify web-service users that specific details have been
+  withdrawn. Public data-release procedures must support deletion of affected
+  raw and derived records if that occurs.
 - State regimes differ materially and change over time.

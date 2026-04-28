@@ -3,18 +3,35 @@ from __future__ import annotations
 import json
 import os
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any
 
 from au_politics_money.config import PROCESSED_DIR, PROJECT_ROOT
+from au_politics_money.ingest.aec_boundaries import (
+    BOUNDARY_SET,
+    PARSER_NAME as BOUNDARY_PARSER_NAME,
+    PARSER_VERSION as BOUNDARY_PARSER_VERSION,
+    latest_aec_boundaries_geojson,
+)
+from au_politics_money.ingest.aph_decision_records import (
+    latest_aph_decision_record_index_jsonl_paths,
+    latest_aph_decision_record_documents_summary,
+)
+from au_politics_money.ingest.aph_official_divisions import latest_official_aph_divisions_jsonl
 from au_politics_money.ingest.entity_classification import (
     CLASSIFIER_NAME,
     PUBLIC_INTEREST_SECTORS,
     latest_entity_classifications_jsonl,
 )
+from au_politics_money.ingest.official_identifiers import (
+    ANZSIC_SECTIONS,
+    OFFICIAL_IDENTIFIER_PARSER_NAME,
+    latest_official_identifier_jsonl_paths,
+)
+from au_politics_money.ingest.they_vote_for_you import latest_they_vote_for_you_divisions_jsonl
 
 STATE_CODES = {
     "Australian Capital Territory": "ACT",
@@ -34,6 +51,100 @@ STATE_CODES = {
     "Western Australia": "WA",
     "WA": "WA",
 }
+
+INFLUENCE_EVENT_LOADER_NAME = "load_influence_events_v1"
+
+PRIVATE_INTEREST_EVENT_TYPES = {
+    "Shareholdings": "shareholding",
+    "Family and business trusts and nominee companies": "trust_or_nominee_company",
+    "Trusts": "trust_or_nominee_company",
+    "Real estate": "real_estate",
+    "Directorships of companies": "company_directorship",
+    "Registered directorships of companies": "company_directorship",
+    "Partnerships": "partnership",
+    "Liabilities": "liability",
+    "Investments": "investment",
+    "Savings or investment accounts": "savings_or_investment_account",
+    "Other assets": "other_asset",
+    "Other income": "other_income",
+}
+
+ORG_ROLE_EVENT_TYPES = {
+    "Memberships with possible conflicts": "membership",
+    "Organisations to which office-holder donations are made": "office_holder_or_donation",
+}
+
+BENEFIT_KEYWORD_EVENT_TYPES = (
+    (
+        "private_aircraft_or_flight",
+        (
+            "airfare",
+            "airline",
+            "air travel",
+            "airport parking",
+            "business class",
+            "flight",
+            "flights",
+            "private aircraft",
+            "qatar airways",
+            "return travel",
+            "upgrade",
+        ),
+    ),
+    (
+        "accommodation_or_travel_hospitality",
+        (
+            "accommodation",
+            "hotel",
+        ),
+    ),
+    (
+        "meal_or_reception",
+        (
+            "breakfast",
+            "dinner",
+            "drinks",
+            "lunch",
+            "reception",
+        ),
+    ),
+    (
+        "event_ticket_or_pass",
+        (
+            "concert",
+            "festival",
+            "gala",
+            "race day",
+            "rugby",
+            "sport",
+            "ticket",
+            "tickets",
+        ),
+    ),
+    (
+        "membership_or_lounge_access",
+        (
+            "chairman",
+            "chairman's",
+            "chairmans",
+            "club",
+            "lounge",
+            "member",
+            "membership",
+            "pass",
+            "virgin beyond",
+        ),
+    ),
+    (
+        "subscription_or_service",
+        (
+            "foxtel",
+            "service",
+            "subscription",
+            "television",
+        ),
+    ),
+)
 
 
 def normalize_name(value: str) -> str:
@@ -62,6 +173,29 @@ def parse_date(value: str) -> date | None:
     return None
 
 
+def parse_datetime(value: str) -> datetime | None:
+    cleaned = (value or "").strip()
+    if not cleaned or cleaned.startswith("0001-"):
+        return None
+    for fmt in ("%Y%m%dT%H%M%SZ", "%Y%m%dT%H%M%S%z"):
+        try:
+            parsed = datetime.strptime(cleaned, fmt)
+            return (
+                parsed.replace(tzinfo=timezone.utc)
+                if parsed.tzinfo is None
+                else parsed.astimezone(timezone.utc)
+            )
+        except ValueError:
+            continue
+    try:
+        return datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+    except ValueError:
+        parsed_date = parse_date(cleaned)
+        if parsed_date is None:
+            return None
+        return datetime.combine(parsed_date, datetime.min.time(), tzinfo=timezone.utc)
+
+
 def senate_api_name_to_canonical(value: str) -> str:
     cleaned = " ".join((value or "").split())
     if "," not in cleaned:
@@ -78,6 +212,117 @@ def normalize_electorate_name(value: str) -> str:
 def state_code(value: str) -> str:
     cleaned = " ".join((value or "").split())
     return STATE_CODES.get(cleaned, cleaned)
+
+
+def slugify(value: str, default: str) -> str:
+    slug = normalize_name(value).replace(" ", "_")
+    return slug or default
+
+
+def classify_money_event_type(disclosure_category: str, receipt_type: str) -> str:
+    category = normalize_name(disclosure_category)
+    receipt = normalize_name(receipt_type)
+    combined = f"{category} {receipt}".strip()
+    if "gift" in combined or "donation" in combined:
+        return "donation_or_gift"
+    if "receipt" in combined:
+        return "receipt"
+    if "debt" in combined:
+        return "debt"
+    if "loan" in combined:
+        return "loan"
+    return slugify(disclosure_category or receipt_type, "money_flow")
+
+
+def benefit_subtype(description: str) -> str | None:
+    lowered = description.lower()
+    for subtype, keywords in BENEFIT_KEYWORD_EVENT_TYPES:
+        if any(keyword in lowered for keyword in keywords):
+            return subtype
+    return None
+
+
+def is_airline_lounge_benefit(description: str) -> bool:
+    lowered = description.lower()
+    return any(
+        keyword in lowered
+        for keyword in (
+            "beyond lounge",
+            "chairman",
+            "chairman's",
+            "chairmans",
+            "lounge",
+            "qantas club",
+            "virgin beyond",
+        )
+    )
+
+
+def classify_interest_event(interest_category: str, description: str) -> tuple[str, str, str | None]:
+    category = interest_category.strip()
+    subtype = benefit_subtype(description)
+
+    if category in PRIVATE_INTEREST_EVENT_TYPES:
+        return "private_interest", PRIVATE_INTEREST_EVENT_TYPES[category], None
+
+    if category in ORG_ROLE_EVENT_TYPES:
+        return "organisational_role", ORG_ROLE_EVENT_TYPES[category], None
+
+    if category == "Sponsored travel or hospitality":
+        return "benefit", "sponsored_travel_or_hospitality", subtype
+
+    if category == "Gifts":
+        return "benefit", "gift", subtype
+
+    if category == "Other interests":
+        if subtype == "membership_or_lounge_access" and not is_airline_lounge_benefit(description):
+            return "organisational_role", "membership", None
+        if subtype:
+            return "benefit", "other_declared_benefit", subtype
+        return "other", "other_declared_interest", None
+
+    return "other", slugify(category, "declared_interest"), None
+
+
+def missing_money_flags(
+    *,
+    source_raw_name: str,
+    recipient_raw_name: str,
+    amount: Decimal | None,
+    date_received: date | None,
+) -> list[str]:
+    flags = []
+    if not normalize_name(source_raw_name) or normalize_name(source_raw_name) == "unknown":
+        flags.append("source_not_disclosed")
+    if not normalize_name(recipient_raw_name) or normalize_name(recipient_raw_name) == "unknown":
+        flags.append("recipient_not_disclosed")
+    if amount is None:
+        flags.append("amount_not_disclosed")
+    if date_received is None:
+        flags.append("event_date_not_disclosed")
+    return flags
+
+
+def missing_interest_flags(
+    *,
+    source_raw_name: str,
+    amount: Decimal | None,
+    date_received: date | None,
+    date_reported: date | None,
+    extraction_method: str,
+) -> list[str]:
+    flags = []
+    if not normalize_name(source_raw_name):
+        flags.append("provider_not_disclosed_or_not_extracted")
+    if amount is None:
+        flags.append("value_not_disclosed")
+    if date_received is None:
+        flags.append("event_date_not_disclosed")
+    if date_reported is None:
+        flags.append("reported_date_not_disclosed")
+    if "heuristic" in extraction_method:
+        flags.append("parsed_from_pdf_heuristic")
+    return flags
 
 
 def latest_file(directory: Path, pattern: str) -> Path:
@@ -114,6 +359,37 @@ def apply_schema(conn, schema_path: Path | None = None) -> None:
     conn.commit()
 
 
+def apply_migrations(conn, schema_dir: Path | None = None) -> dict[str, int]:
+    directory = schema_dir or PROJECT_ROOT / "backend" / "schema"
+    migration_paths = sorted(path for path in directory.glob("*.sql") if path.name != "001_initial.sql")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                filename TEXT PRIMARY KEY,
+                applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
+            )
+            """
+        )
+        cur.execute("SELECT to_regclass('source_document')")
+        if cur.fetchone()[0] is None:
+            raise RuntimeError(
+                "Cannot apply incremental migrations before the baseline schema exists. "
+                "Run `load-postgres --apply-schema` first for a fresh database."
+            )
+        applied = {
+            row[0]
+            for row in cur.execute("SELECT filename FROM schema_migrations").fetchall()
+        }
+        for path in migration_paths:
+            if path.name in applied:
+                continue
+            cur.execute(path.read_text(encoding="utf-8"))
+            cur.execute("INSERT INTO schema_migrations (filename) VALUES (%s)", (path.name,))
+    conn.commit()
+    return {"migrations_applied": len(migration_paths) - len(applied & {p.name for p in migration_paths})}
+
+
 def upsert_source_document(conn, metadata_path: Path) -> int:
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     source = metadata["source"]
@@ -133,7 +409,7 @@ def upsert_source_document(conn, metadata_path: Path) -> int:
             )
             ON CONFLICT (source_id, sha256) DO UPDATE SET
                 final_url = EXCLUDED.final_url,
-                fetched_at = EXCLUDED.fetched_at,
+                fetched_at = GREATEST(source_document.fetched_at, EXCLUDED.fetched_at),
                 http_status = EXCLUDED.http_status,
                 content_type = EXCLUDED.content_type,
                 storage_path = EXCLUDED.storage_path,
@@ -202,6 +478,80 @@ def get_or_create_electorate(conn, name: str, chamber: str, state: str, jurisdic
             RETURNING id
             """,
             (name, jurisdiction_id, chamber, state),
+        )
+        row = cur.fetchone()
+    return int(row[0])
+
+
+def get_or_create_boundary_electorate(
+    conn,
+    *,
+    name: str,
+    jurisdiction_id: int,
+    source_document_id: int,
+) -> int:
+    normalized = normalize_electorate_name(name)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT electorate.id, electorate.name, count(office_term.id) AS office_count
+            FROM electorate
+            LEFT JOIN office_term
+              ON office_term.electorate_id = electorate.id
+             AND office_term.chamber = 'house'
+             AND office_term.term_end IS NULL
+            WHERE electorate.jurisdiction_id = %s
+              AND electorate.chamber = 'house'
+            GROUP BY electorate.id, electorate.name
+            ORDER BY office_count DESC, electorate.id
+            """,
+            (jurisdiction_id,),
+        )
+        for electorate_id, electorate_name, _office_count in cur.fetchall():
+            if normalize_electorate_name(electorate_name) != normalized:
+                continue
+            cur.execute(
+                """
+                UPDATE electorate
+                SET source_document_id = COALESCE(electorate.source_document_id, %s),
+                    metadata = electorate.metadata || %s
+                WHERE id = %s
+                """,
+                (
+                    source_document_id,
+                    as_jsonb(
+                        {
+                            "boundary_source": BOUNDARY_SET,
+                            "boundary_loader": "aec_federal_boundaries_postgis_v1",
+                        }
+                    ),
+                    electorate_id,
+                ),
+            )
+            return int(electorate_id)
+
+        cur.execute(
+            """
+            INSERT INTO electorate (
+                name, jurisdiction_id, chamber, source_document_id, metadata
+            )
+            VALUES (%s, %s, 'house', %s, %s)
+            ON CONFLICT (name, jurisdiction_id, chamber) DO UPDATE SET
+                source_document_id = COALESCE(electorate.source_document_id, EXCLUDED.source_document_id),
+                metadata = electorate.metadata || EXCLUDED.metadata
+            RETURNING id
+            """,
+            (
+                name,
+                jurisdiction_id,
+                source_document_id,
+                as_jsonb(
+                    {
+                        "boundary_source": BOUNDARY_SET,
+                        "boundary_loader": "aec_federal_boundaries_postgis_v1",
+                    }
+                ),
+            ),
         )
         row = cur.fetchone()
     return int(row[0])
@@ -689,7 +1039,10 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
 
             counterparty = record.get("counterparty_raw_name") or ""
             source_entity_id = get_or_create_entity(conn, counterparty) if counterparty else None
-            description = record.get("description") or json.dumps(record.get("original", {}), sort_keys=True)
+            description = record.get("description") or json.dumps(
+                record.get("original", {}),
+                sort_keys=True,
+            )
             with conn.cursor() as cur:
                 cur.execute(
                     """
@@ -740,6 +1093,325 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
     }
 
 
+def _delete_stale_influence_events(conn) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM influence_event
+            WHERE metadata->>'derived_loader' = %s
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM claim_evidence
+                  WHERE claim_evidence.influence_event_id = influence_event.id
+              )
+            """,
+            (INFLUENCE_EVENT_LOADER_NAME,),
+        )
+
+
+def _upsert_influence_event(conn, event: dict[str, Any]) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO influence_event (
+                external_key, event_family, event_type, event_subtype,
+                source_entity_id, source_raw_name, recipient_entity_id,
+                recipient_person_id, recipient_party_id, recipient_raw_name,
+                jurisdiction_id, money_flow_id, gift_interest_id, amount,
+                currency, amount_status, event_date, reporting_period,
+                date_reported, chamber, disclosure_system, disclosure_threshold,
+                evidence_status, extraction_method, review_status, description,
+                source_document_id, source_ref, original_text, missing_data_flags,
+                metadata
+            )
+            VALUES (
+                %(external_key)s, %(event_family)s, %(event_type)s,
+                %(event_subtype)s, %(source_entity_id)s, %(source_raw_name)s,
+                %(recipient_entity_id)s, %(recipient_person_id)s,
+                %(recipient_party_id)s, %(recipient_raw_name)s,
+                %(jurisdiction_id)s, %(money_flow_id)s, %(gift_interest_id)s,
+                %(amount)s, %(currency)s, %(amount_status)s, %(event_date)s,
+                %(reporting_period)s, %(date_reported)s, %(chamber)s,
+                %(disclosure_system)s, %(disclosure_threshold)s,
+                %(evidence_status)s, %(extraction_method)s, %(review_status)s,
+                %(description)s, %(source_document_id)s, %(source_ref)s,
+                %(original_text)s, %(missing_data_flags)s, %(metadata)s
+            )
+            ON CONFLICT (external_key) DO UPDATE SET
+                event_family = EXCLUDED.event_family,
+                event_type = EXCLUDED.event_type,
+                event_subtype = EXCLUDED.event_subtype,
+                source_entity_id = EXCLUDED.source_entity_id,
+                source_raw_name = EXCLUDED.source_raw_name,
+                recipient_entity_id = EXCLUDED.recipient_entity_id,
+                recipient_person_id = EXCLUDED.recipient_person_id,
+                recipient_party_id = EXCLUDED.recipient_party_id,
+                recipient_raw_name = EXCLUDED.recipient_raw_name,
+                jurisdiction_id = EXCLUDED.jurisdiction_id,
+                money_flow_id = EXCLUDED.money_flow_id,
+                gift_interest_id = EXCLUDED.gift_interest_id,
+                amount = EXCLUDED.amount,
+                currency = EXCLUDED.currency,
+                amount_status = EXCLUDED.amount_status,
+                event_date = EXCLUDED.event_date,
+                reporting_period = EXCLUDED.reporting_period,
+                date_reported = EXCLUDED.date_reported,
+                chamber = EXCLUDED.chamber,
+                disclosure_system = EXCLUDED.disclosure_system,
+                disclosure_threshold = EXCLUDED.disclosure_threshold,
+                evidence_status = EXCLUDED.evidence_status,
+                extraction_method = EXCLUDED.extraction_method,
+                review_status = CASE
+                    WHEN influence_event.metadata->>'manual_review_status'
+                         IN ('accepted', 'rejected', 'revised')
+                    THEN influence_event.review_status
+                    ELSE EXCLUDED.review_status
+                END,
+                description = EXCLUDED.description,
+                source_document_id = EXCLUDED.source_document_id,
+                source_ref = EXCLUDED.source_ref,
+                original_text = EXCLUDED.original_text,
+                missing_data_flags = EXCLUDED.missing_data_flags,
+                metadata = EXCLUDED.metadata || jsonb_strip_nulls(
+                    jsonb_build_object(
+                        'manual_review_status',
+                        influence_event.metadata->>'manual_review_status',
+                        'last_manual_review_decision_id',
+                        influence_event.metadata->>'last_manual_review_decision_id',
+                        'last_manual_review_decision_key',
+                        influence_event.metadata->>'last_manual_review_decision_key',
+                        'last_manual_review_decision',
+                        influence_event.metadata->>'last_manual_review_decision',
+                        'last_manual_review_reviewer',
+                        influence_event.metadata->>'last_manual_review_reviewer',
+                        'last_manual_reviewed_at',
+                        influence_event.metadata->>'last_manual_reviewed_at'
+                    )
+                )
+            """,
+            event,
+        )
+
+
+def load_influence_events(conn) -> dict[str, Any]:
+    jurisdiction_id = get_or_create_jurisdiction(conn, "Commonwealth", "federal", "CWLTH")
+    _delete_stale_influence_events(conn)
+
+    money_count = 0
+    interest_count = 0
+    family_counts: Counter[str] = Counter()
+    type_counts: Counter[str] = Counter()
+    review_counts: Counter[str] = Counter()
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id, external_key, source_entity_id, source_raw_name,
+                recipient_entity_id, recipient_person_id, recipient_party_id,
+                recipient_raw_name, amount, currency, financial_year,
+                date_received, date_reported, return_type, receipt_type,
+                disclosure_category, jurisdiction_id, source_document_id,
+                source_row_ref, original_text, confidence, metadata
+            FROM money_flow
+            """
+        )
+        money_rows = cur.fetchall()
+
+    for row in money_rows:
+        (
+            money_flow_id,
+            external_key,
+            source_entity_id,
+            source_raw_name,
+            recipient_entity_id,
+            recipient_person_id,
+            recipient_party_id,
+            recipient_raw_name,
+            amount,
+            currency,
+            financial_year,
+            date_received,
+            date_reported,
+            return_type,
+            receipt_type,
+            disclosure_category,
+            row_jurisdiction_id,
+            source_document_id,
+            source_row_ref,
+            original_text,
+            confidence,
+            metadata,
+        ) = row
+        event_type = classify_money_event_type(disclosure_category or "", receipt_type or "")
+        flags = missing_money_flags(
+            source_raw_name=source_raw_name or "",
+            recipient_raw_name=recipient_raw_name or "",
+            amount=amount,
+            date_received=date_received,
+        )
+        description_amount = f"{amount} {currency}" if amount is not None else "amount not disclosed"
+        description = (
+            f"{source_raw_name or 'Unknown'} to {recipient_raw_name or 'Unknown'}: "
+            f"{description_amount}"
+        )
+        event = {
+            "external_key": f"money_flow:{external_key or money_flow_id}",
+            "event_family": "money",
+            "event_type": event_type,
+            "event_subtype": slugify(disclosure_category or receipt_type or "", "unspecified"),
+            "source_entity_id": source_entity_id,
+            "source_raw_name": source_raw_name,
+            "recipient_entity_id": recipient_entity_id,
+            "recipient_person_id": recipient_person_id,
+            "recipient_party_id": recipient_party_id,
+            "recipient_raw_name": recipient_raw_name,
+            "jurisdiction_id": row_jurisdiction_id or jurisdiction_id,
+            "money_flow_id": money_flow_id,
+            "gift_interest_id": None,
+            "amount": amount,
+            "currency": currency or "AUD",
+            "amount_status": "reported" if amount is not None else "unknown",
+            "event_date": date_received,
+            "reporting_period": financial_year,
+            "date_reported": date_reported,
+            "chamber": None,
+            "disclosure_system": "aec_financial_disclosure",
+            "disclosure_threshold": "AEC financial disclosure threshold for the reporting period.",
+            "evidence_status": "official_record_parsed",
+            "extraction_method": "aec_annual_money_flow_normalizer",
+            "review_status": "not_required",
+            "description": description,
+            "source_document_id": source_document_id,
+            "source_ref": source_row_ref,
+            "original_text": original_text,
+            "missing_data_flags": as_jsonb(flags),
+            "metadata": as_jsonb(
+                {
+                    "derived_loader": INFLUENCE_EVENT_LOADER_NAME,
+                    "base_table": "money_flow",
+                    "base_id": money_flow_id,
+                    "return_type": return_type,
+                    "receipt_type": receipt_type,
+                    "disclosure_category": disclosure_category,
+                    "source_confidence": confidence,
+                    "base_metadata": metadata or {},
+                }
+            ),
+        }
+        _upsert_influence_event(conn, event)
+        money_count += 1
+        family_counts[event["event_family"]] += 1
+        type_counts[event["event_type"]] += 1
+        review_counts[event["review_status"]] += 1
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id, external_key, person_id, source_entity_id, source_raw_name,
+                interest_category, description, estimated_value, currency,
+                date_received, date_reported, parliament_number, chamber,
+                source_document_id, source_page_ref, original_text,
+                extraction_confidence, metadata
+            FROM gift_interest
+            """
+        )
+        interest_rows = cur.fetchall()
+
+    for row in interest_rows:
+        (
+            gift_interest_id,
+            external_key,
+            person_id,
+            source_entity_id,
+            source_raw_name,
+            interest_category,
+            description,
+            estimated_value,
+            currency,
+            date_received,
+            date_reported,
+            parliament_number,
+            chamber,
+            source_document_id,
+            source_page_ref,
+            original_text,
+            extraction_confidence,
+            metadata,
+        ) = row
+        event_family, event_type, event_subtype = classify_interest_event(
+            interest_category or "",
+            description or "",
+        )
+        extraction_method = extraction_confidence or "unknown"
+        flags = missing_interest_flags(
+            source_raw_name=source_raw_name or "",
+            amount=estimated_value,
+            date_received=date_received,
+            date_reported=date_reported,
+            extraction_method=extraction_method,
+        )
+        review_status = "needs_review" if "heuristic" in extraction_method else "not_required"
+        event = {
+            "external_key": f"gift_interest:{external_key or gift_interest_id}",
+            "event_family": event_family,
+            "event_type": event_type,
+            "event_subtype": event_subtype,
+            "source_entity_id": source_entity_id,
+            "source_raw_name": source_raw_name,
+            "recipient_entity_id": None,
+            "recipient_person_id": person_id,
+            "recipient_party_id": None,
+            "recipient_raw_name": None,
+            "jurisdiction_id": jurisdiction_id,
+            "money_flow_id": None,
+            "gift_interest_id": gift_interest_id,
+            "amount": estimated_value,
+            "currency": currency or "AUD",
+            "amount_status": "reported" if estimated_value is not None else "not_disclosed",
+            "event_date": date_received,
+            "reporting_period": parliament_number,
+            "date_reported": date_reported,
+            "chamber": chamber,
+            "disclosure_system": "aph_register_of_interests",
+            "disclosure_threshold": "APH register disclosure rules vary by chamber and category.",
+            "evidence_status": "official_record_parsed",
+            "extraction_method": extraction_method,
+            "review_status": review_status,
+            "description": description or interest_category or "Declared interest",
+            "source_document_id": source_document_id,
+            "source_ref": source_page_ref,
+            "original_text": original_text,
+            "missing_data_flags": as_jsonb(flags),
+            "metadata": as_jsonb(
+                {
+                    "derived_loader": INFLUENCE_EVENT_LOADER_NAME,
+                    "base_table": "gift_interest",
+                    "base_id": gift_interest_id,
+                    "interest_category": interest_category,
+                    "parliament_number": parliament_number,
+                    "base_metadata": metadata or {},
+                }
+            ),
+        }
+        _upsert_influence_event(conn, event)
+        interest_count += 1
+        family_counts[event["event_family"]] += 1
+        type_counts[event["event_type"]] += 1
+        review_counts[event["review_status"]] += 1
+
+    conn.commit()
+    return {
+        "influence_events": money_count + interest_count,
+        "money_flow_events": money_count,
+        "interest_events": interest_count,
+        "event_family_counts": dict(sorted(family_counts.items())),
+        "event_type_counts": dict(sorted(type_counts.items())),
+        "review_status_counts": dict(sorted(review_counts.items())),
+    }
+
+
 def _entity_id_by_normalized_name(conn, normalized_name: str) -> int | None:
     with conn.cursor() as cur:
         cur.execute(
@@ -758,6 +1430,27 @@ def _entity_id_by_normalized_name(conn, normalized_name: str) -> int | None:
 
 def _update_entity_type_from_classification(conn, entity_id: int, entity_type: str) -> None:
     if not entity_type or entity_type == "unknown":
+        return
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE entity
+            SET entity_type = %s
+            WHERE id = %s
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM entity duplicate
+                  WHERE duplicate.normalized_name = entity.normalized_name
+                    AND duplicate.entity_type = %s
+                    AND duplicate.id <> entity.id
+              )
+            """,
+            (entity_type, entity_id, entity_type),
+        )
+
+
+def _update_entity_type_from_official(conn, entity_id: int, entity_type: str) -> None:
+    if entity_type in {"", "unknown", "individual"}:
         return
     with conn.cursor() as cur:
         cur.execute(
@@ -820,7 +1513,6 @@ def load_entity_classifications(conn, jsonl_path: Path | None = None) -> dict[st
                 skipped += 1
                 continue
 
-            _update_entity_type_from_classification(conn, entity_id, record["entity_type"])
             industry_code_id = code_ids.get(record["public_sector"])
             metadata = {
                 "classifier_name": record["classifier_name"],
@@ -870,6 +1562,1731 @@ def load_entity_classifications(conn, jsonl_path: Path | None = None) -> dict[st
     }
 
 
+def load_anzsic_sections(conn) -> dict[str, int]:
+    inserted = 0
+    for section in ANZSIC_SECTIONS:
+        get_or_create_industry_code(
+            conn,
+            "ANZSIC_2006_section",
+            section["code"],
+            section["label"],
+        )
+        inserted += 1
+    conn.commit()
+    return {"anzsic_sections": inserted}
+
+
+def _public_interest_code_ids(conn) -> dict[str, int]:
+    return {
+        sector["code"]: get_or_create_industry_code(
+            conn,
+            "public_interest_sector",
+            sector["code"],
+            sector["label"],
+        )
+        for sector in PUBLIC_INTEREST_SECTORS
+    }
+
+
+def _insert_official_identifier_observation(
+    conn,
+    record: dict[str, Any],
+    source_document_id: int | None,
+) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO official_identifier_observation (
+                stable_key, source_document_id, source_id, source_record_type,
+                external_id, display_name, normalized_name, entity_type, public_sector,
+                confidence, status, source_updated_at, evidence_note, identifiers,
+                aliases, raw_record, metadata
+            )
+            VALUES (
+                %(stable_key)s, %(source_document_id)s, %(source_id)s,
+                %(source_record_type)s, %(external_id)s, %(display_name)s,
+                %(normalized_name)s, %(entity_type)s, %(public_sector)s,
+                %(confidence)s, %(status)s, %(source_updated_at)s, %(evidence_note)s,
+                %(identifiers)s, %(aliases)s, %(raw_record)s, %(metadata)s
+            )
+            ON CONFLICT (stable_key) DO UPDATE SET
+                source_document_id = EXCLUDED.source_document_id,
+                external_id = EXCLUDED.external_id,
+                display_name = EXCLUDED.display_name,
+                normalized_name = EXCLUDED.normalized_name,
+                entity_type = EXCLUDED.entity_type,
+                public_sector = EXCLUDED.public_sector,
+                confidence = EXCLUDED.confidence,
+                status = EXCLUDED.status,
+                source_updated_at = EXCLUDED.source_updated_at,
+                evidence_note = EXCLUDED.evidence_note,
+                identifiers = EXCLUDED.identifiers,
+                aliases = EXCLUDED.aliases,
+                raw_record = EXCLUDED.raw_record,
+                metadata = EXCLUDED.metadata
+            RETURNING id
+            """,
+            {
+                "stable_key": record["stable_key"],
+                "source_document_id": source_document_id,
+                "source_id": record["source_id"],
+                "source_record_type": record["source_record_type"],
+                "external_id": record.get("external_id") or None,
+                "display_name": record["display_name"],
+                "normalized_name": record["normalized_name"],
+                "entity_type": record.get("entity_type") or "unknown",
+                "public_sector": record.get("public_sector") or "unknown",
+                "confidence": record.get("confidence") or "unresolved",
+                "status": record.get("status") or None,
+                "source_updated_at": parse_datetime(record.get("source_updated_at", "")),
+                "evidence_note": record.get("evidence_note") or None,
+                "identifiers": as_jsonb(record.get("identifiers") or []),
+                "aliases": as_jsonb(record.get("aliases") or []),
+                "raw_record": as_jsonb(record.get("raw_record") or {}),
+                "metadata": as_jsonb(
+                    {
+                        **(record.get("metadata") or {}),
+                        "official_parser_name": record.get("parser_name"),
+                        "schema_version": record.get("schema_version"),
+                        "official_classification": record.get("official_classification"),
+                    }
+                ),
+            },
+        )
+        row = cur.fetchone()
+    return int(row[0])
+
+
+def _entity_ids_by_normalized_name(conn, normalized_name: str) -> list[int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id
+            FROM entity
+            WHERE normalized_name = %s
+            ORDER BY id
+            """,
+            (normalized_name,),
+        )
+        return [int(row[0]) for row in cur.fetchall()]
+
+
+def _entity_ids_by_identifiers(conn, identifiers: list[dict[str, str]]) -> dict[int, list[str]]:
+    if not identifiers:
+        return {}
+    matches: dict[int, list[str]] = {}
+    with conn.cursor() as cur:
+        for identifier in identifiers:
+            cur.execute(
+                """
+                SELECT entity_id
+                FROM entity_identifier
+                WHERE identifier_type = %s
+                  AND identifier_value = %s
+                """,
+                (identifier["identifier_type"], identifier["identifier_value"]),
+            )
+            for row in cur.fetchall():
+                entity_id = int(row[0])
+                matches.setdefault(entity_id, []).append(
+                    f"{identifier['identifier_type']}:{identifier['identifier_value']}"
+                )
+    return matches
+
+
+def _insert_match_candidate(
+    conn,
+    *,
+    entity_id: int,
+    observation_id: int,
+    match_method: str,
+    confidence: str,
+    status: str,
+    evidence_note: str,
+    metadata: dict[str, Any],
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO entity_match_candidate (
+                entity_id, observation_id, match_method, confidence, status,
+                score, evidence_note, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (entity_id, observation_id, match_method) DO UPDATE SET
+                confidence = EXCLUDED.confidence,
+                status = EXCLUDED.status,
+                score = EXCLUDED.score,
+                evidence_note = EXCLUDED.evidence_note,
+                metadata = EXCLUDED.metadata
+            """,
+            (
+                entity_id,
+                observation_id,
+                match_method,
+                confidence,
+                status,
+                Decimal("100.00") if match_method == "exact_normalized_name" else None,
+                evidence_note,
+                as_jsonb(metadata),
+            ),
+        )
+
+
+def _insert_entity_identifier(
+    conn,
+    *,
+    entity_id: int,
+    identifier: dict[str, str],
+    source_document_id: int | None,
+    record: dict[str, Any],
+) -> bool:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO entity_identifier (
+                entity_id, identifier_type, identifier_value, source_document_id, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (identifier_type, identifier_value) DO NOTHING
+            """,
+            (
+                entity_id,
+                identifier["identifier_type"],
+                identifier["identifier_value"],
+                source_document_id,
+                as_jsonb(
+                    {
+                        "source_id": record["source_id"],
+                        "source_record_type": record["source_record_type"],
+                        "official_parser_name": record["parser_name"],
+                        "stable_key": record["stable_key"],
+                    }
+                ),
+            ),
+        )
+        return cur.rowcount == 1
+
+
+def _insert_entity_aliases(
+    conn,
+    *,
+    entity_id: int,
+    aliases: list[str],
+    source_document_id: int | None,
+    record: dict[str, Any],
+) -> int:
+    inserted = 0
+    with conn.cursor() as cur:
+        for alias in aliases:
+            normalized_alias = normalize_name(alias)
+            if not normalized_alias:
+                continue
+            cur.execute(
+                """
+                INSERT INTO entity_alias (
+                    entity_id, alias, normalized_alias, source_document_id, metadata
+                )
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT (entity_id, normalized_alias) DO NOTHING
+                """,
+                (
+                    entity_id,
+                    alias,
+                    normalized_alias,
+                    source_document_id,
+                    as_jsonb(
+                        {
+                            "source_id": record["source_id"],
+                            "source_record_type": record["source_record_type"],
+                            "official_parser_name": record["parser_name"],
+                            "stable_key": record["stable_key"],
+                        }
+                    ),
+                ),
+            )
+            if cur.rowcount == 1:
+                inserted += 1
+    return inserted
+
+
+def _insert_official_classification(
+    conn,
+    *,
+    entity_id: int,
+    industry_code_id: int | None,
+    source_document_id: int | None,
+    record: dict[str, Any],
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO entity_industry_classification (
+                entity_id, industry_code_id, public_sector, method, confidence,
+                evidence_note, source_document_id, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                entity_id,
+                industry_code_id,
+                record["public_sector"],
+                "official",
+                record["confidence"],
+                record.get("evidence_note") or record.get("official_classification"),
+                source_document_id,
+                as_jsonb(
+                    {
+                        "source_id": record["source_id"],
+                        "source_record_type": record["source_record_type"],
+                        "official_parser_name": record["parser_name"],
+                        "stable_key": record["stable_key"],
+                        "official_classification": record.get("official_classification"),
+                    }
+                ),
+            ),
+        )
+
+
+def load_official_identifiers(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    try:
+        paths = [jsonl_path] if jsonl_path is not None else latest_official_identifier_jsonl_paths()
+    except FileNotFoundError:
+        return {
+            "official_identifier_observations": 0,
+            "skipped_reason": "no_official_identifier_artifact",
+        }
+
+    records: list[dict[str, Any]] = []
+    loaded_source_ids: set[str] = set()
+    incremental_record_types = {"abn_web_service_entity"}
+    snapshot_scope: set[tuple[str, str]] = set()
+    incremental_stable_keys: set[str] = set()
+    for path in paths:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                record = json.loads(line)
+                records.append(record)
+                loaded_source_ids.add(record["source_id"])
+                source_record_type = record["source_record_type"]
+                if source_record_type in incremental_record_types:
+                    incremental_stable_keys.add(record["stable_key"])
+                else:
+                    snapshot_scope.add((record["source_id"], source_record_type))
+
+    load_anzsic_sections(conn)
+    public_interest_code_ids = _public_interest_code_ids(conn)
+    source_doc_cache: dict[str, int] = {}
+    with conn.cursor() as cur:
+        for source_id, source_record_type in sorted(snapshot_scope):
+            cur.execute(
+                """
+                DELETE FROM entity_industry_classification
+                WHERE method = 'official'
+                  AND metadata->>'official_parser_name' = %s
+                  AND metadata->>'source_id' = %s
+                  AND metadata->>'source_record_type' = %s
+                """,
+                (OFFICIAL_IDENTIFIER_PARSER_NAME, source_id, source_record_type),
+            )
+            cur.execute(
+                """
+                DELETE FROM entity_identifier
+                WHERE metadata->>'official_parser_name' = %s
+                  AND metadata->>'source_id' = %s
+                  AND metadata->>'source_record_type' = %s
+                """,
+                (OFFICIAL_IDENTIFIER_PARSER_NAME, source_id, source_record_type),
+            )
+            cur.execute(
+                """
+                DELETE FROM entity_alias
+                WHERE metadata->>'official_parser_name' = %s
+                  AND metadata->>'source_id' = %s
+                  AND metadata->>'source_record_type' = %s
+                """,
+                (OFFICIAL_IDENTIFIER_PARSER_NAME, source_id, source_record_type),
+            )
+            cur.execute(
+                """
+                DELETE FROM entity_match_candidate
+                WHERE observation_id IN (
+                    SELECT id
+                    FROM official_identifier_observation
+                    WHERE source_id = %s
+                      AND source_record_type = %s
+                )
+                """,
+                (source_id, source_record_type),
+            )
+            cur.execute(
+                """
+                DELETE FROM official_identifier_observation
+                WHERE source_id = %s
+                  AND source_record_type = %s
+                """,
+                (source_id, source_record_type),
+            )
+        if incremental_stable_keys:
+            stable_keys = sorted(incremental_stable_keys)
+            cur.execute(
+                """
+                DELETE FROM entity_industry_classification
+                WHERE method = 'official'
+                  AND metadata->>'official_parser_name' = %s
+                  AND metadata->>'stable_key' = ANY(%s)
+                """,
+                (OFFICIAL_IDENTIFIER_PARSER_NAME, stable_keys),
+            )
+            cur.execute(
+                """
+                DELETE FROM entity_identifier
+                WHERE metadata->>'official_parser_name' = %s
+                  AND metadata->>'stable_key' = ANY(%s)
+                """,
+                (OFFICIAL_IDENTIFIER_PARSER_NAME, stable_keys),
+            )
+            cur.execute(
+                """
+                DELETE FROM entity_alias
+                WHERE metadata->>'official_parser_name' = %s
+                  AND metadata->>'stable_key' = ANY(%s)
+                """,
+                (OFFICIAL_IDENTIFIER_PARSER_NAME, stable_keys),
+            )
+            cur.execute(
+                """
+                DELETE FROM entity_match_candidate
+                WHERE observation_id IN (
+                    SELECT id
+                    FROM official_identifier_observation
+                    WHERE stable_key = ANY(%s)
+                )
+                """,
+                (stable_keys,),
+            )
+
+    observed = 0
+    auto_accepted = 0
+    needs_review = 0
+    observations_without_exact_entity_match = 0
+    identifiers_inserted = 0
+    aliases_inserted = 0
+    official_classifications = 0
+    skipped_person_matches = 0
+    source_counts: Counter[str] = Counter()
+    for record in records:
+            metadata_path = record.get("source_metadata_path")
+            source_document_id = None
+            if metadata_path:
+                if metadata_path not in source_doc_cache:
+                    source_doc_cache[metadata_path] = upsert_source_document(
+                        conn, Path(metadata_path)
+                    )
+                source_document_id = source_doc_cache[metadata_path]
+
+            observation_id = _insert_official_identifier_observation(
+                conn,
+                record,
+                source_document_id,
+            )
+            observed += 1
+            source_counts[record["source_record_type"]] += 1
+
+            if record.get("source_record_type") == "lobbyist_person":
+                skipped_person_matches += 1
+                continue
+
+            identifiers = record.get("identifiers") or []
+            identifier_entity_matches = _entity_ids_by_identifiers(conn, identifiers)
+            if len(identifier_entity_matches) > 1:
+                needs_review += len(identifier_entity_matches)
+                for candidate_entity_id, matched_identifiers in identifier_entity_matches.items():
+                    _insert_match_candidate(
+                        conn,
+                        entity_id=candidate_entity_id,
+                        observation_id=observation_id,
+                        match_method="exact_identifier_conflict",
+                        confidence="unresolved",
+                        status="needs_review",
+                        evidence_note="Official identifiers on this record point to multiple entities.",
+                        metadata={"matched_identifiers": matched_identifiers},
+                    )
+                continue
+
+            if len(identifier_entity_matches) == 1:
+                entity_id, matched_identifiers = next(iter(identifier_entity_matches.items()))
+                _insert_match_candidate(
+                    conn,
+                    entity_id=entity_id,
+                    observation_id=observation_id,
+                    match_method="exact_identifier",
+                    confidence="exact_identifier",
+                    status="auto_accepted",
+                    evidence_note="Official identifier already attached to this entity.",
+                    metadata={"matched_identifiers": matched_identifiers},
+                )
+                auto_accepted += 1
+                _update_entity_type_from_official(conn, entity_id, record.get("entity_type", ""))
+                for identifier in identifiers:
+                    if _insert_entity_identifier(
+                        conn,
+                        entity_id=entity_id,
+                        identifier=identifier,
+                        source_document_id=source_document_id,
+                        record=record,
+                    ):
+                        identifiers_inserted += 1
+                aliases_inserted += _insert_entity_aliases(
+                    conn,
+                    entity_id=entity_id,
+                    aliases=record.get("aliases") or [],
+                    source_document_id=source_document_id,
+                    record=record,
+                )
+                if record.get("public_sector") and record["public_sector"] != "unknown":
+                    _insert_official_classification(
+                        conn,
+                        entity_id=entity_id,
+                        industry_code_id=public_interest_code_ids.get(record["public_sector"]),
+                        source_document_id=source_document_id,
+                        record={**record, "confidence": "exact_identifier"},
+                    )
+                    official_classifications += 1
+                continue
+
+            candidate_entity_ids = _entity_ids_by_normalized_name(conn, record["normalized_name"])
+            if len(candidate_entity_ids) != 1:
+                if candidate_entity_ids:
+                    needs_review += len(candidate_entity_ids)
+                else:
+                    observations_without_exact_entity_match += 1
+                for candidate_entity_id in candidate_entity_ids:
+                    _insert_match_candidate(
+                        conn,
+                        entity_id=candidate_entity_id,
+                        observation_id=observation_id,
+                        match_method="exact_normalized_name",
+                        confidence="exact_name_context",
+                        status="needs_review",
+                        evidence_note="Exact name match requires review due missing/ambiguous match.",
+                        metadata={"candidate_count": len(candidate_entity_ids)},
+                    )
+                continue
+
+            entity_id = candidate_entity_ids[0]
+            needs_review += 1
+            _insert_match_candidate(
+                conn,
+                entity_id=entity_id,
+                observation_id=observation_id,
+                match_method="exact_normalized_name",
+                confidence="exact_name_context",
+                status="needs_review",
+                evidence_note="Exact name match only; manual review required before attaching identifiers.",
+                metadata={"candidate_count": len(candidate_entity_ids)},
+            )
+
+    conn.commit()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT count(*)
+            FROM official_identifier_observation
+            WHERE source_id = ANY(%s)
+            """,
+            (sorted(loaded_source_ids),),
+        )
+        unique_observations = int(cur.fetchone()[0])
+        cur.execute(
+            """
+            SELECT entity_match_candidate.status, count(*)
+            FROM entity_match_candidate
+            JOIN official_identifier_observation
+              ON official_identifier_observation.id = entity_match_candidate.observation_id
+            WHERE official_identifier_observation.source_id = ANY(%s)
+            GROUP BY entity_match_candidate.status
+            """,
+            (sorted(loaded_source_ids),),
+        )
+        match_candidate_status_counts = {row[0]: int(row[1]) for row in cur.fetchall()}
+    return {
+        "records_processed": observed,
+        "official_identifier_observations": unique_observations,
+        "auto_accepted_matches": match_candidate_status_counts.get("auto_accepted", 0),
+        "needs_review_matches": match_candidate_status_counts.get("needs_review", 0),
+        "match_candidate_status_counts": match_candidate_status_counts,
+        "match_candidate_attempts": {
+            "auto_accepted": auto_accepted,
+            "needs_review": needs_review,
+        },
+        "observations_without_exact_entity_match": observations_without_exact_entity_match,
+        "identifiers_inserted": identifiers_inserted,
+        "aliases_inserted": aliases_inserted,
+        "official_classifications": official_classifications,
+        "skipped_person_matches": skipped_person_matches,
+        "source_record_type_counts": dict(sorted(source_counts.items())),
+        "jsonl_paths": [str(path) for path in paths],
+    }
+
+
+def _source_metadata_path_from_boundary_geojson(geojson: dict[str, Any]) -> Path:
+    for feature in geojson.get("features", []):
+        path = feature.get("properties", {}).get("source_metadata_path")
+        if path:
+            return Path(path)
+    raise RuntimeError("AEC boundary GeoJSON is missing source_metadata_path.")
+
+
+def _house_electorates_without_boundary(conn, boundary_set: str) -> list[str]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT electorate.name
+            FROM office_term
+            JOIN electorate ON electorate.id = office_term.electorate_id
+            LEFT JOIN electorate_boundary boundary
+              ON boundary.electorate_id = electorate.id
+             AND boundary.boundary_set = %s
+            WHERE office_term.chamber = 'house'
+              AND office_term.term_end IS NULL
+              AND boundary.id IS NULL
+            ORDER BY electorate.name
+            """,
+            (boundary_set,),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
+def _boundary_names_without_current_house_office(conn, boundary_set: str) -> list[str]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT electorate.name
+            FROM electorate_boundary boundary
+            JOIN electorate ON electorate.id = boundary.electorate_id
+            LEFT JOIN office_term
+              ON office_term.electorate_id = electorate.id
+             AND office_term.chamber = 'house'
+             AND office_term.term_end IS NULL
+            WHERE boundary.boundary_set = %s
+              AND office_term.id IS NULL
+            ORDER BY electorate.name
+            """,
+            (boundary_set,),
+        )
+        return [row[0] for row in cur.fetchall()]
+
+
+def _delete_stale_boundary_only_electorates(conn, *, jurisdiction_id: int, boundary_set: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            DELETE FROM electorate
+            WHERE jurisdiction_id = %s
+              AND chamber = 'house'
+              AND metadata->>'boundary_source' = %s
+              AND NOT EXISTS (
+                  SELECT 1 FROM office_term WHERE office_term.electorate_id = electorate.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM electorate_boundary
+                  WHERE electorate_boundary.electorate_id = electorate.id
+              )
+            """,
+            (jurisdiction_id, boundary_set),
+        )
+        return cur.rowcount
+
+
+def load_electorate_boundaries(conn, geojson_path: Path | None = None) -> dict[str, Any]:
+    geojson_path = geojson_path or latest_aec_boundaries_geojson()
+    if geojson_path is None:
+        raise FileNotFoundError(
+            "No processed AEC boundary GeoJSON found. Run `au-politics-money "
+            "extract-aec-boundaries` first."
+        )
+    geojson = json.loads(geojson_path.read_text(encoding="utf-8"))
+    features = geojson.get("features", [])
+    if len(features) != 150:
+        raise RuntimeError(
+            f"Expected 150 current federal House boundary features; found {len(features)}."
+        )
+
+    source_metadata_path = _source_metadata_path_from_boundary_geojson(geojson)
+    source_document_id = upsert_source_document(conn, source_metadata_path)
+    jurisdiction_id = get_or_create_jurisdiction(conn, "Commonwealth", "federal", "Cth")
+    boundary_set = str(features[0]["properties"].get("boundary_set") or BOUNDARY_SET)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE source_document
+            SET parser_name = %s,
+                parser_version = %s,
+                parsed_at = now(),
+                metadata = metadata || %s
+            WHERE id = %s
+            """,
+            (
+                BOUNDARY_PARSER_NAME,
+                BOUNDARY_PARSER_VERSION,
+                as_jsonb({"processed_geojson_path": str(geojson_path.resolve())}),
+                source_document_id,
+            ),
+        )
+        cur.execute("DELETE FROM electorate_boundary WHERE boundary_set = %s", (boundary_set,))
+
+    inserted = 0
+    division_names: list[str] = []
+    for feature in features:
+        properties = feature["properties"]
+        division_name = str(properties["division_name"]).strip()
+        if not division_name:
+            raise RuntimeError(f"Boundary feature is missing division_name: {properties}")
+        electorate_id = get_or_create_boundary_electorate(
+            conn,
+            name=division_name,
+            jurisdiction_id=jurisdiction_id,
+            source_document_id=source_document_id,
+        )
+        geometry_json = json.dumps(feature["geometry"], separators=(",", ":"), sort_keys=True)
+        metadata = {
+            **properties,
+            "source_geojson_path": str(geojson_path.resolve()),
+        }
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO electorate_boundary (
+                    electorate_id, boundary_set, valid_from, valid_to,
+                    geom, source_document_id, metadata
+                )
+                VALUES (
+                    %s, %s, NULL, NULL,
+                    ST_Multi(
+                        ST_CollectionExtract(
+                            ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)),
+                            3
+                        )
+                    ),
+                    %s, %s
+                )
+                """,
+                (
+                    electorate_id,
+                    boundary_set,
+                    geometry_json,
+                    source_document_id,
+                    as_jsonb(metadata),
+                ),
+            )
+            inserted += cur.rowcount
+        division_names.append(division_name)
+
+    missing_boundaries = _house_electorates_without_boundary(conn, boundary_set)
+    boundaries_without_current_office = _boundary_names_without_current_house_office(
+        conn,
+        boundary_set,
+    )
+    stale_electorates_deleted = _delete_stale_boundary_only_electorates(
+        conn,
+        jurisdiction_id=jurisdiction_id,
+        boundary_set=boundary_set,
+    )
+    conn.commit()
+    return {
+        "boundary_set": boundary_set,
+        "boundaries_inserted": inserted,
+        "division_count": len(division_names),
+        "geojson_path": str(geojson_path.resolve()),
+        "house_electorates_without_boundary": missing_boundaries,
+        "boundaries_without_current_house_office": boundaries_without_current_office,
+        "stale_boundary_only_electorates_deleted": stale_electorates_deleted,
+        "source_document_id": source_document_id,
+    }
+
+
+def _vote_person_lookup(conn, *, chamber: str) -> list[dict[str, Any]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                person.id,
+                person.display_name,
+                person.canonical_name,
+                person.metadata,
+                office_term.party_id,
+                electorate.name AS electorate_name,
+                electorate.state_or_territory
+            FROM person
+            LEFT JOIN office_term
+              ON office_term.person_id = person.id
+             AND office_term.chamber = %s
+             AND office_term.term_end IS NULL
+            LEFT JOIN electorate ON electorate.id = office_term.electorate_id
+            ORDER BY person.id
+            """,
+            (chamber,),
+        )
+        return [
+            {
+                "person_id": int(row[0]),
+                "display_name": row[1],
+                "canonical_name": row[2],
+                "metadata": row[3] or {},
+                "party_id": int(row[4]) if row[4] is not None else None,
+                "electorate_name": row[5] or "",
+                "state_or_territory": row[6] or "",
+            }
+            for row in cur.fetchall()
+        ]
+
+
+def _match_tvfy_vote_person(
+    conn,
+    *,
+    vote: dict[str, Any],
+    chamber: str,
+    vote_person_lookup_cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> tuple[int | None, int | None]:
+    normalized_name = normalize_name(vote.get("person_name", ""))
+    normalized_electorate = normalize_electorate_name(vote.get("electorate", ""))
+    state = state_code(vote.get("state", ""))
+    matches = []
+    if vote_person_lookup_cache is None:
+        candidates = _vote_person_lookup(conn, chamber=chamber)
+    else:
+        if chamber not in vote_person_lookup_cache:
+            vote_person_lookup_cache[chamber] = _vote_person_lookup(conn, chamber=chamber)
+        candidates = vote_person_lookup_cache[chamber]
+
+    for candidate in candidates:
+        if normalized_name not in {
+            normalize_name(candidate["display_name"]),
+            normalize_name(candidate["canonical_name"]),
+        }:
+            continue
+        matches.append(candidate)
+
+    if normalized_electorate:
+        electorate_matches = [
+            candidate
+            for candidate in matches
+            if normalize_electorate_name(candidate["electorate_name"]) == normalized_electorate
+        ]
+        if len(electorate_matches) == 1:
+            candidate = electorate_matches[0]
+            return candidate["person_id"], candidate["party_id"]
+
+    if state:
+        state_matches = [
+            candidate
+            for candidate in matches
+            if state_code(candidate["state_or_territory"]) == state
+        ]
+        if len(state_matches) == 1:
+            candidate = state_matches[0]
+            return candidate["person_id"], candidate["party_id"]
+
+    if len(matches) == 1:
+        candidate = matches[0]
+        return candidate["person_id"], candidate["party_id"]
+
+    tvfy_person_id = vote.get("tvfy_person_id")
+    if tvfy_person_id is not None:
+        external_key = f"they_vote_for_you:person:{tvfy_person_id}"
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM person WHERE external_key = %s", (external_key,))
+            row = cur.fetchone()
+            if row is not None:
+                return int(row[0]), None
+            cur.execute(
+                """
+                SELECT id, metadata
+                FROM person
+                WHERE metadata->>'they_vote_for_you_person_id' = %s
+                """,
+                (str(tvfy_person_id),),
+            )
+            row = cur.fetchone()
+            if row is not None:
+                return int(row[0]), None
+
+    return None, None
+
+
+def _get_or_create_tvfy_vote_person(
+    conn,
+    *,
+    vote: dict[str, Any],
+    chamber: str,
+    jurisdiction_id: int,
+    source_document_id: int,
+    vote_person_lookup_cache: dict[str, list[dict[str, Any]]] | None = None,
+) -> tuple[int, int | None, bool]:
+    matched_person_id, matched_party_id = _match_tvfy_vote_person(
+        conn,
+        vote=vote,
+        chamber=chamber,
+        vote_person_lookup_cache=vote_person_lookup_cache,
+    )
+    party_name = vote.get("party", "")
+    party_id = get_or_create_party(conn, party_name, jurisdiction_id) if party_name else matched_party_id
+    if matched_person_id is not None:
+        if vote.get("tvfy_person_id") is not None:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE person
+                    SET metadata = metadata || %s
+                    WHERE id = %s
+                    """,
+                    (
+                        as_jsonb({"they_vote_for_you_person_id": str(vote["tvfy_person_id"])}),
+                        matched_person_id,
+                    ),
+                )
+        return matched_person_id, party_id, False
+
+    person_name = vote.get("person_name") or f"They Vote For You Person {vote.get('tvfy_person_id')}"
+    tvfy_person_id = vote.get("tvfy_person_id")
+    external_key = (
+        f"they_vote_for_you:person:{tvfy_person_id}"
+        if tvfy_person_id is not None
+        else f"they_vote_for_you:person:{chamber}:{slugify(person_name, 'unknown')}"
+    )
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO person (
+                external_key, display_name, canonical_name, source_document_id, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (external_key) DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                canonical_name = EXCLUDED.canonical_name,
+                source_document_id = EXCLUDED.source_document_id,
+                metadata = person.metadata || EXCLUDED.metadata
+            RETURNING id
+            """,
+            (
+                external_key,
+                person_name,
+                person_name,
+                source_document_id,
+                as_jsonb(
+                    {
+                        "source": "they_vote_for_you",
+                        "source_evidence_class": "third_party_civic",
+                        "they_vote_for_you_person_id": str(tvfy_person_id)
+                        if tvfy_person_id is not None
+                        else None,
+                        "fallback_created_for_vote_ingestion": True,
+                    }
+                ),
+            ),
+        )
+        person_id = int(cur.fetchone()[0])
+
+    electorate_name = vote.get("electorate") or (
+        f"Senate - {state_code(vote.get('state', ''))}"
+        if chamber == "senate" and vote.get("state")
+        else ""
+    )
+    electorate_id = None
+    if electorate_name:
+        electorate_id = get_or_create_electorate(
+            conn,
+            electorate_name,
+            chamber,
+            state_code(vote.get("state", "")),
+            jurisdiction_id,
+        )
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO office_term (
+                external_key, person_id, chamber, electorate_id, party_id,
+                source_document_id, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (external_key) DO UPDATE SET
+                party_id = EXCLUDED.party_id,
+                electorate_id = EXCLUDED.electorate_id,
+                metadata = office_term.metadata || EXCLUDED.metadata
+            """,
+            (
+                f"they_vote_for_you:office:{external_key}:{chamber}",
+                person_id,
+                chamber,
+                electorate_id,
+                party_id,
+                source_document_id,
+                as_jsonb(
+                    {
+                        "source": "they_vote_for_you",
+                        "source_evidence_class": "third_party_civic",
+                    }
+                ),
+            ),
+        )
+    return person_id, party_id, True
+
+
+def _policy_slug(policy: dict[str, Any]) -> str:
+    policy_id = policy.get("tvfy_policy_id")
+    if policy_id is not None:
+        return f"they_vote_for_you_policy_{policy_id}"
+    return f"they_vote_for_you_policy_{slugify(policy.get('name', ''), 'unknown')}"
+
+
+def _upsert_tvfy_policy_topic(conn, policy: dict[str, Any]) -> int | None:
+    name = str(policy.get("name") or "").strip()
+    if not name:
+        return None
+    slug = _policy_slug(policy)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO policy_topic (slug, label, description, metadata)
+            VALUES (%s, %s, %s, %s)
+            ON CONFLICT (slug) DO UPDATE SET
+                label = EXCLUDED.label,
+                description = EXCLUDED.description,
+                metadata = policy_topic.metadata || EXCLUDED.metadata
+            RETURNING id
+            """,
+            (
+                slug,
+                name,
+                policy.get("description") or "",
+                as_jsonb(
+                    {
+                        "source": "they_vote_for_you",
+                        "source_evidence_class": "third_party_civic",
+                        "they_vote_for_you_policy_id": policy.get("tvfy_policy_id"),
+                        "provisional": policy.get("provisional"),
+                        "last_edited_at": policy.get("last_edited_at"),
+                    }
+                ),
+            ),
+        )
+        return int(cur.fetchone()[0])
+
+
+def load_they_vote_for_you_divisions(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    jsonl_path = jsonl_path or latest_they_vote_for_you_divisions_jsonl()
+    if jsonl_path is None:
+        raise FileNotFoundError(
+            "No processed They Vote For You divisions JSONL found. Run "
+            "`au-politics-money fetch-they-vote-for-you-divisions` and "
+            "`au-politics-money extract-they-vote-for-you-divisions` first."
+        )
+
+    jurisdiction_id = get_or_create_jurisdiction(conn, "Commonwealth", "federal", "Cth")
+    divisions_seen = 0
+    divisions_inserted_or_updated = 0
+    votes_seen = 0
+    votes_inserted_or_updated = 0
+    fallback_people_created = 0
+    policy_topics_seen = 0
+    division_topics_inserted_or_updated = 0
+    stale_tvfy_vote_rows_deleted = 0
+    vote_person_lookup_cache: dict[str, list[dict[str, Any]]] = {}
+
+    with jsonl_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            divisions_seen += 1
+            source_document_id = upsert_source_document(conn, Path(record["source_metadata_path"]))
+            division_date = parse_date(str(record["division_date"]))
+            if division_date is None:
+                raise RuntimeError(f"Division is missing a parseable date: {record}")
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO vote_division (
+                        external_id, chamber, division_date, division_number, title,
+                        bill_name, motion_text, aye_count, no_count, possible_turnout,
+                        source_document_id, metadata
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (chamber, division_date, division_number) DO UPDATE SET
+                        external_id = CASE
+                            WHEN vote_division.metadata ->> 'source' = 'aph_official_decision_record'
+                            THEN vote_division.external_id
+                            ELSE EXCLUDED.external_id
+                        END,
+                        title = CASE
+                            WHEN vote_division.metadata ->> 'source' = 'aph_official_decision_record'
+                            THEN COALESCE(vote_division.title, EXCLUDED.title)
+                            ELSE EXCLUDED.title
+                        END,
+                        bill_name = CASE
+                            WHEN vote_division.metadata ->> 'source' = 'aph_official_decision_record'
+                            THEN COALESCE(vote_division.bill_name, EXCLUDED.bill_name)
+                            ELSE EXCLUDED.bill_name
+                        END,
+                        motion_text = CASE
+                            WHEN vote_division.metadata ->> 'source' = 'aph_official_decision_record'
+                            THEN COALESCE(vote_division.motion_text, EXCLUDED.motion_text)
+                            ELSE EXCLUDED.motion_text
+                        END,
+                        aye_count = CASE
+                            WHEN vote_division.metadata ->> 'source' = 'aph_official_decision_record'
+                            THEN COALESCE(vote_division.aye_count, EXCLUDED.aye_count)
+                            ELSE EXCLUDED.aye_count
+                        END,
+                        no_count = CASE
+                            WHEN vote_division.metadata ->> 'source' = 'aph_official_decision_record'
+                            THEN COALESCE(vote_division.no_count, EXCLUDED.no_count)
+                            ELSE EXCLUDED.no_count
+                        END,
+                        possible_turnout = CASE
+                            WHEN vote_division.metadata ->> 'source' = 'aph_official_decision_record'
+                            THEN COALESCE(vote_division.possible_turnout, EXCLUDED.possible_turnout)
+                            ELSE EXCLUDED.possible_turnout
+                        END,
+                        source_document_id = CASE
+                            WHEN vote_division.metadata ->> 'source' = 'aph_official_decision_record'
+                            THEN vote_division.source_document_id
+                            ELSE EXCLUDED.source_document_id
+                        END,
+                        metadata = CASE
+                            WHEN vote_division.metadata ->> 'source' = 'aph_official_decision_record'
+                            THEN vote_division.metadata || jsonb_build_object(
+                                'they_vote_for_you',
+                                COALESCE(vote_division.metadata -> 'they_vote_for_you', '{}'::jsonb)
+                                || EXCLUDED.metadata
+                            )
+                            ELSE vote_division.metadata || EXCLUDED.metadata
+                        END
+                    RETURNING id
+                    """,
+                    (
+                        record["external_id"],
+                        record["chamber"],
+                        division_date,
+                        record["division_number"],
+                        record["title"],
+                        record.get("bill_name") or None,
+                        record.get("motion_text") or None,
+                        record.get("aye_count"),
+                        record.get("no_count"),
+                        record.get("possible_turnout"),
+                        source_document_id,
+                        as_jsonb(
+                            {
+                                **(record.get("metadata") or {}),
+                                "source": "they_vote_for_you",
+                                "source_evidence_class": "third_party_civic",
+                                "they_vote_for_you_division_id": record.get("tvfy_division_id"),
+                                "source_url": record.get("source_url"),
+                                "clock_time": record.get("clock_time"),
+                                "rebellions_count": record.get("rebellions_count"),
+                                "edited": record.get("edited"),
+                                "bills": record.get("bills") or [],
+                                "raw_keys": record.get("raw_keys") or [],
+                            }
+                        ),
+                    ),
+                )
+                division_id = int(cur.fetchone()[0])
+                divisions_inserted_or_updated += 1
+                cur.execute(
+                    """
+                    DELETE FROM person_vote
+                    WHERE division_id = %s
+                      AND metadata->>'source' = 'they_vote_for_you'
+                    """,
+                    (division_id,),
+                )
+                stale_tvfy_vote_rows_deleted += cur.rowcount
+
+            for policy in record.get("policies") or []:
+                topic_id = _upsert_tvfy_policy_topic(conn, policy)
+                if topic_id is None:
+                    continue
+                policy_topics_seen += 1
+                topic_confidence = Decimal("0.550") if policy.get("provisional") else Decimal("0.700")
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO division_topic (
+                            division_id, topic_id, method, confidence, evidence_note
+                        )
+                        VALUES (%s, %s, 'third_party_civic', %s, %s)
+                        ON CONFLICT (division_id, topic_id) DO UPDATE SET
+                            method = EXCLUDED.method,
+                            confidence = EXCLUDED.confidence,
+                            evidence_note = EXCLUDED.evidence_note
+                        """,
+                        (
+                            division_id,
+                            topic_id,
+                            topic_confidence,
+                            (
+                                "Policy linkage imported from They Vote For You; "
+                                f"policy vote cue: {policy.get('vote') or 'not supplied'}."
+                            ),
+                        ),
+                    )
+                    division_topics_inserted_or_updated += cur.rowcount
+
+            for vote in record.get("votes") or []:
+                votes_seen += 1
+                person_id, party_id, fallback_created = _get_or_create_tvfy_vote_person(
+                    conn,
+                    vote=vote,
+                    chamber=record["chamber"],
+                    jurisdiction_id=jurisdiction_id,
+                    source_document_id=source_document_id,
+                    vote_person_lookup_cache=vote_person_lookup_cache,
+                )
+                if fallback_created:
+                    fallback_people_created += 1
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO person_vote (
+                            division_id, person_id, vote, party_id,
+                            rebelled_against_party, source_document_id, metadata
+                        )
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (division_id, person_id) DO UPDATE SET
+                            vote = CASE
+                                WHEN person_vote.metadata ->> 'source' = 'aph_official_decision_record'
+                                THEN person_vote.vote
+                                ELSE EXCLUDED.vote
+                            END,
+                            party_id = CASE
+                                WHEN person_vote.metadata ->> 'source' = 'aph_official_decision_record'
+                                THEN COALESCE(person_vote.party_id, EXCLUDED.party_id)
+                                ELSE EXCLUDED.party_id
+                            END,
+                            rebelled_against_party = COALESCE(
+                                EXCLUDED.rebelled_against_party,
+                                person_vote.rebelled_against_party
+                            ),
+                            source_document_id = CASE
+                                WHEN person_vote.metadata ->> 'source' = 'aph_official_decision_record'
+                                THEN person_vote.source_document_id
+                                ELSE EXCLUDED.source_document_id
+                            END,
+                            metadata = CASE
+                                WHEN person_vote.metadata ->> 'source' = 'aph_official_decision_record'
+                                THEN person_vote.metadata || jsonb_build_object(
+                                    'they_vote_for_you',
+                                    COALESCE(person_vote.metadata -> 'they_vote_for_you', '{}'::jsonb)
+                                    || EXCLUDED.metadata
+                                )
+                                ELSE person_vote.metadata || EXCLUDED.metadata
+                            END
+                        """,
+                        (
+                            division_id,
+                            person_id,
+                            vote["vote"],
+                            party_id,
+                            vote.get("rebelled_against_party"),
+                            source_document_id,
+                            as_jsonb(
+                                {
+                                    "source": "they_vote_for_you",
+                                    "source_evidence_class": "third_party_civic",
+                                    "tvfy_person_id": vote.get("tvfy_person_id"),
+                                    "person_name": vote.get("person_name"),
+                                    "electorate": vote.get("electorate"),
+                                    "state": vote.get("state"),
+                                    "party": vote.get("party"),
+                                    "raw_vote": vote.get("raw_vote"),
+                                    "source_index": vote.get("source_index"),
+                                }
+                            ),
+                        ),
+                    )
+                    votes_inserted_or_updated += cur.rowcount
+
+    conn.commit()
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            WITH stale_people AS (
+                SELECT person.id
+                FROM person
+                WHERE person.metadata->>'fallback_created_for_vote_ingestion' = 'true'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM person_vote
+                      WHERE person_vote.person_id = person.id
+                  )
+            )
+            DELETE FROM office_term
+            USING stale_people
+            WHERE office_term.person_id = stale_people.id
+              AND office_term.metadata->>'source' = 'they_vote_for_you'
+            """
+        )
+        stale_fallback_office_terms_deleted = cur.rowcount
+        cur.execute(
+            """
+            DELETE FROM person
+            WHERE person.metadata->>'fallback_created_for_vote_ingestion' = 'true'
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM person_vote
+                  WHERE person_vote.person_id = person.id
+              )
+              AND NOT EXISTS (
+                  SELECT 1
+                  FROM office_term
+                  WHERE office_term.person_id = person.id
+              )
+            """
+        )
+        stale_fallback_people_deleted = cur.rowcount
+    conn.commit()
+    return {
+        "jsonl_path": str(jsonl_path.resolve()),
+        "divisions_seen": divisions_seen,
+        "divisions_inserted_or_updated": divisions_inserted_or_updated,
+        "votes_seen": votes_seen,
+        "votes_inserted_or_updated": votes_inserted_or_updated,
+        "fallback_people_created": fallback_people_created,
+        "stale_tvfy_vote_rows_deleted": stale_tvfy_vote_rows_deleted,
+        "stale_fallback_office_terms_deleted": stale_fallback_office_terms_deleted,
+        "stale_fallback_people_deleted": stale_fallback_people_deleted,
+        "policy_topics_seen": policy_topics_seen,
+        "division_topics_inserted_or_updated": division_topics_inserted_or_updated,
+    }
+
+
+def _current_chamber_vote_person_index(conn, chamber: str) -> dict[str, list[tuple[int, int | None]]]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                person.id, person.canonical_name, person.first_name, person.last_name,
+                party.id
+            FROM person
+            JOIN office_term ON office_term.person_id = person.id
+            LEFT JOIN party ON party.id = office_term.party_id
+            WHERE office_term.chamber = %s
+              AND office_term.term_end IS NULL
+            """,
+            (chamber,),
+        )
+        rows = cur.fetchall()
+
+    surname_counts: Counter[str] = Counter(normalize_name(str(row[3] or "")) for row in rows)
+    index: dict[str, list[tuple[int, int | None]]] = defaultdict(list)
+    for person_id, canonical_name, first_name, last_name, party_id in rows:
+        canonical = str(canonical_name or "")
+        first = str(first_name or "")
+        last = str(last_name or "")
+        keys = {normalize_name(canonical), normalize_name(f"{last}, {first}")}
+        if surname_counts[normalize_name(last)] == 1:
+            keys.add(normalize_name(last))
+        for key in keys:
+            if key:
+                index[key].append((int(person_id), int(party_id) if party_id is not None else None))
+    return index
+
+
+def _match_vote_person(
+    vote_index: dict[str, list[tuple[int, int | None]]],
+    vote: dict[str, Any],
+) -> tuple[int, int | None] | None:
+    keys = {
+        normalize_name(str(vote.get("name_key") or "")),
+        normalize_name(str(vote.get("raw_name") or "")),
+        normalize_name(str(vote.get("matched_roster_canonical_name") or "")),
+    }
+    matches: list[tuple[int, int | None]] = []
+    for key in keys:
+        if key and key in vote_index:
+            matches.extend(vote_index[key])
+    unique_matches = sorted(set(matches))
+    return unique_matches[0] if len(unique_matches) == 1 else None
+
+
+def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    jsonl_path = jsonl_path or latest_official_aph_divisions_jsonl()
+    if jsonl_path is None:
+        return {
+            "divisions_seen": 0,
+            "divisions_inserted_or_updated": 0,
+            "votes_seen": 0,
+            "votes_inserted_or_updated": 0,
+            "skipped_reason": "no_official_aph_divisions_artifact",
+        }
+
+    vote_indexes: dict[str, dict[str, list[tuple[int, int | None]]]] = {}
+    divisions_seen = 0
+    divisions_inserted_or_updated = 0
+    votes_seen = 0
+    votes_inserted_or_updated = 0
+    unmatched_votes = 0
+    chamber_counts: Counter[str] = Counter()
+
+    with jsonl_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            divisions_seen += 1
+            chamber = record["chamber"]
+            chamber_counts[chamber] += 1
+            if chamber not in vote_indexes:
+                vote_indexes[chamber] = _current_chamber_vote_person_index(conn, chamber)
+            source_document_id = upsert_source_document(conn, Path(record["source_metadata_path"]))
+            division_date = parse_date(str(record["division_date"]))
+            if division_date is None:
+                raise RuntimeError(f"Official APH division is missing a parseable date: {record}")
+
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO vote_division (
+                        external_id, chamber, division_date, division_number, title,
+                        bill_name, motion_text, aye_count, no_count, possible_turnout,
+                        source_document_id, metadata
+                    )
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (chamber, division_date, division_number) DO UPDATE SET
+                        external_id = EXCLUDED.external_id,
+                        title = EXCLUDED.title,
+                        bill_name = EXCLUDED.bill_name,
+                        motion_text = EXCLUDED.motion_text,
+                        aye_count = EXCLUDED.aye_count,
+                        no_count = EXCLUDED.no_count,
+                        possible_turnout = EXCLUDED.possible_turnout,
+                        source_document_id = EXCLUDED.source_document_id,
+                        metadata = vote_division.metadata || EXCLUDED.metadata
+                    RETURNING id
+                    """,
+                    (
+                        record["external_id"],
+                        chamber,
+                        division_date,
+                        record["division_number"],
+                        record["title"],
+                        record.get("bill_name") or None,
+                        record.get("motion_text") or None,
+                        record.get("aye_count"),
+                        record.get("no_count"),
+                        record.get("possible_turnout"),
+                        source_document_id,
+                        as_jsonb(
+                            {
+                                **(record.get("metadata") or {}),
+                                "source": "aph_official_decision_record",
+                                "source_evidence_class": "official_record_parsed",
+                                "official_aph_external_id": record["external_id"],
+                                "official_decision_record_external_key": record.get(
+                                    "official_decision_record_external_key"
+                                ),
+                                "source_url": record.get("source_url"),
+                                "representation_kind": record.get("representation_kind"),
+                            }
+                        ),
+                    ),
+                )
+                division_id = int(cur.fetchone()[0])
+                divisions_inserted_or_updated += 1
+
+            for vote in record.get("votes") or []:
+                votes_seen += 1
+                match = _match_vote_person(vote_indexes[chamber], vote)
+                if match is None:
+                    unmatched_votes += 1
+                    continue
+                person_id, party_id = match
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO person_vote (
+                            division_id, person_id, vote, party_id,
+                            rebelled_against_party, source_document_id, metadata
+                        )
+                        VALUES (%s, %s, %s, %s, NULL, %s, %s)
+                        ON CONFLICT (division_id, person_id) DO UPDATE SET
+                            vote = EXCLUDED.vote,
+                            party_id = EXCLUDED.party_id,
+                            source_document_id = EXCLUDED.source_document_id,
+                            metadata = person_vote.metadata || EXCLUDED.metadata
+                        """,
+                        (
+                            division_id,
+                            person_id,
+                            vote["vote"],
+                            party_id,
+                            source_document_id,
+                            as_jsonb(
+                                {
+                                    "source": "aph_official_decision_record",
+                                    "source_evidence_class": "official_record_parsed",
+                                    "raw_vote_name": vote.get("raw_name"),
+                                    "name_key": vote.get("name_key"),
+                                    "is_teller": vote.get("is_teller"),
+                                    "source_line": vote.get("source_line"),
+                                }
+                            ),
+                        ),
+                    )
+                    votes_inserted_or_updated += cur.rowcount
+
+    conn.commit()
+    return {
+        "jsonl_path": str(jsonl_path.resolve()),
+        "divisions_seen": divisions_seen,
+        "divisions_inserted_or_updated": divisions_inserted_or_updated,
+        "votes_seen": votes_seen,
+        "votes_inserted_or_updated": votes_inserted_or_updated,
+        "unmatched_votes": unmatched_votes,
+        "chamber_counts": dict(sorted(chamber_counts.items())),
+    }
+
+
+def load_official_parliamentary_decision_records(
+    conn,
+    jsonl_paths: list[Path] | None = None,
+) -> dict[str, Any]:
+    paths = jsonl_paths or latest_aph_decision_record_index_jsonl_paths()
+    if not paths:
+        return {
+            "records_seen": 0,
+            "records_inserted_or_updated": 0,
+            "skipped_reason": "no_aph_decision_record_index_artifacts",
+        }
+
+    records_seen = 0
+    records_inserted_or_updated = 0
+    source_counts: Counter[str] = Counter()
+    kind_counts: Counter[str] = Counter()
+    source_doc_cache: dict[str, int | None] = {}
+
+    for path in paths:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                record = json.loads(line)
+                records_seen += 1
+                source_counts[record["source_id"]] += 1
+                kind_counts[record["record_kind"]] += 1
+
+                source_metadata_path = record.get("source_metadata_path") or ""
+                if source_metadata_path not in source_doc_cache:
+                    metadata_path = Path(source_metadata_path) if source_metadata_path else None
+                    source_doc_cache[source_metadata_path] = (
+                        upsert_source_document(conn, metadata_path)
+                        if metadata_path is not None and metadata_path.exists()
+                        else None
+                    )
+                source_document_id = source_doc_cache[source_metadata_path]
+
+                with conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO official_parliamentary_decision_record (
+                            external_key, source_document_id, source_id, chamber,
+                            record_type, record_kind, parliament_label, year_label,
+                            month_label, day_label, record_date, title, link_text, url,
+                            evidence_status, parser_name, parser_version, metadata
+                        )
+                        VALUES (
+                            %(external_key)s, %(source_document_id)s, %(source_id)s,
+                            %(chamber)s, %(record_type)s, %(record_kind)s,
+                            %(parliament_label)s, %(year_label)s, %(month_label)s,
+                            %(day_label)s, %(record_date)s, %(title)s, %(link_text)s,
+                            %(url)s, %(evidence_status)s, %(parser_name)s,
+                            %(parser_version)s, %(metadata)s
+                        )
+                        ON CONFLICT (external_key) DO UPDATE SET
+                            source_document_id = COALESCE(
+                                EXCLUDED.source_document_id,
+                                official_parliamentary_decision_record.source_document_id
+                            ),
+                            source_id = EXCLUDED.source_id,
+                            chamber = EXCLUDED.chamber,
+                            record_type = EXCLUDED.record_type,
+                            record_kind = EXCLUDED.record_kind,
+                            parliament_label = EXCLUDED.parliament_label,
+                            year_label = EXCLUDED.year_label,
+                            month_label = EXCLUDED.month_label,
+                            day_label = EXCLUDED.day_label,
+                            record_date = EXCLUDED.record_date,
+                            title = EXCLUDED.title,
+                            link_text = EXCLUDED.link_text,
+                            url = EXCLUDED.url,
+                            evidence_status = EXCLUDED.evidence_status,
+                            parser_name = EXCLUDED.parser_name,
+                            parser_version = EXCLUDED.parser_version,
+                            metadata = official_parliamentary_decision_record.metadata
+                                || EXCLUDED.metadata
+                        """,
+                        {
+                            "external_key": record["external_key"],
+                            "source_document_id": source_document_id,
+                            "source_id": record["source_id"],
+                            "chamber": record["chamber"],
+                            "record_type": record["record_type"],
+                            "record_kind": record["record_kind"],
+                            "parliament_label": record.get("parliament_label") or None,
+                            "year_label": record.get("year") or None,
+                            "month_label": record.get("month") or None,
+                            "day_label": record.get("day_label") or None,
+                            "record_date": parse_date(str(record.get("record_date") or "")),
+                            "title": record["title"],
+                            "link_text": record.get("link_text") or None,
+                            "url": record["url"],
+                            "evidence_status": record["evidence_status"],
+                            "parser_name": record["parser_name"],
+                            "parser_version": record["parser_version"],
+                            "metadata": as_jsonb(
+                                {
+                                    "schema_version": record.get("schema_version"),
+                                    "source_name": record.get("source_name"),
+                                    "source_metadata_path": source_metadata_path,
+                                    "decision_record_index_artifact_path": str(path),
+                                    "source_record_metadata": record.get("metadata") or {},
+                                }
+                            ),
+                        },
+                    )
+                    records_inserted_or_updated += cur.rowcount
+
+    conn.commit()
+    return {
+        "jsonl_paths": [str(path.resolve()) for path in paths],
+        "records_seen": records_seen,
+        "records_inserted_or_updated": records_inserted_or_updated,
+        "source_counts": dict(sorted(source_counts.items())),
+        "record_kind_counts": dict(sorted(kind_counts.items())),
+    }
+
+
+def load_official_parliamentary_decision_record_documents(
+    conn,
+    summary_path: Path | None = None,
+) -> dict[str, Any]:
+    path = summary_path or latest_aph_decision_record_documents_summary()
+    if path is None:
+        return {
+            "documents_seen": 0,
+            "documents_linked": 0,
+            "skipped_reason": "no_aph_decision_record_document_fetch_summary",
+        }
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    documents_seen = 0
+    documents_linked = 0
+    skipped_not_fetched = 0
+    skipped_missing_metadata = 0
+    skipped_missing_decision_record = 0
+    representation_counts: Counter[str] = Counter()
+
+    for document in payload.get("documents") or []:
+        if document.get("status") not in {"fetched", "skipped_existing"}:
+            skipped_not_fetched += 1
+            continue
+        documents_seen += 1
+        metadata_path_raw = document.get("metadata_path") or ""
+        if not metadata_path_raw or not Path(metadata_path_raw).exists():
+            skipped_missing_metadata += 1
+            continue
+
+        metadata_path = Path(metadata_path_raw)
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        decision_metadata = (
+            document.get("official_decision_record")
+            or metadata.get("official_decision_record")
+            or {}
+        )
+        representation = (
+            document.get("official_decision_record_representation")
+            or metadata.get("official_decision_record_representation")
+            or {}
+        )
+        decision_external_key = decision_metadata.get("external_key") or document.get(
+            "decision_record_external_key"
+        )
+        representation_url = representation.get("url") or document.get("representation_url")
+        representation_kind = representation.get("record_kind") or document.get("representation_kind")
+        if not (decision_external_key and representation_url and representation_kind):
+            skipped_missing_metadata += 1
+            continue
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT id
+                FROM official_parliamentary_decision_record
+                WHERE external_key = %s
+                """,
+                (decision_external_key,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                skipped_missing_decision_record += 1
+                continue
+            decision_record_id = int(row[0])
+            source_document_id = upsert_source_document(conn, metadata_path)
+            cur.execute(
+                """
+                INSERT INTO official_parliamentary_decision_record_document (
+                    decision_record_id, source_document_id, representation_url,
+                    representation_kind, fetched_at, sha256, metadata
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (
+                    decision_record_id, representation_url, source_document_id
+                ) DO UPDATE SET
+                    representation_kind = EXCLUDED.representation_kind,
+                    fetched_at = EXCLUDED.fetched_at,
+                    sha256 = EXCLUDED.sha256,
+                    metadata = official_parliamentary_decision_record_document.metadata
+                        || EXCLUDED.metadata
+                """,
+                (
+                    decision_record_id,
+                    source_document_id,
+                    representation_url,
+                    representation_kind,
+                    parse_datetime(metadata.get("fetched_at", "")),
+                    metadata.get("sha256") or None,
+                    as_jsonb(
+                        {
+                            "fetch_summary_path": str(path),
+                            "document_source_id": document.get("source_id"),
+                            "fetch_status": document.get("status"),
+                            "decision_record": decision_metadata,
+                            "representation": representation,
+                            "validation": document.get("validation") or {},
+                        }
+                    ),
+                ),
+            )
+            documents_linked += cur.rowcount
+            representation_counts[representation_kind] += 1
+
+    conn.commit()
+    return {
+        "summary_path": str(path.resolve()),
+        "documents_seen": documents_seen,
+        "documents_linked": documents_linked,
+        "skipped_not_fetched": skipped_not_fetched,
+        "skipped_missing_metadata": skipped_missing_metadata,
+        "skipped_missing_decision_record": skipped_missing_decision_record,
+        "representation_counts": dict(sorted(representation_counts.items())),
+    }
+
+
 def load_processed_artifacts(
     *,
     database_url: str | None = None,
@@ -878,7 +3295,15 @@ def load_processed_artifacts(
     include_money_flows: bool = True,
     include_house_interests: bool = True,
     include_senate_interests: bool = True,
+    include_electorate_boundaries: bool = True,
+    include_influence_events: bool = True,
     include_entity_classifications: bool = True,
+    include_official_identifiers: bool = True,
+    include_official_decision_records: bool = True,
+    include_official_decision_record_documents: bool = True,
+    include_official_aph_divisions: bool = True,
+    include_vote_divisions: bool = False,
+    reapply_reviews: bool = True,
 ) -> dict[str, Any]:
     with connect(database_url) as conn:
         if apply_schema_first:
@@ -893,6 +3318,35 @@ def load_processed_artifacts(
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:
             summary["senate_interests"] = load_senate_interest_records(conn)
+        if include_electorate_boundaries:
+            summary["electorate_boundaries"] = load_electorate_boundaries(conn)
+        if include_influence_events:
+            summary["influence_events"] = load_influence_events(conn)
         if include_entity_classifications:
             summary["entity_classifications"] = load_entity_classifications(conn)
+        if include_official_identifiers:
+            summary["official_identifiers"] = load_official_identifiers(conn)
+        if include_official_decision_records:
+            summary["official_decision_records"] = load_official_parliamentary_decision_records(
+                conn
+            )
+        if include_official_decision_record_documents:
+            summary["official_decision_record_documents"] = (
+                load_official_parliamentary_decision_record_documents(conn)
+            )
+        if include_official_aph_divisions:
+            summary["official_aph_divisions"] = load_official_aph_divisions(conn)
+        if include_vote_divisions:
+            summary["vote_divisions"] = load_they_vote_for_you_divisions(conn)
+        if reapply_reviews:
+            from au_politics_money.db.review import reapply_review_decisions
+
+            exclude_review_subject_types = (
+                set() if include_vote_divisions else {"sector_policy_topic_link"}
+            )
+            summary["review_decisions_reapplied"] = reapply_review_decisions(
+                conn,
+                apply=True,
+                exclude_subject_types=exclude_review_subject_types,
+            )
         return summary

@@ -19,6 +19,14 @@ def latest_body_path(source_id: str, raw_dir: Path = RAW_DIR) -> Path | None:
     for run_dir in sorted(source_dir.iterdir(), reverse=True):
         if not run_dir.is_dir():
             continue
+        metadata_path = run_dir / "metadata.json"
+        if metadata_path.exists():
+            try:
+                metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if metadata.get("ok") is False:
+                continue
         candidates = sorted(path for path in run_dir.iterdir() if path.name.startswith("body."))
         if candidates:
             return candidates[0]
@@ -76,6 +84,16 @@ def _should_keep_link(source_id: str, url: str, title: str) -> bool:
 
     if source_id == "aec_federal_boundaries_gis":
         return path.endswith(".zip") or "zip" in title_lower
+
+    if source_id == "aph_house_votes_and_proceedings":
+        if "parlinfo.aph.gov.au" in urlparse(url).netloc.lower():
+            return "chamber/votes" in url.lower()
+        return False
+
+    if source_id == "aph_senate_journals":
+        if "parlinfo.aph.gov.au" in urlparse(url).netloc.lower():
+            return "chamber/journals" in url.lower()
+        return False
 
     return False
 

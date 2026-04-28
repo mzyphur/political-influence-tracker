@@ -4,10 +4,22 @@ import argparse
 import json
 from pathlib import Path
 
-from au_politics_money.db.load import load_processed_artifacts
+from au_politics_money.db.load import apply_migrations, connect, load_processed_artifacts
+from au_politics_money.db.review import (
+    REVIEW_SUBJECT_TYPES,
+    export_review_queue,
+    import_review_decisions,
+    reapply_review_decisions,
+    review_queue_names,
+)
+from au_politics_money.db.sector_policy_suggestions import export_sector_policy_link_suggestions
 from au_politics_money.ingest.discovered_sources import (
     child_source_id,
     source_from_discovered_link,
+)
+from au_politics_money.ingest.aec_boundaries import (
+    extract_current_aec_boundaries,
+    fetch_current_aec_boundary_zip,
 )
 from au_politics_money.ingest.entity_classification import classify_entity_names
 from au_politics_money.ingest.discovery import (
@@ -21,16 +33,36 @@ from au_politics_money.ingest.aec_annual import (
     normalize_aec_annual_money_flows,
     summarize_aec_annual_zip,
 )
+from au_politics_money.ingest.aph_decision_records import (
+    DECISION_RECORD_SOURCE_IDS,
+    extract_aph_decision_record_index,
+    fetch_aph_decision_record_documents,
+)
+from au_politics_money.ingest.aph_official_divisions import extract_official_aph_divisions
 from au_politics_money.ingest.aph_roster import build_current_parliament_roster
 from au_politics_money.ingest.fetch import fetch_source
 from au_politics_money.ingest.house_interests import extract_house_interest_sections
 from au_politics_money.ingest.house_interest_records import extract_house_interest_records
+from au_politics_money.ingest.official_identifiers import (
+    AbnLookupWebServiceError,
+    MissingAbnLookupGuid,
+    discover_official_identifier_sources,
+    extract_official_identifiers_from_file,
+    fetch_abn_lookup_web_record,
+    fetch_lobbyist_register_snapshot,
+)
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
 from au_politics_money.ingest.senate_interests import (
     extract_senate_interest_records,
     fetch_senate_interest_statements,
 )
 from au_politics_money.ingest.sources import all_sources, get_source
+from au_politics_money.ingest.they_vote_for_you import (
+    MissingTheyVoteForYouApiKey,
+    extract_they_vote_for_you_divisions,
+    fetch_they_vote_for_you_divisions,
+    fetch_they_vote_for_you_people,
+)
 from au_politics_money.models import DiscoveredLink, SourceRecord
 from au_politics_money.pipeline import run_federal_foundation_pipeline
 
@@ -153,17 +185,159 @@ def extract_senate_interest_records_command() -> int:
     return 0
 
 
+def fetch_they_vote_for_you_people_command() -> int:
+    try:
+        summary_path = fetch_they_vote_for_you_people()
+    except MissingTheyVoteForYouApiKey as exc:
+        print(str(exc))
+        return 2
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def fetch_they_vote_for_you_divisions_command(
+    start_date: str | None,
+    end_date: str | None,
+    house: str | None,
+    limit: int | None,
+    allow_truncated: bool,
+) -> int:
+    try:
+        summary_path = fetch_they_vote_for_you_divisions(
+            start_date=start_date,
+            end_date=end_date,
+            house=house,
+            limit=limit,
+            allow_truncated=allow_truncated,
+        )
+    except MissingTheyVoteForYouApiKey as exc:
+        print(str(exc))
+        return 2
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def extract_they_vote_for_you_divisions_command(fetch_summary_path: str | None) -> int:
+    summary_path = extract_they_vote_for_you_divisions(
+        Path(fetch_summary_path) if fetch_summary_path else None
+    )
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
 def classify_entities_command() -> int:
     summary_path = classify_entity_names()
     print(str(Path(summary_path).resolve()))
     return 0
 
 
-def run_pipeline_command(smoke: bool, skip_house_pdfs: bool, skip_pdf_text: bool) -> int:
+def fetch_current_aec_boundaries_command(refetch: bool) -> int:
+    metadata_path = fetch_current_aec_boundary_zip(refetch=refetch)
+    print(str(Path(metadata_path).resolve()))
+    return 0
+
+
+def extract_aec_boundaries_command(metadata_path: str | None) -> int:
+    summary_path = extract_current_aec_boundaries(
+        metadata_path=Path(metadata_path) if metadata_path else None,
+    )
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def extract_aph_decision_record_index_command(source_id: str | None, all_sources: bool) -> int:
+    source_ids = DECISION_RECORD_SOURCE_IDS if all_sources or source_id is None else (source_id,)
+    for selected_source_id in source_ids:
+        summary_path = extract_aph_decision_record_index(selected_source_id)
+        print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def fetch_aph_decision_record_documents_command(
+    *,
+    include_html: bool,
+    include_pdf: bool,
+    only_missing: bool,
+    limit: int | None,
+) -> int:
+    summary_path = fetch_aph_decision_record_documents(
+        include_html=include_html,
+        include_pdf=include_pdf,
+        only_missing=only_missing,
+        limit=limit,
+    )
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def extract_official_aph_divisions_command() -> int:
+    summary_path = extract_official_aph_divisions()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def discover_official_identifier_sources_command() -> int:
+    summary_path = discover_official_identifier_sources()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def fetch_lobbyist_register_command(limit: int | None) -> int:
+    summary_path = fetch_lobbyist_register_snapshot(limit=limit)
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def extract_official_identifiers_command(
+    source_id: str,
+    input_path: str,
+    limit: int | None,
+) -> int:
+    jsonl_path = extract_official_identifiers_from_file(
+        source_id,
+        Path(input_path),
+        limit=limit,
+    )
+    print(str(Path(jsonl_path).resolve()))
+    return 0
+
+
+def fetch_abn_lookup_web_command(
+    lookup_type: str,
+    lookup_value: str,
+    include_historical_details: bool,
+) -> int:
+    try:
+        summary_path = fetch_abn_lookup_web_record(
+            lookup_type,
+            lookup_value,
+            include_historical_details=include_historical_details,
+        )
+    except MissingAbnLookupGuid as exc:
+        print(str(exc))
+        return 2
+    except AbnLookupWebServiceError as exc:
+        print(str(exc))
+        return 2
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def run_pipeline_command(
+    smoke: bool,
+    skip_house_pdfs: bool,
+    skip_pdf_text: bool,
+    include_votes: bool,
+    votes_start_date: str | None,
+    votes_end_date: str | None,
+) -> int:
     manifest_path = run_federal_foundation_pipeline(
         smoke=smoke,
         skip_house_pdfs=skip_house_pdfs,
         skip_pdf_text=skip_pdf_text,
+        include_votes=include_votes,
+        votes_start_date=votes_start_date,
+        votes_end_date=votes_end_date,
     )
     print(str(Path(manifest_path).resolve()))
     return 0
@@ -175,7 +349,15 @@ def load_postgres_command(
     skip_money_flows: bool,
     skip_house_interests: bool,
     skip_senate_interests: bool,
+    skip_electorate_boundaries: bool,
+    skip_influence_events: bool,
     skip_entity_classifications: bool,
+    skip_official_identifiers: bool,
+    skip_official_decision_records: bool,
+    skip_official_decision_record_documents: bool,
+    skip_official_aph_divisions: bool,
+    include_vote_divisions: bool,
+    skip_review_reapply: bool,
 ) -> int:
     summary = load_processed_artifacts(
         apply_schema_first=apply_schema_first,
@@ -183,8 +365,59 @@ def load_postgres_command(
         include_money_flows=not skip_money_flows,
         include_house_interests=not skip_house_interests,
         include_senate_interests=not skip_senate_interests,
+        include_electorate_boundaries=not skip_electorate_boundaries,
+        include_influence_events=not skip_influence_events,
         include_entity_classifications=not skip_entity_classifications,
+        include_official_identifiers=not skip_official_identifiers,
+        include_official_decision_records=not skip_official_decision_records,
+        include_official_decision_record_documents=not skip_official_decision_record_documents,
+        include_official_aph_divisions=not skip_official_aph_divisions,
+        include_vote_divisions=include_vote_divisions,
+        reapply_reviews=not skip_review_reapply,
     )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def migrate_postgres_command() -> int:
+    with connect() as conn:
+        summary = apply_migrations(conn)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def export_review_queue_command(queue_name: str, limit: int | None) -> int:
+    with connect() as conn:
+        summary_path = export_review_queue(conn, queue_name, limit=limit)
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def suggest_sector_policy_links_command(limit: int | None) -> int:
+    summary_path = export_sector_policy_link_suggestions(limit=limit)
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def import_review_decisions_command(input_path: str, apply: bool) -> int:
+    with connect() as conn:
+        summary = import_review_decisions(conn, Path(input_path), apply=apply)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def reapply_review_decisions_command(
+    apply: bool,
+    subject_type: str | None,
+    continue_on_error: bool,
+) -> int:
+    with connect() as conn:
+        summary = reapply_review_decisions(
+            conn,
+            apply=apply,
+            subject_type=subject_type,
+            continue_on_error=continue_on_error,
+        )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
@@ -229,12 +462,108 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("extract-senate-interest-records")
 
+    subparsers.add_parser("fetch-they-vote-for-you-people")
+
+    tvfy_fetch_parser = subparsers.add_parser("fetch-they-vote-for-you-divisions")
+    tvfy_fetch_parser.add_argument("--start-date")
+    tvfy_fetch_parser.add_argument("--end-date")
+    tvfy_fetch_parser.add_argument("--house", choices=("representatives", "senate"))
+    tvfy_fetch_parser.add_argument("--limit", type=int)
+    tvfy_fetch_parser.add_argument("--allow-truncated", action="store_true")
+
+    tvfy_extract_parser = subparsers.add_parser("extract-they-vote-for-you-divisions")
+    tvfy_extract_parser.add_argument("--fetch-summary-path")
+
     subparsers.add_parser("classify-entities")
+
+    boundary_fetch_parser = subparsers.add_parser("fetch-current-aec-boundaries")
+    boundary_fetch_parser.add_argument(
+        "--refetch",
+        action="store_true",
+        help="Fetch even if a current national ESRI ZIP is already present in raw storage.",
+    )
+
+    boundary_extract_parser = subparsers.add_parser("extract-aec-boundaries")
+    boundary_extract_parser.add_argument("--metadata-path")
+
+    aph_decision_parser = subparsers.add_parser("extract-aph-decision-record-index")
+    aph_decision_parser.add_argument("source_id", choices=DECISION_RECORD_SOURCE_IDS, nargs="?")
+    aph_decision_parser.add_argument(
+        "--all",
+        action="store_true",
+        help="Extract all registered APH decision-record index sources.",
+    )
+
+    aph_document_parser = subparsers.add_parser("fetch-aph-decision-record-documents")
+    aph_document_parser.add_argument("--skip-html", action="store_true")
+    aph_document_parser.add_argument("--skip-pdf", action="store_true")
+    aph_document_parser.add_argument(
+        "--only-missing",
+        action="store_true",
+        help="Skip linked record representations that already have a successful raw fetch.",
+    )
+    aph_document_parser.add_argument("--limit", type=int)
+
+    subparsers.add_parser("extract-official-aph-divisions")
+
+    subparsers.add_parser("discover-official-identifier-sources")
+
+    lobbyist_parser = subparsers.add_parser("fetch-lobbyist-register")
+    lobbyist_parser.add_argument("--limit", type=int)
+
+    official_parser = subparsers.add_parser("extract-official-identifiers")
+    official_parser.add_argument(
+        "source_id",
+        choices=("asic_companies_dataset", "acnc_register", "abn_lookup"),
+    )
+    official_parser.add_argument("input_path")
+    official_parser.add_argument("--limit", type=int)
+
+    abn_lookup_parser = subparsers.add_parser("fetch-abn-lookup-web")
+    abn_lookup_parser.add_argument("lookup_type", choices=("abn", "acn"))
+    abn_lookup_parser.add_argument("lookup_value")
+    abn_lookup_parser.add_argument(
+        "--current-only",
+        action="store_true",
+        help="Request current ABR details only instead of current plus historical details.",
+    )
+
+    subparsers.add_parser("migrate-postgres")
+
+    review_parser = subparsers.add_parser("export-review-queue")
+    review_parser.add_argument("queue_name", choices=review_queue_names())
+    review_parser.add_argument("--limit", type=int)
+
+    suggestions_parser = subparsers.add_parser("suggest-sector-policy-links")
+    suggestions_parser.add_argument("--limit", type=int)
+
+    import_review_parser = subparsers.add_parser("import-review-decisions")
+    import_review_parser.add_argument("input_path")
+    import_review_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Mutate the database. Without this flag the command validates and writes a dry-run summary.",
+    )
+
+    reapply_review_parser = subparsers.add_parser("reapply-review-decisions")
+    reapply_review_parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Mutate the database. Without this flag the command validates replay only.",
+    )
+    reapply_review_parser.add_argument(
+        "--subject-type",
+        choices=sorted(REVIEW_SUBJECT_TYPES),
+    )
+    reapply_review_parser.add_argument("--continue-on-error", action="store_true")
 
     pipeline_parser = subparsers.add_parser("run-federal-foundation-pipeline")
     pipeline_parser.add_argument("--smoke", action="store_true")
     pipeline_parser.add_argument("--skip-house-pdfs", action="store_true")
     pipeline_parser.add_argument("--skip-pdf-text", action="store_true")
+    pipeline_parser.add_argument("--include-votes", action="store_true")
+    pipeline_parser.add_argument("--votes-start-date")
+    pipeline_parser.add_argument("--votes-end-date")
 
     load_parser = subparsers.add_parser("load-postgres")
     load_parser.add_argument("--apply-schema", action="store_true")
@@ -242,7 +571,19 @@ def build_parser() -> argparse.ArgumentParser:
     load_parser.add_argument("--skip-money-flows", action="store_true")
     load_parser.add_argument("--skip-house-interests", action="store_true")
     load_parser.add_argument("--skip-senate-interests", action="store_true")
+    load_parser.add_argument("--skip-electorate-boundaries", action="store_true")
+    load_parser.add_argument("--skip-influence-events", action="store_true")
     load_parser.add_argument("--skip-entity-classifications", action="store_true")
+    load_parser.add_argument("--skip-official-identifiers", action="store_true")
+    load_parser.add_argument("--skip-official-decision-records", action="store_true")
+    load_parser.add_argument("--skip-official-decision-record-documents", action="store_true")
+    load_parser.add_argument("--skip-official-aph-divisions", action="store_true")
+    load_parser.add_argument(
+        "--include-vote-divisions",
+        action="store_true",
+        help="Load processed They Vote For You division/vote artifacts if present.",
+    )
+    load_parser.add_argument("--skip-review-reapply", action="store_true")
 
     return parser
 
@@ -275,10 +616,70 @@ def main() -> int:
         return fetch_senate_interests_api_command(args.limit)
     if args.command == "extract-senate-interest-records":
         return extract_senate_interest_records_command()
+    if args.command == "fetch-they-vote-for-you-people":
+        return fetch_they_vote_for_you_people_command()
+    if args.command == "fetch-they-vote-for-you-divisions":
+        return fetch_they_vote_for_you_divisions_command(
+            args.start_date,
+            args.end_date,
+            args.house,
+            args.limit,
+            args.allow_truncated,
+        )
+    if args.command == "extract-they-vote-for-you-divisions":
+        return extract_they_vote_for_you_divisions_command(args.fetch_summary_path)
     if args.command == "classify-entities":
         return classify_entities_command()
+    if args.command == "fetch-current-aec-boundaries":
+        return fetch_current_aec_boundaries_command(args.refetch)
+    if args.command == "extract-aec-boundaries":
+        return extract_aec_boundaries_command(args.metadata_path)
+    if args.command == "extract-aph-decision-record-index":
+        return extract_aph_decision_record_index_command(args.source_id, args.all)
+    if args.command == "fetch-aph-decision-record-documents":
+        return fetch_aph_decision_record_documents_command(
+            include_html=not args.skip_html,
+            include_pdf=not args.skip_pdf,
+            only_missing=args.only_missing,
+            limit=args.limit,
+        )
+    if args.command == "extract-official-aph-divisions":
+        return extract_official_aph_divisions_command()
+    if args.command == "discover-official-identifier-sources":
+        return discover_official_identifier_sources_command()
+    if args.command == "fetch-lobbyist-register":
+        return fetch_lobbyist_register_command(args.limit)
+    if args.command == "extract-official-identifiers":
+        return extract_official_identifiers_command(args.source_id, args.input_path, args.limit)
+    if args.command == "fetch-abn-lookup-web":
+        return fetch_abn_lookup_web_command(
+            args.lookup_type,
+            args.lookup_value,
+            include_historical_details=not args.current_only,
+        )
+    if args.command == "migrate-postgres":
+        return migrate_postgres_command()
+    if args.command == "export-review-queue":
+        return export_review_queue_command(args.queue_name, args.limit)
+    if args.command == "suggest-sector-policy-links":
+        return suggest_sector_policy_links_command(args.limit)
+    if args.command == "import-review-decisions":
+        return import_review_decisions_command(args.input_path, args.apply)
+    if args.command == "reapply-review-decisions":
+        return reapply_review_decisions_command(
+            args.apply,
+            args.subject_type,
+            args.continue_on_error,
+        )
     if args.command == "run-federal-foundation-pipeline":
-        return run_pipeline_command(args.smoke, args.skip_house_pdfs, args.skip_pdf_text)
+        return run_pipeline_command(
+            args.smoke,
+            args.skip_house_pdfs,
+            args.skip_pdf_text,
+            args.include_votes,
+            args.votes_start_date,
+            args.votes_end_date,
+        )
     if args.command == "load-postgres":
         return load_postgres_command(
             args.apply_schema,
@@ -286,7 +687,15 @@ def main() -> int:
             args.skip_money_flows,
             args.skip_house_interests,
             args.skip_senate_interests,
+            args.skip_electorate_boundaries,
+            args.skip_influence_events,
             args.skip_entity_classifications,
+            args.skip_official_identifiers,
+            args.skip_official_decision_records,
+            args.skip_official_decision_record_documents,
+            args.skip_official_aph_divisions,
+            args.include_vote_divisions,
+            args.skip_review_reapply,
         )
     raise ValueError(f"Unhandled command: {args.command}")
 
