@@ -24,7 +24,7 @@ export function PartyProfilePanel({
       <div className="entity-profile-header">
         <div>
           <span className="result-type">Party profile</span>
-          <h2>{profile?.party.name ?? "Loading party"}</h2>
+          <h2>{profile ? partyDisplayName(profile) : "Loading party"}</h2>
           {profile && (
             <p>
               {[profile.party.short_name, profile.party.jurisdiction_level]
@@ -40,7 +40,7 @@ export function PartyProfilePanel({
               type="button"
               aria-label={`Open influence graph for ${profile.party.name}`}
               title="Open source-backed influence graph"
-              onClick={() => onOpenGraph(profile.party.id, profile.party.name)}
+              onClick={() => onOpenGraph(profile.party.id, partyDisplayName(profile))}
             >
               <Network size={15} aria-hidden="true" />
             </button>
@@ -167,6 +167,10 @@ export function PartyProfilePanel({
       )}
     </section>
   );
+}
+
+function partyDisplayName(profile: PartyProfile) {
+  return profile.party.display_name || profile.party.name;
 }
 
 function summaryCount(rows: Array<{ event_count: number }>) {

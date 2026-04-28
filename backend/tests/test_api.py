@@ -236,3 +236,10 @@ def test_search_result_sort_prioritizes_active_party_records() -> None:
     sorted_rows = sorted(rows, key=queries._search_result_sort_key)
 
     assert sorted_rows[0]["label"] == "ALP"
+
+
+def test_party_public_label_expands_roster_abbreviations() -> None:
+    assert queries._party_public_label("ALP", "ALP") == "Australian Labor Party (ALP)"
+    assert queries._party_public_label("Australian Labor Party", "Australian Labor Party") == (
+        "Australian Labor Party"
+    )

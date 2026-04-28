@@ -256,6 +256,7 @@ export type PartyProfile = {
   party: {
     id: number;
     name: string;
+    display_name?: string;
     short_name: string | null;
     party_group: string | null;
     jurisdiction_name: string | null;

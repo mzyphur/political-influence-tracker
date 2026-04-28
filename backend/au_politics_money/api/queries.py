@@ -24,6 +24,22 @@ SEARCH_TYPES = {
     "postcode",
 }
 
+PARTY_PUBLIC_LABELS = {
+    "AG": "Australian Greens",
+    "ALP": "Australian Labor Party",
+    "AV": "Australian Values Party",
+    "CA": "Centre Alliance",
+    "CLP": "Country Liberal Party",
+    "IND": "Independent",
+    "JLN": "Jacqui Lambie Network",
+    "KAP": "Katter's Australian Party",
+    "LNP": "Liberal National Party",
+    "LP": "Liberal Party of Australia",
+    "NATS": "The Nationals",
+    "ON": "Pauline Hanson's One Nation",
+    "UAP": "United Australia Party",
+}
+
 SEARCH_CAVEAT = (
     "Search results are discovery aids over normalized public-record data. "
     "They are not claims of wrongdoing, causation, or improper influence."
@@ -401,13 +417,22 @@ def _search_parties(conn, cleaned_query: str, limit: int) -> list[dict[str, Any]
         _result(
             result_type="party",
             result_id=row["id"],
-            label=row["name"],
+            label=_party_public_label(row.get("name"), row.get("short_name")),
             subtitle=f"{row['current_representative_count']} current representatives",
             rank=30,
             metadata=row,
         )
         for row in rows
     ]
+
+
+def _party_public_label(name: str | None, short_name: str | None) -> str:
+    cleaned_name = str(name or "").strip()
+    cleaned_short = str(short_name or "").strip()
+    mapped = PARTY_PUBLIC_LABELS.get(cleaned_short.upper())
+    if mapped and cleaned_name.upper() == cleaned_short.upper():
+        return f"{mapped} ({cleaned_short.upper()})"
+    return cleaned_name or cleaned_short or "Unnamed party"
 
 
 def _search_entities(conn, pattern: str, limit: int) -> list[dict[str, Any]]:
@@ -2182,6 +2207,7 @@ def get_party_profile(party_id: int, *, database_url: str | None = None) -> dict
             return {}
 
         party = party_rows[0]
+        party["display_name"] = _party_public_label(party.get("name"), party.get("short_name"))
         linked_entity_ids, linked_entities, candidate_entities = _party_linked_entity_ids(conn, party)
 
         office_summary = _fetch_dicts(
