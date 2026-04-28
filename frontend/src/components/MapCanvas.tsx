@@ -1,6 +1,10 @@
 import { useEffect, useRef } from "react";
 import type { FeatureCollection } from "geojson";
-import maplibregl, { type LngLatBoundsLike, type MapLayerMouseEvent } from "maplibre-gl";
+import maplibregl, {
+  type LayerSpecification,
+  type LngLatBoundsLike,
+  type MapLayerMouseEvent
+} from "maplibre-gl";
 import { featureCollection, mapStyleUrl } from "../map";
 import type { ElectorateFeature } from "../types";
 
@@ -16,6 +20,62 @@ const fillLayerId = "electorate-fills";
 const lineLayerId = "electorate-lines";
 const selectedHaloLayerId = "selected-electorate-halo";
 const selectedLayerId = "selected-electorate";
+type LinePaint = NonNullable<Extract<LayerSpecification, { type: "line" }>["paint"]>;
+const selectedHaloWidth: LinePaint["line-width"] = [
+  "interpolate",
+  ["exponential", 1.2],
+  ["zoom"],
+  1.5,
+  1,
+  2.5,
+  1.5,
+  3,
+  2.2,
+  4.5,
+  3,
+  6,
+  4.2,
+  8,
+  5.8,
+  10,
+  7.2,
+  12,
+  8.4
+];
+const selectedStrokeWidth: LinePaint["line-width"] = [
+  "interpolate",
+  ["exponential", 1.2],
+  ["zoom"],
+  1.5,
+  0.45,
+  2.5,
+  0.75,
+  3,
+  1.1,
+  4.5,
+  1.6,
+  6,
+  2.4,
+  8,
+  3.4,
+  10,
+  4.4,
+  12,
+  5.2
+];
+const selectedHaloBlur: LinePaint["line-blur"] = [
+  "interpolate",
+  ["linear"],
+  ["zoom"],
+  1.5,
+  0,
+  3,
+  0.1,
+  6,
+  0.35,
+  10,
+  0.8
+];
 
 export function MapCanvas({
   features,
@@ -134,9 +194,9 @@ export function MapCanvas({
         filter: ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
         paint: {
           "line-color": "#ffffff",
-          "line-width": 7.2,
+          "line-width": selectedHaloWidth,
           "line-opacity": 0.92,
-          "line-blur": 0.8
+          "line-blur": selectedHaloBlur
         }
       });
       map.addLayer({
@@ -146,7 +206,7 @@ export function MapCanvas({
         filter: ["==", ["get", "electorate_id"], selectedFeature?.id ?? -1],
         paint: {
           "line-color": "#ffe600",
-          "line-width": 4.4,
+          "line-width": selectedStrokeWidth,
           "line-opacity": 1
         }
       });
