@@ -117,6 +117,12 @@ def _funding_record(
         if recipient_role == "independent_candidate"
         else "party_aggregate_public_funding_paid"
     )
+    amount_aud = parse_money(amount)
+    if amount and not amount_aud:
+        raise ValueError(
+            "Could not parse AEC public funding amount "
+            f"{amount!r} for {name!r} in {section!r}"
+        )
     return {
         "source_dataset": SOURCE_DATASET,
         "source_table": section,
@@ -132,7 +138,7 @@ def _funding_record(
         "receipt_type": "Election Public Funding",
         "transaction_kind": "election_public_funding",
         "date": updated_date,
-        "amount_aud": parse_money(amount),
+        "amount_aud": amount_aud,
         "source_role": "public_funding_payer",
         "recipient_role": recipient_role,
         "disclosure_system": "aec_public_funding",
@@ -191,6 +197,12 @@ def normalize_aec_public_funding(
             )
         if table_count:
             table_counts[section] = table_count
+
+    if not records:
+        raise RuntimeError(
+            "No AEC public funding rows extracted from "
+            f"{body_path}; page structure may have changed."
+        )
 
     timestamp = _timestamp()
     target_dir = processed_dir / "aec_public_funding_money_flows"

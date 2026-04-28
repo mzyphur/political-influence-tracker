@@ -230,29 +230,18 @@ export function DetailsPanel({
       </section>
 
       <section className="panel-section campaign-support-panel">
-        <h3>Money Connected To This Representative</h3>
+        <h3>Campaign and Party-Channelled Support</h3>
         <p className="scope-caption">
-          Direct records, campaign-return records, and party-channelled context stay in separate
-          buckets. Campaign support is source-backed where loaded, but it is not personal receipt.
+          Direct money and benefit counts are shown above. This section expands campaign,
+          party-channelled, public-funding, and advertising context only; we deliberately do
+          not sum these records into personal money received.
         </p>
         <div className="fact-grid">
           <Fact
-            icon={<Banknote size={17} />}
-            label="Direct money rows"
-            value={properties.current_representative_lifetime_money_event_count.toLocaleString("en-AU")}
-            tooltip="Direct AEC money records linked to this representative, excluding campaign-support rows."
-          />
-          <Fact
             icon={<Megaphone size={17} />}
-            label="Campaign rows"
+            label="Campaign support rows"
             value={properties.current_representative_lifetime_campaign_support_event_count.toLocaleString("en-AU")}
             tooltip="Candidate/Senate-group return rows, campaign expenditure, nil-return context, and related source-backed campaign activity where loaded."
-          />
-          <Fact
-            icon={<Gift size={17} />}
-            label="Benefit rows"
-            value={properties.current_representative_lifetime_benefit_event_count.toLocaleString("en-AU")}
-            tooltip="Disclosed benefits that are linked to the representative outside the campaign-support bucket."
           />
           <Fact
             icon={<Vote size={17} />}

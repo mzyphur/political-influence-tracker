@@ -108,7 +108,15 @@ export async function searchDatabase(
   signal?: AbortSignal
 ): Promise<SearchResponse> {
   const params = new URLSearchParams({ q: query, limit: "8" });
-  for (const type of ["representative", "electorate", "party", "entity", "sector", "policy_topic"]) {
+  for (const type of [
+    "representative",
+    "electorate",
+    "party",
+    "entity",
+    "sector",
+    "policy_topic",
+    "postcode"
+  ]) {
     params.append("types", type);
   }
   return fetchJson<SearchResponse>(apiUrl("/api/search", params), signal);

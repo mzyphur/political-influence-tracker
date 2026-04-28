@@ -1,6 +1,6 @@
 # Project Plan
 
-Last updated: 2026-04-27
+Last updated: 2026-04-29
 
 ## Mission
 
@@ -22,6 +22,8 @@ users must be able to drill from a visualization down to the source record.
 6. Build repeatable weekly ingestion from the start.
 7. Treat country and government level as adapter dimensions, not as one-off
    assumptions; see `docs/jurisdiction_generalization.md`.
+8. Treat direct, campaign, party/entity, and modelled allocation as separate
+   evidence tiers; see `docs/influence_network_model.md`.
 
 ## Phase 1: Federal Foundation
 
@@ -43,6 +45,9 @@ Work items:
 - Maintain a unified `influence_event` surface so large money flows and small
   disclosed benefits can be queried with the same provenance and uncertainty
   fields.
+- Maintain a typed influence graph model so party/entity-level and
+  campaign-context records can be connected to representatives without
+  mislabelling them as direct personal receipt.
 
 Deliverable:
 
@@ -124,6 +129,9 @@ Work items:
 - Track party-line votes and rebellions.
 - Build cautious association measures: time-windowed exposure before votes,
   sector-level funding concentration, and vote-topic alignment.
+- Build typed indirect network paths and modelled allocation methods that keep
+  source-backed party/campaign records separate from direct person-level
+  records.
 - Avoid causal language unless backed by a design strong enough for that claim.
 
 Deliverable:

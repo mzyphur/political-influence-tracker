@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from au_politics_money.ingest.aec_public_funding import normalize_aec_public_funding
 
 
@@ -64,3 +66,58 @@ def test_normalize_aec_public_funding_payment_tables(tmp_path) -> None:
     independent_record = records[1]
     assert independent_record["recipient_role"] == "independent_candidate"
     assert independent_record["amount_aud"] == "154367.74"
+
+
+def test_normalize_aec_public_funding_fails_on_zero_extracted_rows(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+    source_dir = raw_dir / "aec_2025_federal_election_funding_finalised" / "20260428T000000Z"
+    source_dir.mkdir(parents=True)
+    body_path = source_dir / "body.html"
+    body_path.write_text(
+        """
+        <html>
+          <body>
+            <h1>2025 federal election: election funding payments finalised</h1>
+            <table>
+              <tr><th>Something Else</th><th>Value</th></tr>
+              <tr><td>No funding rows here</td><td>$1.00</td></tr>
+            </table>
+          </body>
+        </html>
+        """,
+        encoding="utf-8",
+    )
+    metadata_path = source_dir / "metadata.json"
+    metadata_path.write_text(json.dumps({"body_path": str(body_path)}), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="No AEC public funding rows extracted"):
+        normalize_aec_public_funding(raw_dir=raw_dir, processed_dir=processed_dir)
+
+
+def test_normalize_aec_public_funding_fails_on_unparsed_nonempty_amount(tmp_path) -> None:
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+    source_dir = raw_dir / "aec_2025_federal_election_funding_finalised" / "20260428T000000Z"
+    source_dir.mkdir(parents=True)
+    body_path = source_dir / "body.html"
+    body_path.write_text(
+        """
+        <html>
+          <body>
+            <h1>2025 federal election: election funding payments finalised</h1>
+            <h2>Political parties</h2>
+            <table>
+              <tr><th>Political Party</th><th>Total Election Funding Paid</th></tr>
+              <tr><td>Example Party</td><td>TBA</td></tr>
+            </table>
+          </body>
+        </html>
+        """,
+        encoding="utf-8",
+    )
+    metadata_path = source_dir / "metadata.json"
+    metadata_path.write_text(json.dumps({"body_path": str(body_path)}), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="Could not parse AEC public funding amount"):
+        normalize_aec_public_funding(raw_dir=raw_dir, processed_dir=processed_dir)

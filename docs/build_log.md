@@ -22,12 +22,26 @@ Completed:
   in the selection details opens that party/entity money profile directly,
   helping users move from representative-level context to aggregate
   party-channelled money without manual search.
+- Addressed first follow-up review items: frontend search now includes
+  postcode as an available type, AEC public-funding normalization fails loudly
+  if the page yields zero rows or unparseable non-empty amount cells, and
+  specific party aliases such as "liberal national" no longer broaden to all
+  Liberal-family parties.
+- Reduced duplicate representative-money counts by turning the second money
+  panel into a campaign/party-channelled support expander only, and visually
+  separated party/entity review candidates from reviewed links in the party
+  profile panel.
+- Added `docs/influence_network_model.md`, which defines direct, campaign,
+  party/entity, and modelled allocation evidence tiers for indirect network
+  paths such as `Commonwealth Bank -> ALP entity/branch -> ALP MPs/Senators`.
 
 Verification:
 
 - Frontend production build passed after each UI change.
-- Focused API tests passed: `backend/tests/test_api.py`.
-- Focused `ruff check` passed for the party-search API changes.
+- Focused API and AEC public-funding tests passed:
+  `backend/tests/test_api.py` and `backend/tests/test_aec_public_funding.py`.
+- Focused `ruff check` passed for the party-search and public-funding parser
+  changes.
 - Live local API smoke checks confirmed `labor` and `liberal` search results now
   prioritize active parliamentary party records.
 

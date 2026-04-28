@@ -686,6 +686,53 @@ a:focus-visible {
   font-size: 11px;
 }
 
+.review-candidate-panel {
+  display: grid;
+  gap: 8px;
+  border: 1px dashed rgba(189, 122, 49, 0.48);
+  border-radius: 8px;
+  background: rgba(255, 248, 235, 0.82);
+  padding: 9px;
+}
+
+.review-candidate-panel summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: #6a4315;
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.review-candidate-panel summary strong {
+  border-radius: 999px;
+  background: rgba(189, 122, 49, 0.14);
+  color: #5b3a13;
+  padding: 2px 7px;
+}
+
+.review-candidate-panel p {
+  margin: 0;
+  color: #6b573d;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
+.candidate-rank-list {
+  margin-top: 2px;
+}
+
+.candidate-rank-row {
+  border-style: dashed;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.candidate-rank-row strong {
+  color: #7a4b12;
+}
+
 .entity-event-row a {
   color: #0f5f7a;
   font-size: 11px;

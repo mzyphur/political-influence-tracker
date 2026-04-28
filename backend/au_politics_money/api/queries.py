@@ -362,11 +362,15 @@ def _party_search_terms(cleaned_query: str) -> tuple[list[str], set[str]]:
     lowered = cleaned_query.lower()
     name_patterns = [f"%{cleaned_query}%"]
     exact_short_names: set[str] = set()
+    if any(trigger in lowered for trigger in ("labor", "labour", "alp")):
+        exact_short_names.add("ALP")
+    if "liberal national" in lowered or "lnp" in lowered:
+        exact_short_names.add("LNP")
+    elif "country liberal" in lowered or "clp" in lowered:
+        exact_short_names.add("CLP")
+    elif "liberal" in lowered:
+        exact_short_names.update(("LP", "LNP", "CLP"))
     alias_terms = (
-        (("labor", "labour", "alp"), ("ALP",)),
-        (("liberal national", "lnp"), ("LNP",)),
-        (("country liberal", "clp"), ("CLP",)),
-        (("liberal",), ("LP", "LNP", "CLP")),
         (("national party", "nationals", "nats"), ("NATS",)),
         (("greens",), ("AG",)),
         (("one nation", "pauline hanson"), ("ON",)),

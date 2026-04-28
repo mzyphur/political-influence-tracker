@@ -63,4 +63,7 @@ Official references:
 - Candidate return rows are linked to current/past House representatives only when candidate name, electorate, and state form an exact unique match. Current links are labelled as name/electorate context without a temporal-office check until historical candidate and office-term dating is expanded.
 - Senate records remain at state/group/party context unless a source supports senator-specific attribution.
 - API representative profiles expose `campaign_support_summary`, `campaign_support_recent_events`, and a caveat separate from direct person records.
-- The frontend displays a separate "Money Connected To This Representative" panel and keeps direct reported totals separate from campaign-support totals.
+- The frontend displays a separate "Campaign and Party-Channelled Support" panel and keeps direct reported totals separate from campaign-support totals.
+- `docs/influence_network_model.md` defines how higher-level party/entity money
+  can be shown as indirect graph context or modelled allocation without being
+  collapsed into direct personal receipt.

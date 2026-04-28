@@ -209,11 +209,13 @@ def test_search_database_short_query_returns_caveat_without_db() -> None:
 def test_party_search_terms_include_common_public_aliases() -> None:
     _, labor_short_names = queries._party_search_terms("labor")
     _, liberal_short_names = queries._party_search_terms("liberal")
+    _, liberal_national_short_names = queries._party_search_terms("liberal national")
     _, greens_short_names = queries._party_search_terms("greens")
 
     assert "ALP" in labor_short_names
     assert {"LP", "LNP", "CLP"} <= liberal_short_names
     assert "ALP" not in liberal_short_names
+    assert liberal_national_short_names == {"LNP"}
     assert "AG" in greens_short_names
 
 

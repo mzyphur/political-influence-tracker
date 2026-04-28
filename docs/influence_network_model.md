@@ -1,0 +1,185 @@
+# Influence Network and Allocation Model
+
+This project treats political influence as a source-backed, typed network. The
+goal is to show how disclosed money, gifts, interests, campaign support,
+party-channelled support, lobbying/client relationships, and policy behaviour
+connect without collapsing different evidence tiers into one misleading total.
+
+## Core Principle
+
+Money or benefits disclosed at a party, branch, campaign committee, associated
+entity, or third-party level must not be described as money or gifts personally
+received by an MP or Senator. The app may show those records as connected
+context, and may calculate labelled allocation estimates, but the public record
+scope must remain visible.
+
+## Evidence Tiers
+
+1. `direct_disclosed`
+   - Source record names the MP, Senator, candidate, Senate group, or direct
+     person-level recipient.
+   - Public display may say "direct disclosed record" or "direct person-linked
+     record".
+
+2. `source_backed_campaign_context`
+   - Source record names a candidate, Senate group, electorate, campaign
+     committee, campaign expenditure, media-ad activity, public funding payment,
+     or party-handled candidate campaign context.
+   - Public display may say "campaign support connected to this contest" but
+     must not say personal receipt.
+
+3. `party_entity_context`
+   - Source record names a party, state branch, associated entity, party
+     foundation, affiliated organisation, or reviewed party/entity link.
+   - Public display may show the party/entity profile and network path to
+     current representatives, but not person-level receipt.
+
+4. `modelled_allocation`
+   - An analytical allocation from aggregate party/entity/campaign records to
+     electorates, candidates, MPs, or Senators using an explicit model.
+   - Public display must label this as "estimated allocation" or "modelled
+     indirect exposure" and show the method, assumptions, uncertainty, and
+     sensitivity range.
+
+5. `policy_behaviour_context`
+   - Vote, division, speech, committee, portfolio, bill, policy-topic, or
+     ministerial-action context.
+   - Public display may show timing, topic overlap, and association. It must not
+     claim causation, quid pro quo, improper influence, or corruption without
+     independent evidence.
+
+## Graph Node Types
+
+- `person`: MP, Senator, candidate, minister, former representative.
+- `party`: parliamentary party or registered political party.
+- `party_branch`: state/territory/federal branch where distinguishable.
+- `associated_entity`: associated entity, foundation, trust, fundraising body.
+- `source_entity`: donor, company, union, association, lobbyist client,
+  individual donor, third party, campaigner, media/ad provider.
+- `campaign_context`: candidate, Senate group, electorate contest, campaign
+  committee, campaign expenditure context.
+- `public_funding_source`: AEC or equivalent public funding payer.
+- `policy_topic`: bill/topic/sector-linked policy area.
+- `division_or_action`: vote, division, parliamentary decision, speech,
+  committee action, ministerial decision where supported.
+
+## Graph Edge Types
+
+- `disclosed_money_flow`: source-backed money or receipt/debt/expenditure row.
+- `disclosed_benefit_flow`: gifts, hospitality, travel, tickets, meals,
+  flights, memberships, or other declared benefits.
+- `campaign_support_flow`: candidate/Senate group expenditure, public funding,
+  media ad activity, party-handled candidate campaign records, or third-party
+  campaign expenditure.
+- `party_entity_link`: reviewed association between party and branch/entity.
+- `office_or_party_membership`: person currently or historically represents a
+  party, chamber, electorate, or state/territory.
+- `lobbying_registration_context`: official registration and client
+  relationship, not proof of a meeting or access.
+- `sector_classification`: official, reviewed, or inferred industry/sector
+  classification with method/confidence.
+- `policy_topic_link`: reviewed sector/material-interest link to a policy
+  topic.
+- `modelled_allocation_edge`: estimated allocation from aggregate record to a
+  lower level, with method and uncertainty.
+
+## Indirect Path Examples
+
+The graph may display paths such as:
+
+`Commonwealth Bank -> ALP entity/branch -> ALP MPs/Senators`
+
+This path means:
+
+- Commonwealth Bank appears in a source-backed disclosed flow involving an ALP
+  party/entity record.
+- The party/entity is reviewed as connected to ALP or is a directly named ALP
+  party record.
+- A representative is an ALP MP/Senator through office-term data.
+
+It does not mean:
+
+- Commonwealth Bank paid that MP/Senator personally.
+- The MP/Senator changed behaviour because of the money.
+- The payment was improper.
+
+The graph may support calculations such as "indirect disclosed party/entity
+exposure by sector for current ALP representatives", but the result must stay in
+an indirect/modelled panel separate from direct disclosed records.
+
+## Allocation Methods
+
+Allocation methods should be versioned, reproducible, and sensitivity-tested.
+Initial methods can include:
+
+1. `no_allocation`
+   - Show aggregate party/entity records only at the party/entity level.
+   - Default for publication unless a lower-level source supports attribution.
+
+2. `equal_current_representative_share`
+   - Divide party/entity aggregate by the number of current representatives.
+   - Useful only as a rough exposure index; weak for causal or spending claims.
+
+3. `electorate_candidate_return_link`
+   - Allocate only records that name a candidate, electorate, Senate group, or
+     campaign context.
+   - Source-backed campaign context, not personal receipt.
+
+4. `vote_share_or_public_funding_generated`
+   - Allocate public funding or campaign context by votes generated in a contest
+     when source and electoral data support it.
+   - Display as public funding generated by votes and paid to party/candidate.
+
+5. `party_campaign_spend_model`
+   - Estimate support using candidate-level expenditure returns, ad-library
+     evidence, state/branch campaign records, and party return descriptions.
+   - Must carry uncertainty intervals and source-completeness caveats.
+
+6. `network_diffusion_weighted`
+   - Propagate entity money through reviewed party/entity and office-term edges
+     using documented weights.
+   - Display as modelled indirect exposure, never as disclosed receipt.
+
+## Required Metadata for Modelled Edges
+
+Every `modelled_allocation_edge` must include:
+
+- `model_name`
+- `model_version`
+- `input_source_document_ids`
+- `input_event_ids`
+- `allocation_basis`
+- `allocation_denominator`
+- `allocation_weight`
+- `amount_estimate`
+- `amount_lower_bound`
+- `amount_upper_bound`
+- `currency`
+- `uncertainty_label`
+- `display_caveat`
+- `generated_at`
+
+## UI Rules
+
+- Direct disclosed records appear first and keep source links visible.
+- Campaign support appears in a separate campaign/context section.
+- Party/entity-level money appears in party/entity and network panels.
+- Modelled allocation appears only after the user can see the method and caveat.
+- Direct, campaign, party/entity, and modelled totals are not summed into a
+  single "money received" number.
+- Network paths can show indirect relationships, but each edge must expose its
+  type, evidence tier, source, review status, and caveat.
+
+## Immediate Implementation Plan
+
+1. Keep `campaign_support` records separate from direct money and benefits.
+2. Add party/entity and candidate-review visual separation in the frontend.
+3. Add graph/API support for typed indirect paths:
+   `source_entity -> reviewed party/entity -> party -> current representatives`.
+4. Add a non-public experimental allocation table or materialized view for
+   `modelled_allocation_edge` records.
+5. Expose allocation methods only after tests assert that direct totals exclude
+   all modelled values.
+6. Add documentation and UI text for every allocation method before enabling it
+   in public views.
+
