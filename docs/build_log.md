@@ -225,6 +225,11 @@ Verification:
   lifetime context rather than electorate-level totals. The integration test now
   seeds a PostGIS boundary and verifies this endpoint through the real
   FastAPI/PostgreSQL path.
+- Added the first frontend scaffold: a React/Vite/TypeScript app using
+  MapLibre with a MapTiler basemap, wired to `/api/map/electorates` and
+  `/api/search`. The initial interface is a real national explorer screen with
+  a map, compact search/filter controls, current map totals, selectable
+  electorates, and an evidence/caveat-aware side panel.
 
 Notable data observations:
 

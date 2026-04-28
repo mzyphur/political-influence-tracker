@@ -20,6 +20,7 @@ the public record can prove.
 - `docs/` - planning, research standards, source inventory, and methodology.
 - `backend/` - Python ingestion, normalization, and database code.
 - `backend/schema/` - PostgreSQL/PostGIS schema drafts.
+- `frontend/` - React/Vite/MapLibre public interface scaffold.
 - `data/raw/` - raw downloaded source documents, grouped by source and timestamp.
 - `data/processed/` - derived intermediate outputs.
 - `data/audit/` - validation reports and extraction QA outputs.
@@ -46,6 +47,17 @@ make install
 make test
 make lint
 ```
+
+For the local frontend environment:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The first frontend screen uses `/api/map/electorates` and `/api/search`, with
+MapTiler configured through `VITE_MAPTILER_API_KEY` in `frontend/.env.local`.
 
 For a local PostgreSQL/PostGIS database:
 

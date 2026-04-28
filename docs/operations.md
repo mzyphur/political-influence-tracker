@@ -42,6 +42,26 @@ cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Dr
 .venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline --smoke
 ```
 
+## Frontend Development
+
+Start the backend API:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+.venv/bin/dotenv -f .env run -- .venv/bin/uvicorn au_politics_money.api.app:app --reload --host 127.0.0.1 --port 8008
+```
+
+Start the frontend:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/frontend"
+npm run dev
+```
+
+The frontend reads `VITE_API_BASE_URL` and `VITE_MAPTILER_API_KEY`. The Vite
+dev server proxies `/api` and `/health` to the backend so browser requests stay
+same-origin during local development.
+
 ## Weekly Server Command
 
 The repo includes:

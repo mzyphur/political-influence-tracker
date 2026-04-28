@@ -490,7 +490,11 @@ def get_electorate_map(
     params.append(chamber)
     state_filter = ""
     if state:
-        state_filter = "AND upper(electorate.state_or_territory) = %s"
+        state_filter = """
+            AND upper(
+                COALESCE(NULLIF(electorate.state_or_territory, ''), reps.representative_state, '')
+            ) = %s
+        """
         params.append(state)
     boundary_required_filter = "AND boundary.id IS NOT NULL" if boundary_set else ""
 
@@ -502,7 +506,10 @@ def get_electorate_map(
                 electorate.id AS electorate_id,
                 electorate.name AS electorate_name,
                 electorate.chamber,
-                electorate.state_or_territory,
+                COALESCE(
+                    NULLIF(electorate.state_or_territory, ''),
+                    reps.representative_state
+                ) AS state_or_territory,
                 boundary.boundary_set,
                 boundary.valid_from AS boundary_valid_from,
                 boundary.valid_to AS boundary_valid_to,
@@ -572,6 +579,7 @@ def get_electorate_map(
                     (array_agg(party.short_name ORDER BY person.display_name))[1]
                         AS party_short_name,
                     count(person.id) AS current_representative_count,
+                    max(NULLIF(office_term.metadata->>'state', '')) AS representative_state,
                     COALESCE(
                         jsonb_agg(
                             jsonb_build_object(
@@ -655,7 +663,9 @@ def get_electorate_map(
             WHERE electorate.chamber = %s
             {state_filter}
             {boundary_required_filter}
-            ORDER BY electorate.state_or_territory, electorate.name
+            ORDER BY
+                COALESCE(NULLIF(electorate.state_or_territory, ''), reps.representative_state, ''),
+                electorate.name
             """,
             tuple(params),
         )
