@@ -261,6 +261,11 @@ Verification:
   only when matched from official APH PDF text, ambiguous senator surname email
   matches are left blank, and clicking a representative opens a contact popup in
   the frontend with source/caveat text.
+- Added a first evidence browser for representative-linked records. Event rows
+  are filterable by family and expandable, exposing source-document names/URLs,
+  source refs, evidence status, review status, amount status, and missing-data
+  flags. Search now shows empty/error states and flags database results that are
+  not yet implemented as map drilldowns.
 
 Notable data observations:
 

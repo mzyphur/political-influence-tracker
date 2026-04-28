@@ -149,6 +149,9 @@ historical office terms, reviewed context summaries, and a person-linked
 `recent_events` feed. The feed is the first UI surface for "what did this person
 receive or disclose?" across money, gifts, hospitality, travel, private
 interests, organisational roles, and other traceable disclosed records.
+Each recent event includes source-document labels/URLs, source refs, evidence
+status, review status, amount status, and missing-data flags so the frontend can
+show the evidentiary trail rather than only a summary claim.
 
 The response also includes a `contact` object for public representative contact
 details. Phone and office-address fields come from APH contact CSVs. Email is

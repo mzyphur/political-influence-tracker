@@ -56,6 +56,7 @@ function App() {
   const [searchStatus, setSearchStatus] = useState<LoadState>("idle");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [searchCaveat, setSearchCaveat] = useState("");
+  const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
   const [pendingSearchResult, setPendingSearchResult] = useState<SearchResult | null>(null);
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
   const [coverageStatus, setCoverageStatus] = useState<LoadState>("idle");
@@ -158,6 +159,7 @@ function App() {
     if (dataLevel !== "federal" || cleaned.length < 3) {
       setSearchResults([]);
       setSearchStatus("idle");
+      setSelectedSearchResult(null);
       return;
     }
     const controller = new AbortController();
@@ -201,9 +203,11 @@ function App() {
     if (feature) {
       setSelectedFeature(feature);
       setPendingSearchResult(null);
+      setSelectedSearchResult(null);
       return;
     }
 
+    setSelectedSearchResult(result);
     const resultChamber = stringMetadata(result, "chamber")?.toLowerCase();
     const resultState = stringMetadata(result, "state_or_territory")?.toUpperCase();
     if (resultChamber === "house" || resultChamber === "senate") {
@@ -262,6 +266,7 @@ function App() {
                 key={level}
                 type="button"
                 className={dataLevel === level ? "active" : ""}
+                aria-pressed={dataLevel === level}
                 onClick={() => setDataLevel(level)}
               >
                 {levelLabels[level]}
@@ -290,6 +295,7 @@ function App() {
               <button
                 type="button"
                 className={chamber === "house" ? "active" : ""}
+                aria-pressed={chamber === "house"}
                 disabled={dataLevel !== "federal"}
                 onClick={() => setChamber("house")}
               >
@@ -298,6 +304,7 @@ function App() {
               <button
                 type="button"
                 className={chamber === "senate" ? "active" : ""}
+                aria-pressed={chamber === "senate"}
                 disabled={dataLevel !== "federal"}
                 onClick={() => setChamber("senate")}
               >
@@ -350,13 +357,29 @@ function App() {
             </div>
           )}
 
-          {searchResults.length > 0 && (
-            <div className="search-results" aria-label="Search results">
+          {dataLevel === "federal" && query.trim().length >= 3 && (
+            <div className="search-results" aria-label="Search results" aria-live="polite">
+              {searchStatus === "loading" && (
+                <p className="muted inline-loading">
+                  <Loader2 size={14} className="spin" aria-hidden="true" />
+                  Searching
+                </p>
+              )}
+              {searchStatus === "error" && (
+                <p className="muted">Search failed: {searchCaveat}</p>
+              )}
+              {searchStatus === "ready" && searchResults.length === 0 && (
+                <p className="muted">No source-backed results matched this search.</p>
+              )}
               {searchResults.map((result) => (
                 <button
                   type="button"
                   key={`${result.type}:${result.id}`}
                   className="search-result"
+                  data-selected={
+                    selectedSearchResult?.type === result.type &&
+                    String(selectedSearchResult.id) === String(result.id)
+                  }
                   onClick={() => selectSearchResult(result)}
                 >
                   <span className="result-type">{result.type.replace("_", " ")}</span>
@@ -364,6 +387,16 @@ function App() {
                   <small>{result.subtitle || "Source-backed record"}</small>
                 </button>
               ))}
+              {selectedSearchResult && (
+                <div className="search-selection-note">
+                  <strong>{selectedSearchResult.label}</strong>
+                  <span>
+                    This {selectedSearchResult.type.replace("_", " ")} result is in the database,
+                    but it is not yet a map drilldown target. Use it as a discovery lead while
+                    entity, party, sector, and topic detail panels are built.
+                  </span>
+                </div>
+              )}
               {searchCaveat && <p className="caveat compact">{searchCaveat}</p>}
             </div>
           )}

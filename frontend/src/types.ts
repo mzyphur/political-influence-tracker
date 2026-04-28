@@ -125,6 +125,9 @@ export type RepresentativeEvent = {
   review_status: string;
   missing_data_flags: unknown[];
   source_ref: string | null;
+  source_id: string;
+  source_name: string;
+  source_type: string;
   source_url: string | null;
   source_final_url: string | null;
 };

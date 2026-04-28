@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -13,7 +14,13 @@ import {
   Vote
 } from "lucide-react";
 import { formatMoney } from "../map";
-import type { ElectorateFeature, LoadState, RepresentativeContact, RepresentativeProfile } from "../types";
+import type {
+  ElectorateFeature,
+  LoadState,
+  RepresentativeContact,
+  RepresentativeEvent,
+  RepresentativeProfile
+} from "../types";
 
 type DetailsPanelProps = {
   feature: ElectorateFeature | null;
@@ -38,6 +45,39 @@ export function DetailsPanel({
   onSelectRepresentative,
   onCloseContact
 }: DetailsPanelProps) {
+  const [eventFamilyFilter, setEventFamilyFilter] = useState("all");
+  const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
+  const recentEvents = representativeProfile?.recent_events ?? [];
+  const totalRepresentativeEvents = useMemo(() => {
+    return representativeProfile?.event_summary.reduce(
+      (total, summary) => total + summary.event_count,
+      0
+    ) ?? 0;
+  }, [representativeProfile]);
+  const eventFamilyOptions = useMemo(() => {
+    const summaries = representativeProfile?.event_summary ?? [];
+    return [
+      { key: "all", label: "All", count: totalRepresentativeEvents },
+      ...summaries.map((summary) => ({
+        key: summary.event_family,
+        label: summary.event_family.replaceAll("_", " "),
+        count: summary.event_count
+      }))
+    ];
+  }, [representativeProfile, totalRepresentativeEvents]);
+  const filteredEvents = useMemo(() => {
+    const events =
+      eventFamilyFilter === "all"
+        ? recentEvents
+        : recentEvents.filter((event) => event.event_family === eventFamilyFilter);
+    return events.slice(0, 8);
+  }, [eventFamilyFilter, recentEvents]);
+
+  useEffect(() => {
+    setEventFamilyFilter("all");
+    setExpandedEventId(null);
+  }, [selectedPersonId]);
+
   if (!feature) {
     return (
       <aside className="details-panel empty" aria-label="Selection details">
@@ -152,23 +192,46 @@ export function DetailsPanel({
                 <p className="muted">No source-backed person-linked records are loaded yet.</p>
               )}
             </div>
+            {eventFamilyOptions.length > 1 && (
+              <div className="event-filter-row" aria-label="Record family filter">
+                {eventFamilyOptions.map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    aria-pressed={eventFamilyFilter === option.key}
+                    onClick={() => {
+                      setEventFamilyFilter(option.key);
+                      setExpandedEventId(null);
+                    }}
+                  >
+                    <span>{option.label}</span>
+                    <strong>{option.count.toLocaleString("en-AU")}</strong>
+                  </button>
+                ))}
+              </div>
+            )}
+            {totalRepresentativeEvents > 0 && (
+              <p className="event-count-note">
+                Showing {filteredEvents.length.toLocaleString("en-AU")} loaded records
+                {totalRepresentativeEvents > filteredEvents.length
+                  ? ` from ${totalRepresentativeEvents.toLocaleString("en-AU")} non-rejected person-linked records`
+                  : ""}.
+              </p>
+            )}
             <div className="event-list">
-              {representativeProfile.recent_events.slice(0, 8).map((event) => (
-                <article className="event-row" key={event.id}>
-                  <div>
-                    <strong>{event.event_type.replaceAll("_", " ")}</strong>
-                    <span>
-                      {event.source_entity_name || event.source_raw_name || "Source not identified"}
-                    </span>
-                  </div>
-                  <p>{event.description}</p>
-                  <small>
-                    {[eventTimeLabel(event), formatMoney(event.amount)]
-                      .filter(Boolean)
-                      .join(" · ")}
-                  </small>
-                </article>
+              {filteredEvents.map((event) => (
+                <EventRow
+                  event={event}
+                  expanded={expandedEventId === event.id}
+                  key={event.id}
+                  onToggle={() =>
+                    setExpandedEventId((current) => (current === event.id ? null : event.id))
+                  }
+                />
               ))}
+              {filteredEvents.length === 0 && eventFamilyFilter !== "all" && (
+                <p className="muted">No loaded records match this filter.</p>
+              )}
             </div>
           </>
         )}
@@ -201,6 +264,90 @@ function eventTimeLabel(event: { event_date: string | null; reporting_period: st
   return null;
 }
 
+function EventRow({
+  event,
+  expanded,
+  onToggle
+}: {
+  event: RepresentativeEvent;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  const sourceHref = event.source_final_url || event.source_url;
+  const sourceName = event.source_name || event.source_id || "Source document";
+  return (
+    <article className="event-row" data-expanded={expanded}>
+      <button
+        type="button"
+        className="event-summary-button"
+        aria-expanded={expanded}
+        onClick={onToggle}
+      >
+        <div>
+          <strong>{event.event_type.replaceAll("_", " ")}</strong>
+          <span>{event.source_entity_name || event.source_raw_name || "Source not identified"}</span>
+        </div>
+        <small>
+          {[eventTimeLabel(event), formatMoney(event.amount)]
+            .filter(Boolean)
+            .join(" · ")}
+        </small>
+      </button>
+      <p>{event.description}</p>
+      <div className="event-chip-row">
+        <span>{event.event_family.replaceAll("_", " ")}</span>
+        <span>{event.evidence_status.replaceAll("_", " ")}</span>
+        <span>{event.review_status.replaceAll("_", " ")}</span>
+      </div>
+      {expanded && (
+        <div className="event-detail">
+          <DetailLine label="Source">
+            {sourceHref ? (
+              <a href={sourceHref} target="_blank" rel="noreferrer">
+                {sourceName}
+              </a>
+            ) : (
+              sourceName
+            )}
+          </DetailLine>
+          <DetailLine label="Source ref">{event.source_ref || "Not recorded"}</DetailLine>
+          <DetailLine label="Amount status">
+            {[event.amount_status.replaceAll("_", " "), event.currency].filter(Boolean).join(" · ")}
+          </DetailLine>
+          {event.event_subtype && (
+            <DetailLine label="Subtype">{event.event_subtype.replaceAll("_", " ")}</DetailLine>
+          )}
+          <DetailLine label="Missing fields">
+            {formatMissingFlags(event.missing_data_flags)}
+          </DetailLine>
+        </div>
+      )}
+    </article>
+  );
+}
+
+function DetailLine({
+  label,
+  children
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="detail-line">
+      <small>{label}</small>
+      <span>{children}</span>
+    </div>
+  );
+}
+
+function formatMissingFlags(flags: unknown[]) {
+  const cleaned = flags
+    .map((flag) => String(flag).replaceAll("_", " "))
+    .filter(Boolean);
+  return cleaned.length ? cleaned.join(", ") : "No missing-field flags recorded";
+}
+
 function ContactPopup({
   profile,
   status,
@@ -210,9 +357,23 @@ function ContactPopup({
   status: LoadState;
   onClose: () => void;
 }) {
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [onClose]);
+
   if (status === "loading") {
     return (
       <div className="contact-popover" role="dialog" aria-label="Representative contact details">
+        <div className="contact-popover-header">
+          <strong>Public contact details</strong>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close contact details">
+            <X size={15} aria-hidden="true" />
+          </button>
+        </div>
         <p className="muted inline-loading">
           <Loader2 size={14} className="spin" aria-hidden="true" />
           Loading public contact details
@@ -223,6 +384,12 @@ function ContactPopup({
   if (status === "error" || !profile) {
     return (
       <div className="contact-popover" role="dialog" aria-label="Representative contact details">
+        <div className="contact-popover-header">
+          <strong>Public contact details</strong>
+          <button type="button" className="icon-button" onClick={onClose} aria-label="Close contact details">
+            <X size={15} aria-hidden="true" />
+          </button>
+        </div>
         <p className="muted">Could not load public contact details.</p>
       </div>
     );

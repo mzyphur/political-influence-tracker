@@ -1421,6 +1421,9 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
                 influence_event.review_status,
                 influence_event.missing_data_flags,
                 influence_event.source_ref,
+                source_document.source_id,
+                source_document.source_name,
+                source_document.source_type,
                 source_document.url AS source_url,
                 source_document.final_url AS source_final_url
             FROM influence_event

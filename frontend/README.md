@@ -23,6 +23,9 @@ The first usable screen is the national map explorer:
 - `/api/representatives/{person_id}` supplies the side panel's selected
   representative record feed, including money, benefits, private interests,
   organisational roles, and other person-linked disclosed records.
+- Representative record rows can be filtered by record family and expanded to
+  show source links, source refs, evidence/review status, amount status, and
+  missing-data flags.
 - Clicking a representative opens a public contact details popup. The popup uses
   APH contact CSV phone/address fields and APH contact-list PDF email fields
   when the official PDF exposes an email; otherwise it shows the official APH
