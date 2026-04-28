@@ -1,68 +1,5 @@
-ALTER TABLE sector_policy_topic_link
-    ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'needs_review';
-
-ALTER TABLE sector_policy_topic_link
-    ALTER COLUMN confidence SET NOT NULL,
-    ALTER COLUMN evidence_note SET NOT NULL;
-
-ALTER TABLE sector_policy_topic_link
-    DROP CONSTRAINT IF EXISTS sector_policy_topic_link_public_sector_nonempty,
-    ADD CONSTRAINT sector_policy_topic_link_public_sector_nonempty
-    CHECK (length(btrim(public_sector)) > 0);
-
-ALTER TABLE sector_policy_topic_link
-    DROP CONSTRAINT IF EXISTS sector_policy_topic_link_evidence_note_nonempty,
-    ADD CONSTRAINT sector_policy_topic_link_evidence_note_nonempty
-    CHECK (length(btrim(evidence_note)) > 0);
-
-ALTER TABLE sector_policy_topic_link
-    DROP CONSTRAINT IF EXISTS sector_policy_topic_link_review_status_check,
-    ADD CONSTRAINT sector_policy_topic_link_review_status_check
-    CHECK (review_status IN ('needs_review', 'reviewed', 'rejected'));
-
-ALTER TABLE sector_policy_topic_link
-    DROP CONSTRAINT IF EXISTS sector_policy_topic_link_reviewed_requires_reviewer,
-    ADD CONSTRAINT sector_policy_topic_link_reviewed_requires_reviewer
-    CHECK (
-        review_status <> 'reviewed'
-        OR (
-            reviewer IS NOT NULL
-            AND length(btrim(reviewer)) > 0
-            AND reviewed_at IS NOT NULL
-        )
-    );
-
 DROP VIEW IF EXISTS person_policy_influence_context;
 DROP VIEW IF EXISTS person_influence_sector_summary;
-DROP VIEW IF EXISTS person_policy_vote_summary;
-
-CREATE OR REPLACE VIEW person_policy_vote_summary AS
-SELECT
-    pv.person_id,
-    p.display_name AS person_name,
-    vd.chamber,
-    dt.topic_id,
-    pt.slug AS topic_slug,
-    pt.label AS topic_label,
-    count(*) AS division_vote_count,
-    count(*) FILTER (WHERE pv.vote IN ('aye', 'tell_aye')) AS aye_count,
-    count(*) FILTER (WHERE pv.vote IN ('no', 'tell_no')) AS no_count,
-    count(*) FILTER (WHERE pv.vote = 'absent') AS absent_count,
-    count(*) FILTER (WHERE pv.vote NOT IN ('aye', 'tell_aye', 'no', 'tell_no', 'absent')) AS other_vote_count,
-    count(*) FILTER (WHERE pv.rebelled_against_party IS TRUE) AS rebel_count,
-    min(vd.division_date) AS first_division_date,
-    max(vd.division_date) AS last_division_date,
-    'recorded_divisions_linked_to_topics'::TEXT AS summary_scope,
-    jsonb_build_object(
-        'view_caveat',
-        'Summarizes recorded divisions linked to policy topics; voice votes, party-room decisions, and unlinked divisions are outside this view.'
-    ) AS metadata
-FROM person_vote pv
-JOIN person p ON p.id = pv.person_id
-JOIN vote_division vd ON vd.id = pv.division_id
-JOIN division_topic dt ON dt.division_id = vd.id
-JOIN policy_topic pt ON pt.id = dt.topic_id
-GROUP BY pv.person_id, p.display_name, vd.chamber, dt.topic_id, pt.slug, pt.label;
 
 CREATE OR REPLACE VIEW person_influence_sector_summary AS
 WITH best_entity_sector AS (
@@ -133,7 +70,7 @@ SELECT
             )
         ),
         'view_caveat',
-        'Lifetime summary of disclosed influence events by source-entity sector; sector labels may be inferred unless backed by official or manual review evidence.'
+        'Lifetime summary of disclosed influence events by source-entity sector; sector labels may be inferred unless backed by official or manual review evidence. Reported amount totals exclude campaign_support rows so campaign activity is not collapsed into direct money/gift totals.'
     ) AS metadata
 FROM influence_event ie
 JOIN person p ON p.id = ie.recipient_person_id
@@ -213,7 +150,7 @@ SELECT
     'reviewed_sector_topic_context_with_temporal_buckets'::TEXT AS context_scope,
     jsonb_build_object(
         'view_caveat',
-        'Context view only. Rows require a reviewed sector_policy_topic_link and do not assert causation, quid pro quo, or improper conduct. Influence timing is bucketed relative to the linked topic vote span.'
+        'Context view only. Rows require a reviewed sector_policy_topic_link and do not assert causation, quid pro quo, or improper conduct. Influence timing is bucketed relative to the linked topic vote span. Reported amount totals exclude campaign_support rows.'
     ) AS metadata
 FROM person_policy_vote_summary votes
 JOIN sector_policy_topic_link link ON link.topic_id = votes.topic_id

@@ -90,7 +90,10 @@ SELECT
     count(*) FILTER (WHERE ie.event_family = 'benefit') AS benefit_event_count,
     count(*) FILTER (WHERE ie.event_family = 'private_interest') AS private_interest_event_count,
     count(*) FILTER (WHERE ie.event_family = 'organisational_role') AS organisational_role_event_count,
-    sum(ie.amount) FILTER (WHERE ie.amount_status = 'reported') AS reported_amount_total,
+    sum(ie.amount) FILTER (
+        WHERE ie.amount_status = 'reported'
+          AND ie.event_family <> 'campaign_support'
+    ) AS reported_amount_total,
     min(ie.event_date) AS first_event_date,
     max(ie.event_date) AS last_event_date,
     jsonb_build_object(

@@ -377,6 +377,7 @@ CREATE TABLE influence_event (
         event_family IN (
             'money',
             'benefit',
+            'campaign_support',
             'private_interest',
             'organisational_role',
             'access',
@@ -721,7 +722,10 @@ SELECT
     count(*) FILTER (WHERE ie.event_family = 'benefit') AS benefit_event_count,
     count(*) FILTER (WHERE ie.event_family = 'private_interest') AS private_interest_event_count,
     count(*) FILTER (WHERE ie.event_family = 'organisational_role') AS organisational_role_event_count,
-    count(*) FILTER (WHERE ie.amount_status = 'reported') AS reported_amount_event_count,
+    count(*) FILTER (
+        WHERE ie.amount_status = 'reported'
+          AND ie.event_family <> 'campaign_support'
+    ) AS reported_amount_event_count,
     count(*) FILTER (WHERE ie.amount_status = 'not_disclosed') AS not_disclosed_amount_event_count,
     count(*) FILTER (WHERE ie.review_status = 'needs_review') AS needs_review_event_count,
     count(*) FILTER (WHERE jsonb_array_length(ie.missing_data_flags) > 0) AS missing_data_event_count,
@@ -734,7 +738,10 @@ SELECT
         WHERE best_entity_sector.method IS NULL
            OR best_entity_sector.method NOT IN ('official', 'manual')
     ) AS inferred_or_unknown_sector_event_count,
-    sum(ie.amount) FILTER (WHERE ie.amount_status = 'reported') AS reported_amount_total,
+    sum(ie.amount) FILTER (
+        WHERE ie.amount_status = 'reported'
+          AND ie.event_family <> 'campaign_support'
+    ) AS reported_amount_total,
     min(ie.event_date) AS first_event_date,
     max(ie.event_date) AS last_event_date,
     'lifetime_disclosed_influence_events'::TEXT AS summary_scope,
@@ -794,21 +801,30 @@ SELECT
     count(ie.id) FILTER (WHERE ie.event_family = 'benefit') AS lifetime_benefit_event_count,
     count(ie.id) FILTER (WHERE ie.event_family = 'private_interest') AS lifetime_private_interest_event_count,
     count(ie.id) FILTER (WHERE ie.event_family = 'organisational_role') AS lifetime_organisational_role_event_count,
-    sum(ie.amount) FILTER (WHERE ie.amount_status = 'reported') AS lifetime_reported_amount_total,
     sum(ie.amount) FILTER (
         WHERE ie.amount_status = 'reported'
+          AND ie.event_family <> 'campaign_support'
+    ) AS lifetime_reported_amount_total,
+    sum(ie.amount) FILTER (
+        WHERE ie.amount_status = 'reported'
+          AND ie.event_family <> 'campaign_support'
           AND ie.event_date < votes.first_division_date
     ) AS reported_amount_before_first_vote,
     sum(ie.amount) FILTER (
         WHERE ie.amount_status = 'reported'
+          AND ie.event_family <> 'campaign_support'
           AND ie.event_date >= votes.first_division_date
           AND ie.event_date <= votes.last_division_date
     ) AS reported_amount_during_vote_span,
     sum(ie.amount) FILTER (
         WHERE ie.amount_status = 'reported'
+          AND ie.event_family <> 'campaign_support'
           AND ie.event_date > votes.last_division_date
     ) AS reported_amount_after_last_vote,
-    count(ie.id) FILTER (WHERE ie.amount_status = 'reported') AS reported_amount_event_count,
+    count(ie.id) FILTER (
+        WHERE ie.amount_status = 'reported'
+          AND ie.event_family <> 'campaign_support'
+    ) AS reported_amount_event_count,
     count(ie.id) FILTER (WHERE ie.amount_status = 'not_disclosed') AS not_disclosed_amount_event_count,
     count(ie.id) FILTER (WHERE ie.review_status = 'needs_review') AS needs_review_event_count,
     count(ie.id) FILTER (WHERE jsonb_array_length(ie.missing_data_flags) > 0) AS missing_data_event_count,

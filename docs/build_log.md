@@ -301,6 +301,17 @@ Verification:
   `geometry_role=display`, backed by `land_clipped_display` geometry derived
   from AIMS/eAtlas/AODN Australian Coastline 50K land-area polygons. Source
   geometry remains requestable for audit via `geometry_role=source`.
+- Added the `campaign_support` influence-event family for source-backed
+  campaign support and party-channelled support. The AEC election normalizer now
+  covers candidate/Senate group expenses, candidate/Senate group return
+  summaries, and third-party campaign expenditure, while preserving direct money
+  and benefit records as separate families. The frontend exposes this as “Money
+  Connected To This Representative,” with campaign support labelled separately
+  from direct disclosed money/gifts/interests.
+- Added migration coverage and integration tests to keep campaign support out of
+  direct-money totals, source-effect context amount totals, person/entity graph
+  direct-disclosure edges, and entity direct-money summaries. Campaign-support
+  amounts remain visible in campaign-support-specific fields and panels.
 
 Notable data observations:
 
@@ -310,12 +321,19 @@ Notable data observations:
   Donor Donations Received, and Third Party Donations Received. It does not yet
   normalize annual debts, discretionary benefits, capital contributions, or
   return summary tables.
-- The AEC election normalizer produced 19,994 detail observations from the
+- An earlier AEC election normalizer pass produced 19,994 detail observations from the
   current election bulk ZIP. It identified 17,972 canonical transaction keys,
   965 duplicate transaction groups, and 971 duplicate observations. Duplicate
   observations and campaign-expenditure rows remain available as records but
   use `amount_status=not_applicable` in the unified event layer so donation-like
   reported totals are not overstated.
+- The expanded AEC election normalizer version 2 produced 52,581 observations
+  from the current election bulk ZIP: 34,308 candidate/Senate group campaign
+  support flows, 15,119 media-advertising rows, 204 third-party campaign
+  expenditure rows, and the original donor/candidate/third-party donation and
+  benefit detail rows. Candidate/electorate/state context is attached only when
+  the candidate-context key is unambiguous; nine ambiguous context keys are
+  withheld for review rather than linked.
 - House interests text extraction needed OCR fallback for scanned/low-text pages, including `Gosling_48P.pdf` and `Katter_48P.pdf`; OCR artifacts are handled in the metadata extractor and record filters.
 - The Senate register currently exposes structured JSON through a public API used by the official APH React app; this is preferable to PDF scraping for current Senate interests, but the API should be monitored for schema changes.
 - `public_interest_sector_rules_v1` is useful for exploratory filtering but remains inferred. Any public claim about an entity's sector should retain the classifier/method/confidence caveat until ABN/ASIC/ANZSIC or manual-review evidence is added.

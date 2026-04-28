@@ -794,6 +794,106 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert context_payload["rows"][0]["relationship"] == "direct_material_interest"
 
 
+def test_campaign_support_stays_separate_from_direct_money_totals(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
+            jurisdiction_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO influence_event (
+                    external_key, event_family, event_type, source_entity_id,
+                    source_raw_name, recipient_person_id, recipient_raw_name,
+                    jurisdiction_id, amount, amount_status, event_date, chamber,
+                    disclosure_system, evidence_status, extraction_method, review_status,
+                    description, source_document_id, source_ref, missing_data_flags,
+                    metadata
+                )
+                VALUES (
+                    'influence:clean-energy:jane-citizen:campaign-support',
+                    'campaign_support',
+                    'candidate_or_senate_group_campaign_expenditure',
+                    %s, 'Clean Energy Pty Ltd', %s, 'Jane Citizen', %s,
+                    5000.00, 'reported', '2025-04-01', 'house',
+                    'pytest fixture', 'official_record_parsed', 'fixture_seed',
+                    'not_required',
+                    'Fixture campaign support connected to the candidate context, not a personal receipt.',
+                    %s, 'fixture-campaign-support-row', '[]'::jsonb, %s
+                )
+                """,
+                (
+                    integration_db.entity_id,
+                    integration_db.person_id,
+                    jurisdiction_id,
+                    source_document_id,
+                    Jsonb(
+                        {
+                            "campaign_support_attribution": {
+                                "tier": "source_backed_campaign_support_record",
+                                "not_personal_receipt": True,
+                            },
+                            "fixture": True,
+                        }
+                    ),
+                ),
+            )
+        conn.commit()
+
+    client = TestClient(app)
+
+    map_response = client.get(
+        "/api/map/electorates",
+        params={"state": "VIC", "boundary_set": "pytest_boundary_set"},
+    )
+    assert map_response.status_code == 200
+    map_properties = map_response.json()["features"][0]["properties"]
+    assert map_properties["current_representative_lifetime_influence_event_count"] == 2
+    assert map_properties["current_representative_lifetime_campaign_support_event_count"] == 1
+    assert map_properties["current_representative_lifetime_reported_amount_total"] == 1250.0
+    assert map_properties["current_representative_campaign_support_reported_total"] == 5000.0
+
+    representative_response = client.get(f"/api/representatives/{integration_db.person_id}")
+    assert representative_response.status_code == 200
+    representative_payload = representative_response.json()
+    assert {
+        row["event_family"]: row["reported_amount_total"]
+        for row in representative_payload["event_summary"]
+    } == {"money": 1250.0}
+    assert representative_payload["campaign_support_summary"][0]["event_count"] == 1
+    assert representative_payload["campaign_support_summary"][0]["reported_amount_total"] == 5000.0
+
+    graph_response = client.get(
+        "/api/graph/influence",
+        params={"person_id": integration_db.person_id, "limit": "10"},
+    )
+    assert graph_response.status_code == 200
+    graph_payload = graph_response.json()
+    assert graph_payload["edge_count"] == 1
+    assert graph_payload["edges"][0]["reported_amount_total"] == 1250.0
+
+    entity_response = client.get(f"/api/entities/{integration_db.entity_id}")
+    assert entity_response.status_code == 200
+    entity_payload = entity_response.json()
+    by_family = {row["event_family"]: row for row in entity_payload["as_source_summary"]}
+    assert by_family["money"]["reported_amount_total"] == 1250.0
+    assert by_family["campaign_support"]["event_count"] == 1
+    assert by_family["campaign_support"]["reported_amount_total"] is None
+    assert entity_payload["top_recipients"][0]["reported_amount_total"] == 1250.0
+
+    entity_graph_response = client.get(
+        "/api/graph/influence",
+        params={"entity_id": integration_db.entity_id, "limit": "10"},
+    )
+    assert entity_graph_response.status_code == 200
+    entity_graph_payload = entity_graph_response.json()
+    assert entity_graph_payload["edge_count"] == 1
+    assert entity_graph_payload["edges"][0]["reported_amount_total"] == 1250.0
+
+
 def test_aec_direct_member_return_rows_link_to_unique_people(
     integration_db: IntegrationDatabase,
 ) -> None:

@@ -9,6 +9,7 @@ import {
   Loader2,
   Mail,
   MapPin,
+  Megaphone,
   Network,
   Phone,
   X,
@@ -51,6 +52,8 @@ export function DetailsPanel({
   const [eventFamilyFilter, setEventFamilyFilter] = useState("all");
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
   const recentEvents = representativeProfile?.recent_events ?? [];
+  const campaignSupportSummary = representativeProfile?.campaign_support_summary ?? [];
+  const campaignSupportEvents = representativeProfile?.campaign_support_recent_events ?? [];
   const totalRepresentativeEvents = useMemo(() => {
     return representativeProfile?.event_summary.reduce(
       (total, summary) => total + summary.event_count,
@@ -181,16 +184,96 @@ export function DetailsPanel({
             tooltip="Backend event_family = benefit. Includes disclosed gifts, sponsored travel, hospitality, tickets, memberships, flights, meals, and similar register records where classified as benefits."
           />
           <Fact
+            icon={<Megaphone size={17} />}
+            label="Campaign support"
+            value={properties.current_representative_lifetime_campaign_support_event_count.toLocaleString("en-AU")}
+            tooltip="Backend event_family = campaign_support. These are candidate, Senate group, party-channelled, third-party, or advertising campaign records. They are not treated as money personally received by the representative."
+          />
+          <Fact
             icon={<Vote size={17} />}
-            label="Reported total"
+            label="Reported direct total"
             value={formatMoney(properties.current_representative_lifetime_reported_amount_total)}
-            tooltip="Sum of reported monetary amounts for non-rejected person-linked records. Records with not-disclosed values stay in the count but not the total."
+            tooltip="Sum of reported monetary amounts for non-rejected person-linked direct records, excluding campaign-support records. Records with not-disclosed values stay in the count but not the total."
           />
         </div>
       </section>
 
+      <section className="panel-section campaign-support-panel">
+        <h3>Money Connected To This Representative</h3>
+        <p className="scope-caption">
+          Direct records, campaign-return records, and party-channelled context stay in separate
+          buckets. Campaign support is source-backed where loaded, but it is not personal receipt.
+        </p>
+        <div className="fact-grid">
+          <Fact
+            icon={<Banknote size={17} />}
+            label="Direct money rows"
+            value={properties.current_representative_lifetime_money_event_count.toLocaleString("en-AU")}
+            tooltip="Direct AEC money records linked to this representative, excluding campaign-support rows."
+          />
+          <Fact
+            icon={<Megaphone size={17} />}
+            label="Campaign rows"
+            value={properties.current_representative_lifetime_campaign_support_event_count.toLocaleString("en-AU")}
+            tooltip="Candidate/Senate-group return rows, campaign expenditure, nil-return context, and related source-backed campaign activity where loaded."
+          />
+          <Fact
+            icon={<Gift size={17} />}
+            label="Benefit rows"
+            value={properties.current_representative_lifetime_benefit_event_count.toLocaleString("en-AU")}
+            tooltip="Disclosed benefits that are linked to the representative outside the campaign-support bucket."
+          />
+          <Fact
+            icon={<Vote size={17} />}
+            label="Campaign reported"
+            value={formatMoney(
+              properties.current_representative_campaign_support_reported_total
+            )}
+            tooltip="Reported monetary amounts for campaign-support rows. This is campaign support connected to the candidate/electorate context, not money personally received."
+          />
+        </div>
+        {representativeProfileStatus === "ready" && representativeProfile && (
+          <>
+            {campaignSupportSummary.length ? (
+              <div className="event-family-grid campaign-summary-grid">
+                {campaignSupportSummary.map((summary) => (
+                  <div
+                    className="event-family campaign-family"
+                    key={`${summary.event_type}:${summary.attribution_tier || "unknown"}`}
+                    title={campaignSupportTooltip(summary)}
+                  >
+                    <small>{summary.event_type.replaceAll("_", " ")}</small>
+                    <strong>{summary.event_count.toLocaleString("en-AU")}</strong>
+                    <span>{formatMoney(summary.reported_amount_total)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="muted">No campaign-support records are linked to this representative yet.</p>
+            )}
+            {representativeProfile.campaign_support_caveat && (
+              <p className="event-count-note">{representativeProfile.campaign_support_caveat}</p>
+            )}
+            {campaignSupportEvents.length > 0 && (
+              <div className="event-list campaign-event-list">
+                {campaignSupportEvents.slice(0, 5).map((event) => (
+                  <EventRow
+                    event={event}
+                    expanded={expandedEventId === event.id}
+                    key={event.id}
+                    onToggle={() =>
+                      setExpandedEventId((current) => (current === event.id ? null : event.id))
+                    }
+                  />
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </section>
+
       <section className="panel-section">
-        <h3>Selected Representative Records</h3>
+        <h3>Direct Disclosed Person Records</h3>
         {representativeProfileStatus === "loading" && (
           <p className="muted inline-loading">
             <Loader2 size={14} className="spin" aria-hidden="true" />
@@ -377,6 +460,30 @@ function eventFamilyTooltip(summary: {
     `Non-rejected person-linked rows: ${summary.event_count.toLocaleString("en-AU")}`,
     `Rows with reported amounts: ${summary.reported_amount_event_count.toLocaleString("en-AU")}`,
     `Reported total: ${formatMoney(summary.reported_amount_total)}`,
+    `Date span: ${dateSpan}`
+  ].join("\n");
+}
+
+function campaignSupportTooltip(summary: {
+  event_type: string;
+  attribution_tier: string | null;
+  event_count: number;
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  first_event_date: string | null;
+  last_event_date: string | null;
+}) {
+  const dateSpan =
+    summary.first_event_date || summary.last_event_date
+      ? `${summary.first_event_date || "unknown"} to ${summary.last_event_date || "unknown"}`
+      : "no event dates disclosed";
+  return [
+    `Backend event_type: ${summary.event_type}`,
+    `Attribution tier: ${summary.attribution_tier || "source-backed campaign support"}`,
+    "Interpretation: campaign support connected to a candidate/electorate context, not personal receipt.",
+    `Rows: ${summary.event_count.toLocaleString("en-AU")}`,
+    `Rows with reported amounts: ${summary.reported_amount_event_count.toLocaleString("en-AU")}`,
+    `Reported campaign-support total: ${formatMoney(summary.reported_amount_total)}`,
     `Date span: ${dateSpan}`
   ].join("\n");
 }

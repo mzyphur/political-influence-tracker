@@ -131,6 +131,12 @@ are populated only when exactly one current representative is attached; use
 Influence summary fields are explicitly named
 `current_representative_lifetime_*` because they summarize publishable records
 for the current representative(s), not the electorate itself.
+`current_representative_lifetime_reported_amount_total` excludes
+`campaign_support` records so campaign expenditure and party-channelled context
+are not collapsed into direct money/gift totals. Campaign rows are exposed
+separately via
+`current_representative_lifetime_campaign_support_event_count` and
+`current_representative_campaign_support_reported_total`.
 
 For `chamber=senate`, the endpoint returns one current Senate delegation feature
 per state or territory. Senate geometries are composite state/territory features
@@ -171,15 +177,25 @@ Each recent event includes source-document labels/URLs, source refs, evidence
 status, review status, amount status, and missing-data flags so the frontend can
 show the evidentiary trail rather than only a summary claim.
 
+Campaign-return and party-channelled records are deliberately separated from
+the direct feed. The response includes `campaign_support_summary`,
+`campaign_support_recent_events`, and `campaign_support_caveat` for candidate
+or Senate-group election returns, campaign expenditure, nil-return context, and
+other campaign activity that is source-backed but not personal receipt. House
+candidate rows are linked to representatives only when the candidate name,
+electorate, and state form an exact unique match; Senate rows stay at
+state/group/party context unless a source supports senator-specific attribution.
+
 The response also includes a `contact` object for public representative contact
 details. Phone and office-address fields come from APH contact CSVs. Email is
 populated only when the address is present in an official APH House/Senate
 contact-list PDF and the deterministic match is unambiguous; otherwise the API
 returns the official APH profile/search URL as the electronic contact path.
 
-These are still person-linked records only. Party/entity/candidate-return money
-flows remain in the whole database and should be surfaced through party/entity
-and attribution-method views rather than forced onto a person without evidence.
+These are still person-linked or source-backed campaign-context records only.
+Party/entity aggregate money flows remain in the whole database and should be
+surfaced through party/entity and attribution-method views rather than forced
+onto a person without evidence.
 
 ## Entity Profiles
 

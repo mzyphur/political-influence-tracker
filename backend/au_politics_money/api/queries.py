@@ -712,12 +712,16 @@ def get_electorate_map(
                     AS current_representative_lifetime_money_event_count,
                 COALESCE(influence_summary.benefit_event_count, 0)
                     AS current_representative_lifetime_benefit_event_count,
+                COALESCE(influence_summary.campaign_support_event_count, 0)
+                    AS current_representative_lifetime_campaign_support_event_count,
                 COALESCE(influence_summary.needs_review_event_count, 0)
                     AS current_representative_needs_review_event_count,
                 COALESCE(influence_summary.official_record_event_count, 0)
                     AS current_representative_official_record_event_count,
                 influence_summary.reported_amount_total
                     AS current_representative_lifetime_reported_amount_total,
+                influence_summary.campaign_support_reported_amount_total
+                    AS current_representative_campaign_support_reported_total,
                 {geometry_expression}
             FROM electorate
             LEFT JOIN LATERAL (
@@ -814,6 +818,9 @@ def get_electorate_map(
                         WHERE influence_event.event_family = 'benefit'
                     ) AS benefit_event_count,
                     count(influence_event.id) FILTER (
+                        WHERE influence_event.event_family = 'campaign_support'
+                    ) AS campaign_support_event_count,
+                    count(influence_event.id) FILTER (
                         WHERE influence_event.review_status = 'needs_review'
                     ) AS needs_review_event_count,
                     count(influence_event.id) FILTER (
@@ -824,7 +831,12 @@ def get_electorate_map(
                     ) AS official_record_event_count,
                     sum(influence_event.amount) FILTER (
                         WHERE influence_event.amount_status = 'reported'
-                    ) AS reported_amount_total
+                          AND influence_event.event_family <> 'campaign_support'
+                    ) AS reported_amount_total,
+                    sum(influence_event.amount) FILTER (
+                        WHERE influence_event.amount_status = 'reported'
+                          AND influence_event.event_family = 'campaign_support'
+                    ) AS campaign_support_reported_amount_total
                 FROM (
                     SELECT DISTINCT office_term.person_id
                     FROM office_term
@@ -975,9 +987,15 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
                     AS party_linked_event_count,
                 count(*) FILTER (WHERE source_entity_id IS NOT NULL)
                     AS source_entity_linked_event_count,
-                count(*) FILTER (WHERE amount_status = 'reported')
+                count(*) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family <> 'campaign_support'
+                )
                     AS reported_amount_event_count,
-                sum(amount) FILTER (WHERE amount_status = 'reported')
+                sum(amount) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family <> 'campaign_support'
+                )
                     AS reported_amount_total,
                 min(event_date) AS first_event_date,
                 max(event_date) AS last_event_date
@@ -1264,12 +1282,16 @@ def _get_senate_map(
                     AS current_representative_lifetime_money_event_count,
                 COALESCE(influence_summary.benefit_event_count, 0)
                     AS current_representative_lifetime_benefit_event_count,
+                COALESCE(influence_summary.campaign_support_event_count, 0)
+                    AS current_representative_lifetime_campaign_support_event_count,
                 COALESCE(influence_summary.needs_review_event_count, 0)
                     AS current_representative_needs_review_event_count,
                 COALESCE(influence_summary.official_record_event_count, 0)
                     AS current_representative_official_record_event_count,
                 influence_summary.reported_amount_total
                     AS current_representative_lifetime_reported_amount_total,
+                influence_summary.campaign_support_reported_amount_total
+                    AS current_representative_campaign_support_reported_total,
                 {geometry_expression}
             FROM electorate
             JOIN LATERAL (
@@ -1336,6 +1358,9 @@ def _get_senate_map(
                         WHERE influence_event.event_family = 'benefit'
                     ) AS benefit_event_count,
                     count(influence_event.id) FILTER (
+                        WHERE influence_event.event_family = 'campaign_support'
+                    ) AS campaign_support_event_count,
+                    count(influence_event.id) FILTER (
                         WHERE influence_event.review_status = 'needs_review'
                     ) AS needs_review_event_count,
                     count(influence_event.id) FILTER (
@@ -1346,7 +1371,12 @@ def _get_senate_map(
                     ) AS official_record_event_count,
                     sum(influence_event.amount) FILTER (
                         WHERE influence_event.amount_status = 'reported'
-                    ) AS reported_amount_total
+                          AND influence_event.event_family <> 'campaign_support'
+                    ) AS reported_amount_total,
+                    sum(influence_event.amount) FILTER (
+                        WHERE influence_event.amount_status = 'reported'
+                          AND influence_event.event_family = 'campaign_support'
+                    ) AS campaign_support_reported_amount_total
                 FROM (
                     SELECT DISTINCT office_term.person_id
                     FROM office_term
@@ -1457,15 +1487,22 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             SELECT
                 event_family,
                 count(*) AS event_count,
-                count(*) FILTER (WHERE amount_status = 'reported')
+                count(*) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family <> 'campaign_support'
+                )
                     AS reported_amount_event_count,
-                sum(amount) FILTER (WHERE amount_status = 'reported')
+                sum(amount) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family <> 'campaign_support'
+                )
                     AS reported_amount_total,
                 min(event_date) AS first_event_date,
                 max(event_date) AS last_event_date
             FROM influence_event
             WHERE recipient_person_id = %s
               AND review_status <> 'rejected'
+              AND event_family <> 'campaign_support'
             GROUP BY event_family
             ORDER BY event_count DESC, event_family
             """,
@@ -1507,11 +1544,83 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
               ON source_document.id = influence_event.source_document_id
             WHERE influence_event.recipient_person_id = %s
               AND influence_event.review_status <> 'rejected'
+              AND influence_event.event_family <> 'campaign_support'
             ORDER BY
                 influence_event.event_date DESC NULLS LAST,
                 influence_event.date_reported DESC NULLS LAST,
                 influence_event.id DESC
             LIMIT 50
+            """,
+            (person_id,),
+        )
+        campaign_support_summary = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                event_type,
+                COALESCE(
+                    metadata->'campaign_support_attribution'->>'tier',
+                    metadata->'base_metadata'->>'attribution_tier',
+                    'source_backed_campaign_support_record'
+                ) AS attribution_tier,
+                count(*) AS event_count,
+                count(*) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_event_count,
+                sum(amount) FILTER (WHERE amount_status = 'reported')
+                    AS reported_amount_total,
+                min(event_date) AS first_event_date,
+                max(event_date) AS last_event_date
+            FROM influence_event
+            WHERE recipient_person_id = %s
+              AND review_status <> 'rejected'
+              AND event_family = 'campaign_support'
+            GROUP BY 1, 2
+            ORDER BY event_count DESC, event_type, attribution_tier
+            """,
+            (person_id,),
+        )
+        campaign_support_recent_events = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                influence_event.id,
+                influence_event.event_family,
+                influence_event.event_type,
+                influence_event.event_subtype,
+                influence_event.source_raw_name,
+                source_entity.canonical_name AS source_entity_name,
+                influence_event.amount,
+                influence_event.currency,
+                influence_event.amount_status,
+                influence_event.event_date,
+                influence_event.reporting_period,
+                influence_event.date_reported,
+                influence_event.description,
+                influence_event.disclosure_system,
+                influence_event.disclosure_threshold,
+                influence_event.evidence_status,
+                influence_event.extraction_method,
+                influence_event.review_status,
+                influence_event.missing_data_flags,
+                influence_event.source_ref,
+                source_document.source_id,
+                source_document.source_name,
+                source_document.source_type,
+                source_document.url AS source_url,
+                source_document.final_url AS source_final_url
+            FROM influence_event
+            LEFT JOIN entity source_entity
+              ON source_entity.id = influence_event.source_entity_id
+            JOIN source_document
+              ON source_document.id = influence_event.source_document_id
+            WHERE influence_event.recipient_person_id = %s
+              AND influence_event.review_status <> 'rejected'
+              AND influence_event.event_family = 'campaign_support'
+            ORDER BY
+                influence_event.event_date DESC NULLS LAST,
+                influence_event.date_reported DESC NULLS LAST,
+                influence_event.id DESC
+            LIMIT 25
             """,
             (person_id,),
         )
@@ -1563,6 +1672,14 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             "office_terms": terms,
             "event_summary": event_summary,
             "recent_events": recent_events,
+            "campaign_support_summary": campaign_support_summary,
+            "campaign_support_recent_events": campaign_support_recent_events,
+            "campaign_support_caveat": (
+                "Campaign support rows are source-backed election-return or advertising records "
+                "connected to a candidate, Senate group, party branch, third party, or media "
+                "advertiser. They are not treated as money personally received by the "
+                "representative unless a source explicitly supports that narrower claim."
+            ),
             "influence_by_sector": influence,
             "vote_topics": votes,
             "source_effect_context": context,
@@ -1654,9 +1771,15 @@ def get_entity_profile(entity_id: int, *, database_url: str | None = None) -> di
                 count(*) AS event_count,
                 count(*) FILTER (WHERE recipient_person_id IS NOT NULL)
                     AS person_linked_event_count,
-                count(*) FILTER (WHERE amount_status = 'reported')
+                count(*) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family <> 'campaign_support'
+                )
                     AS reported_amount_event_count,
-                sum(amount) FILTER (WHERE amount_status = 'reported')
+                sum(amount) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family <> 'campaign_support'
+                )
                     AS reported_amount_total,
                 min(event_date) AS first_event_date,
                 max(event_date) AS last_event_date
@@ -1676,9 +1799,15 @@ def get_entity_profile(entity_id: int, *, database_url: str | None = None) -> di
                 event_family,
                 event_type,
                 count(*) AS event_count,
-                count(*) FILTER (WHERE amount_status = 'reported')
+                count(*) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family <> 'campaign_support'
+                )
                     AS reported_amount_event_count,
-                sum(amount) FILTER (WHERE amount_status = 'reported')
+                sum(amount) FILTER (
+                    WHERE amount_status = 'reported'
+                      AND event_family <> 'campaign_support'
+                )
                     AS reported_amount_total,
                 min(event_date) AS first_event_date,
                 max(event_date) AS last_event_date
@@ -1708,10 +1837,14 @@ def get_entity_profile(entity_id: int, *, database_url: str | None = None) -> di
                     'Unknown recipient'
                 ) AS recipient_label,
                 count(*) AS event_count,
-                count(*) FILTER (WHERE influence_event.amount_status = 'reported')
+                count(*) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                      AND influence_event.event_family <> 'campaign_support'
+                )
                     AS reported_amount_event_count,
                 sum(influence_event.amount) FILTER (
                     WHERE influence_event.amount_status = 'reported'
+                      AND influence_event.event_family <> 'campaign_support'
                 ) AS reported_amount_total
             FROM influence_event
             LEFT JOIN person ON person.id = influence_event.recipient_person_id
@@ -1745,10 +1878,14 @@ def get_entity_profile(entity_id: int, *, database_url: str | None = None) -> di
                     'Unknown source'
                 ) AS source_label,
                 count(*) AS event_count,
-                count(*) FILTER (WHERE influence_event.amount_status = 'reported')
+                count(*) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                      AND influence_event.event_family <> 'campaign_support'
+                )
                     AS reported_amount_event_count,
                 sum(influence_event.amount) FILTER (
                     WHERE influence_event.amount_status = 'reported'
+                      AND influence_event.event_family <> 'campaign_support'
                 ) AS reported_amount_total
             FROM influence_event
             LEFT JOIN entity source_entity
@@ -2373,6 +2510,7 @@ def get_influence_graph(
                     count(DISTINCT influence_event.id) AS event_count,
                     count(DISTINCT influence_event.id) FILTER (
                         WHERE influence_event.amount_status = 'reported'
+                          AND influence_event.event_family <> 'campaign_support'
                     ) AS reported_amount_event_count,
                     count(DISTINCT influence_event.id) FILTER (
                         WHERE influence_event.review_status = 'reviewed'
@@ -2385,6 +2523,7 @@ def get_influence_graph(
                     ) AS missing_data_event_count,
                     sum(influence_event.amount) FILTER (
                         WHERE influence_event.amount_status = 'reported'
+                          AND influence_event.event_family <> 'campaign_support'
                     ) AS reported_amount_total,
                     min(influence_event.event_date) AS first_event_date,
                     max(influence_event.event_date) AS last_event_date,
@@ -2396,6 +2535,7 @@ def get_influence_graph(
                   ON source_document.id = influence_event.source_document_id
                 WHERE influence_event.recipient_person_id = %s
                   AND influence_event.review_status <> 'rejected'
+                  AND influence_event.event_family <> 'campaign_support'
                 GROUP BY
                     influence_event.event_family,
                     influence_event.event_type,
@@ -2713,6 +2853,7 @@ def get_influence_graph(
                     count(DISTINCT influence_event.id) AS event_count,
                     count(DISTINCT influence_event.id) FILTER (
                         WHERE influence_event.amount_status = 'reported'
+                          AND influence_event.event_family <> 'campaign_support'
                     ) AS reported_amount_event_count,
                     count(DISTINCT influence_event.id) FILTER (
                         WHERE influence_event.review_status = 'reviewed'
@@ -2725,6 +2866,7 @@ def get_influence_graph(
                     ) AS missing_data_event_count,
                     sum(influence_event.amount) FILTER (
                         WHERE influence_event.amount_status = 'reported'
+                          AND influence_event.event_family <> 'campaign_support'
                     ) AS reported_amount_total,
                     min(influence_event.event_date) AS first_event_date,
                     max(influence_event.event_date) AS last_event_date,
@@ -2746,6 +2888,7 @@ def get_influence_graph(
                         OR influence_event.recipient_entity_id = %s
                   )
                   AND influence_event.review_status <> 'rejected'
+                  AND influence_event.event_family <> 'campaign_support'
                 GROUP BY
                     root_role,
                     influence_event.event_family,
@@ -2866,9 +3009,19 @@ def get_electorate_profile(electorate_id: int, *, database_url: str | None = Non
                 ie.recipient_person_id AS person_id,
                 person.display_name AS person_name,
                 count(*) AS influence_event_count,
-                sum(ie.amount) FILTER (WHERE ie.amount_status = 'reported') AS reported_amount_total,
+                sum(ie.amount) FILTER (
+                    WHERE ie.amount_status = 'reported'
+                      AND ie.event_family <> 'campaign_support'
+                ) AS reported_amount_total,
                 count(*) FILTER (WHERE ie.event_family = 'money') AS money_event_count,
                 count(*) FILTER (WHERE ie.event_family = 'benefit') AS benefit_event_count,
+                count(*) FILTER (
+                    WHERE ie.event_family = 'campaign_support'
+                ) AS campaign_support_event_count,
+                sum(ie.amount) FILTER (
+                    WHERE ie.amount_status = 'reported'
+                      AND ie.event_family = 'campaign_support'
+                ) AS campaign_support_reported_amount_total,
                 count(*) FILTER (WHERE ie.review_status = 'needs_review') AS needs_review_event_count
             FROM influence_event ie
             JOIN person ON person.id = ie.recipient_person_id

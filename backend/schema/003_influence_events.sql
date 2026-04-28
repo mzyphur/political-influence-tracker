@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS influence_event (
         event_family IN (
             'money',
             'benefit',
+            'campaign_support',
             'private_interest',
             'organisational_role',
             'access',

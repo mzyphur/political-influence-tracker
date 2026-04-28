@@ -70,6 +70,14 @@ INFLUENCE_EVENT_LOADER_NAME = "load_influence_events_v1"
 DISPLAY_GEOMETRY_REPAIR_PROJECTION_SRID = 3577
 MAX_COASTLINE_REPAIR_BUFFER_METERS = 10_000
 DEFAULT_COASTLINE_REPAIR_BUFFER_METERS = 100
+CAMPAIGN_SUPPORT_FLOW_KINDS = {
+    "election_candidate_or_senate_group_campaign_expenditure",
+    "election_candidate_or_senate_group_discretionary_benefit",
+    "election_candidate_or_senate_group_donation_received",
+    "election_candidate_or_senate_group_return_summary",
+    "election_media_advertising_expenditure",
+    "election_third_party_campaign_expenditure",
+}
 
 REPRESENTATIVE_RETURN_TITLE_TOKENS = {
     "dr",
@@ -329,6 +337,10 @@ def senate_api_name_to_canonical(value: str) -> str:
     return " ".join(part for part in [given_names, surname] if part)
 
 
+def aec_candidate_name_to_canonical(value: str) -> str:
+    return senate_api_name_to_canonical(value)
+
+
 def normalize_electorate_name(value: str) -> str:
     normalized = normalize_name(value)
     return re.sub(r"\bold$", "", normalized).strip()
@@ -361,6 +373,46 @@ def classify_money_event_type(disclosure_category: str, receipt_type: str) -> st
     if "loan" in combined:
         return "loan"
     return slugify(disclosure_category or receipt_type, "money_flow")
+
+
+def is_campaign_support_money_flow(metadata: dict[str, Any]) -> bool:
+    return (
+        metadata.get("source_dataset") == "aec_election"
+        and metadata.get("flow_kind") in CAMPAIGN_SUPPORT_FLOW_KINDS
+    )
+
+
+def campaign_support_event_type(metadata: dict[str, Any], fallback_event_type: str) -> str:
+    flow_kind = metadata.get("flow_kind")
+    if flow_kind == "election_candidate_or_senate_group_donation_received":
+        return "candidate_or_senate_group_donation"
+    if flow_kind == "election_candidate_or_senate_group_discretionary_benefit":
+        return "candidate_or_senate_group_discretionary_benefit"
+    if flow_kind == "election_candidate_or_senate_group_campaign_expenditure":
+        return "candidate_or_senate_group_campaign_expenditure"
+    if flow_kind == "election_candidate_or_senate_group_return_summary":
+        context = metadata.get("candidate_context") if isinstance(metadata.get("candidate_context"), dict) else {}
+        if context.get("is_nil_return"):
+            return "candidate_or_senate_group_nil_return"
+        return "candidate_or_senate_group_return_summary"
+    if flow_kind == "election_media_advertising_expenditure":
+        return "observed_media_ad_activity"
+    if flow_kind == "election_third_party_campaign_expenditure":
+        return "third_party_campaign_expenditure"
+    return fallback_event_type
+
+
+def campaign_support_attribution(metadata: dict[str, Any]) -> dict[str, Any]:
+    attribution = metadata.get("campaign_support_attribution")
+    if isinstance(attribution, dict):
+        return attribution
+    return {
+        "tier": metadata.get("attribution_tier") or "source_backed_campaign_support_record",
+        "not_personal_receipt": True,
+        "notes": [
+            "AEC election disclosure row connected to campaign support; not treated as money personally received by a representative."
+        ],
+    }
 
 
 def benefit_subtype(description: str) -> str | None:
@@ -987,8 +1039,9 @@ def _load_aec_money_flow_jsonl(
             count += 1
 
     conn.commit()
-    link_summary = link_aec_direct_representative_money_flows(conn)
-    return {"money_flows": count, **link_summary}
+    direct_link_summary = link_aec_direct_representative_money_flows(conn)
+    campaign_link_summary = link_aec_candidate_campaign_money_flows(conn)
+    return {"money_flows": count, **direct_link_summary, **campaign_link_summary}
 
 
 def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]:
@@ -1135,6 +1188,155 @@ def link_aec_direct_representative_money_flows(conn) -> dict[str, int]:
         "direct_representative_money_flows_linked": linked,
         "direct_representative_money_flows_unmatched": unmatched,
         "direct_representative_money_flows_ambiguous": ambiguous,
+    }
+
+
+def _unique_house_candidate_campaign_lookup(conn) -> dict[tuple[str, str, str], int]:
+    candidate_ids: dict[tuple[str, str, str], set[int]] = defaultdict(set)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                person.id,
+                person.display_name,
+                person.canonical_name,
+                person.first_name,
+                person.last_name,
+                electorate.name,
+                COALESCE(NULLIF(electorate.state_or_territory, ''), office_term.metadata->>'state')
+            FROM office_term
+            JOIN person ON person.id = office_term.person_id
+            JOIN electorate ON electorate.id = office_term.electorate_id
+            WHERE office_term.chamber = 'house'
+            """
+        )
+        for (
+            person_id,
+            display_name,
+            canonical_name,
+            first_name,
+            last_name,
+            electorate_name,
+            state,
+        ) in cur.fetchall():
+            electorate_key = normalize_electorate_name(electorate_name or "")
+            state_key = state_code(state or "")
+            if not electorate_key or not state_key:
+                continue
+            names = {
+                display_name or "",
+                canonical_name or "",
+                " ".join(part for part in (first_name or "", last_name or "") if part),
+            }
+            for name in names:
+                person_key = normalize_representative_return_name(name)
+                if person_key:
+                    candidate_ids[(person_key, electorate_key, state_key)].add(int(person_id))
+
+    return {
+        key: next(iter(person_ids))
+        for key, person_ids in candidate_ids.items()
+        if len(person_ids) == 1
+    }
+
+
+def link_aec_candidate_campaign_money_flows(conn) -> dict[str, int]:
+    unique_lookup = _unique_house_candidate_campaign_lookup(conn)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id,
+                recipient_raw_name,
+                metadata->'candidate_context'->>'name' AS candidate_name,
+                metadata->'candidate_context'->>'electorate_name' AS electorate_name,
+                metadata->'candidate_context'->>'electorate_state' AS electorate_state,
+                metadata->'candidate_context'->>'return_type' AS candidate_return_type,
+                metadata->>'flow_kind' AS flow_kind,
+                metadata->'campaign_support_attribution' AS campaign_support_attribution
+            FROM money_flow
+            WHERE metadata->>'source_dataset' = 'aec_election'
+              AND metadata ? 'candidate_context'
+              AND lower(COALESCE(metadata->'candidate_context'->>'return_type', '')) = 'candidate'
+            """
+        )
+        rows = cur.fetchall()
+
+    considered = len(rows)
+    linked = 0
+    unmatched = 0
+    for (
+        money_flow_id,
+        recipient_raw_name,
+        candidate_name,
+        electorate_name,
+        electorate_state,
+        candidate_return_type,
+        flow_kind,
+        existing_attribution,
+    ) in rows:
+        raw_candidate_name = candidate_name or recipient_raw_name or ""
+        person_key = normalize_representative_return_name(
+            aec_candidate_name_to_canonical(raw_candidate_name)
+        )
+        electorate_key = normalize_electorate_name(electorate_name or "")
+        state_key = state_code(electorate_state or "")
+        person_id = unique_lookup.get((person_key, electorate_key, state_key))
+        if person_id is None:
+            confidence = "unresolved"
+            status = "unmatched"
+            unmatched += 1
+        else:
+            confidence = "name_electorate_context_without_temporal_check"
+            status = "linked"
+            linked += 1
+
+        linked_attribution = (
+            dict(existing_attribution) if isinstance(existing_attribution, dict) else {}
+        )
+        linked_attribution.setdefault("tier", "source_backed_candidate_campaign_return")
+        linked_attribution["not_personal_receipt"] = True
+        linked_attribution["linked_to_person_by"] = "candidate_name_electorate_state_exact_unique"
+        linked_attribution["person_link_status"] = status
+        metadata_patch = {
+            "recipient_person_match": {
+                "method": "aec_election_candidate_name_electorate_state_exact_unique",
+                "status": status,
+                "raw_candidate_name": raw_candidate_name,
+                "normalized_candidate_name": person_key,
+                "electorate_name": electorate_name or "",
+                "normalized_electorate_name": electorate_key,
+                "electorate_state": state_key,
+                "return_type": candidate_return_type or "",
+                "flow_kind": flow_kind or "",
+                "attribution_scope": "campaign_context_not_personal_receipt",
+                "temporal_check": "not_applied",
+            },
+            "campaign_support_attribution": linked_attribution,
+        }
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE money_flow
+                SET
+                    recipient_person_id = %s,
+                    confidence = %s,
+                    metadata = money_flow.metadata || %s
+                WHERE id = %s
+                """,
+                (
+                    person_id,
+                    confidence,
+                    as_jsonb(metadata_patch),
+                    money_flow_id,
+                ),
+            )
+
+    conn.commit()
+    return {
+        "candidate_campaign_money_flows_considered": considered,
+        "candidate_campaign_money_flows_linked": linked,
+        "candidate_campaign_money_flows_unmatched": unmatched,
     }
 
 
@@ -1603,7 +1805,15 @@ def load_influence_events(conn) -> dict[str, Any]:
         ) = row
         base_metadata = metadata or {}
         event_type = classify_money_event_type(disclosure_category or "", receipt_type or "")
-        event_family = "benefit" if event_type == "discretionary_benefit" else "money"
+        campaign_support_record = is_campaign_support_money_flow(base_metadata)
+        if campaign_support_record:
+            event_family = "campaign_support"
+            event_type = campaign_support_event_type(base_metadata, event_type)
+        else:
+            event_family = "benefit" if event_type == "discretionary_benefit" else "money"
+        attribution = (
+            campaign_support_attribution(base_metadata) if campaign_support_record else None
+        )
         public_amount_counting_role = base_metadata.get("public_amount_counting_role")
         duplicate_observation = public_amount_counting_role == "duplicate_observation"
         campaign_expenditure = event_type == "campaign_expenditure"
@@ -1615,22 +1825,69 @@ def load_influence_events(conn) -> dict[str, Any]:
         )
         if duplicate_observation:
             flags.append("duplicate_disclosure_observation_not_counted_in_reported_total")
-        if campaign_expenditure:
+        if campaign_support_record:
+            flags.append("campaign_support_not_personal_receipt")
+            if amount is not None:
+                flags.append("campaign_support_amount_not_direct_personal_receipt")
+            if attribution and attribution.get("tier") == "candidate_nil_return_with_party_branch_context":
+                flags.append("candidate_nil_return_with_party_branch_context")
+        elif campaign_expenditure:
             flags.append("campaign_expenditure_not_counted_in_reported_total")
         description_amount = f"{amount} {currency}" if amount is not None else "amount not disclosed"
-        description = (
-            f"{source_raw_name or 'Unknown'} to {recipient_raw_name or 'Unknown'}: "
-            f"{description_amount}"
-        )
+        if campaign_support_record:
+            context = (
+                base_metadata.get("candidate_context")
+                if isinstance(base_metadata.get("candidate_context"), dict)
+                else {}
+            )
+            electorate_label = " ".join(
+                part
+                for part in (
+                    context.get("electorate_name") if isinstance(context, dict) else "",
+                    context.get("electorate_state") if isinstance(context, dict) else "",
+                )
+                if part
+            )
+            context_label = f" ({electorate_label})" if electorate_label else ""
+            if event_type == "candidate_or_senate_group_nil_return":
+                description = (
+                    f"AEC records a nil election return for {recipient_raw_name or 'Unknown'}"
+                    f"{context_label}; this is campaign-disclosure context, not a personal receipt."
+                )
+            elif "expenditure" in event_type or event_type == "observed_media_ad_activity":
+                description = (
+                    f"{source_raw_name or 'Unknown'} campaign-support expenditure connected to "
+                    f"{recipient_raw_name or 'campaign activity'}{context_label}: {description_amount}; "
+                    "not a personal receipt."
+                )
+            else:
+                description = (
+                    f"{source_raw_name or 'Unknown'} to {recipient_raw_name or 'Unknown'}"
+                    f"{context_label}: {description_amount}; campaign-support record, not a "
+                    "personal receipt."
+                )
+        else:
+            description = (
+                f"{source_raw_name or 'Unknown'} to {recipient_raw_name or 'Unknown'}: "
+                f"{description_amount}"
+            )
         extraction_method = base_metadata.get("normalizer_name") or "aec_annual_money_flow_normalizer"
         disclosure_system = base_metadata.get("disclosure_system") or "aec_financial_disclosure"
-        amount_status = (
-            "not_applicable"
-            if amount is not None and (duplicate_observation or campaign_expenditure)
-            else "reported"
-            if amount is not None
-            else "unknown"
-        )
+        if duplicate_observation:
+            amount_status = "not_applicable"
+        elif event_type in {
+            "candidate_or_senate_group_nil_return",
+            "candidate_or_senate_group_return_summary",
+        }:
+            amount_status = "not_applicable"
+        elif amount is not None and campaign_support_record:
+            amount_status = "reported"
+        elif amount is not None and campaign_expenditure:
+            amount_status = "not_applicable"
+        elif amount is not None:
+            amount_status = "reported"
+        else:
+            amount_status = "unknown"
         event = {
             "external_key": f"money_flow:{external_key or money_flow_id}",
             "event_family": event_family,
@@ -1671,6 +1928,7 @@ def load_influence_events(conn) -> dict[str, Any]:
                     "receipt_type": receipt_type,
                     "disclosure_category": disclosure_category,
                     "source_confidence": confidence,
+                    "campaign_support_attribution": attribution,
                     "base_metadata": base_metadata,
                 }
             ),

@@ -23,6 +23,8 @@ export type MapProperties = {
   current_representative_lifetime_influence_event_count: number;
   current_representative_lifetime_money_event_count: number;
   current_representative_lifetime_benefit_event_count: number;
+  current_representative_lifetime_campaign_support_event_count: number;
+  current_representative_campaign_support_reported_total: number | null;
   current_representative_needs_review_event_count: number;
   current_representative_official_record_event_count: number;
   current_representative_lifetime_reported_amount_total: number | null;
@@ -108,6 +110,16 @@ export type RepresentativeEventSummary = {
   last_event_date: string | null;
 };
 
+export type RepresentativeCampaignSupportSummary = {
+  event_type: string;
+  attribution_tier: string | null;
+  event_count: number;
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  first_event_date: string | null;
+  last_event_date: string | null;
+};
+
 export type RepresentativeEvent = {
   id: number;
   event_family: string;
@@ -145,6 +157,9 @@ export type RepresentativeProfile = {
   contact: RepresentativeContact;
   event_summary: RepresentativeEventSummary[];
   recent_events: RepresentativeEvent[];
+  campaign_support_summary: RepresentativeCampaignSupportSummary[];
+  campaign_support_recent_events: RepresentativeEvent[];
+  campaign_support_caveat: string;
   caveat: string;
 };
 

@@ -853,6 +853,24 @@ a:focus-visible {
   gap: 8px;
 }
 
+.campaign-support-panel {
+  border-top: 1px solid rgba(35, 129, 142, 0.2);
+  padding-top: 14px;
+}
+
+.campaign-summary-grid {
+  margin-top: 10px;
+}
+
+.campaign-family {
+  border-color: rgba(35, 129, 142, 0.24);
+  background: rgba(238, 252, 249, 0.88);
+}
+
+.campaign-event-list {
+  margin-top: 10px;
+}
+
 .event-family {
   display: grid;
   gap: 3px;
