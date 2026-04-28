@@ -44,6 +44,12 @@ Completed:
   an unbounded distinct-event aggregate across all reviewed party/entity links,
   not the graph display limit, and duplicate reviewed link types for the same
   party entity do not double-count the same money event.
+- Improved granular benefit extraction for individual gifts, hospitality,
+  tickets, memberships, and travel. The House/Senate interests parsers now
+  catch provider phrases such as "at invitation of", values expressed as
+  "worth $X" or "estimated at $X", branded providers for Qantas/Virgin airline
+  lounge memberships and similar named benefits, and richer subtypes for
+  private jets/flights and sporting or cultural tickets.
 
 Verification:
 
@@ -59,6 +65,9 @@ Verification:
   of `reported_amount_total`.
 - Frontend graph build passed after adding explicit modelled-exposure labels,
   de-emphasized context-edge weighting, and keyboard-focusable graph edges.
+- Focused House/Senate interests and influence-event classifier tests passed
+  for branded lounge access, private-jet travel, sporting tickets, provider
+  extraction, and value extraction.
 - Live local API smoke checks confirmed `labor` and `liberal` search results now
   prioritize active parliamentary party records.
 

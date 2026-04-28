@@ -163,8 +163,16 @@ def test_interest_event_classifier_tracks_small_benefit_forms() -> None:
     ) == ("benefit", "sponsored_travel_or_hospitality", "private_aircraft_or_flight")
     assert classify_interest_event(
         "Sponsored travel or hospitality",
+        "Private jet flight from Sydney to Canberra provided by Example Pty Ltd",
+    ) == ("benefit", "sponsored_travel_or_hospitality", "private_aircraft_or_flight")
+    assert classify_interest_event(
+        "Sponsored travel or hospitality",
         "Detail Of Travel Hospitality: Lounge memberships for Qantas and Virgin Australia",
     ) == ("benefit", "sponsored_travel_or_hospitality", "membership_or_lounge_access")
+    assert classify_interest_event(
+        "Gifts",
+        "AFL Grand Final tickets at invitation of Commonwealth Bank",
+    ) == ("benefit", "gift", "event_ticket_or_pass")
     assert classify_interest_event(
         "Other interests",
         "Bangarra Tickets x 5 provided by Arts & Culture Trust WA",

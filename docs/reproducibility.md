@@ -128,8 +128,11 @@ The federal foundation pipeline currently performs:
 16. Flatten Senate interest categories, gifts, travel/hospitality, liabilities, and alterations into JSONL records.
 17. Conservatively extract benefit provider, value, event date, and report date
     fields from House and Senate interest descriptions when the text uses
-    explicit phrases such as "provided by", "hosted by", "valued at", or a
-    parseable date. Non-disclosed values/dates remain labelled as missing
+    explicit phrases such as "provided by", "hosted by", "at invitation of",
+    "valued at", "worth", or a parseable date. A narrow branded-benefit pass
+    also identifies source providers for recurring named benefits such as
+    Qantas Chairman's Lounge, Virgin lounge/club access, airline upgrades, and
+    Foxtel subscriptions. Non-disclosed values/dates remain labelled as missing
     rather than inferred.
 18. Optional, when `THEY_VOTE_FOR_YOU_API_KEY` is available: fetch They Vote For
     You division lists/details, archive raw public JSON with API-key-free

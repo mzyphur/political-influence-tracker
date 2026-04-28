@@ -250,7 +250,7 @@ def test_guess_counterparty_from_clear_from_phrase() -> None:
         guess_counterparty("Conference ticket from Example Minerals Pty Ltd - surrendered")
         == "Example Minerals Pty Ltd"
     )
-    assert guess_counterparty("Qantas Chairman's Lounge membership") == ""
+    assert guess_counterparty("Qantas Chairman's Lounge membership") == "Qantas"
 
 
 def test_records_from_house_section_extracts_provider_value_and_event_date() -> None:
@@ -281,3 +281,62 @@ Self Two tickets to awards dinner on 12 April 2025 provided by Example Associati
     assert records[0]["estimated_value_currency"] == "AUD"
     assert records[0]["event_date"] == "2025-04-12"
     assert records[0]["counterparty_extraction"]["method"] == "explicit_provider_phrase:provided by"
+
+
+def test_records_from_house_section_extracts_invitation_provider_and_worth_value() -> None:
+    section = {
+        "source_id": "source-1",
+        "source_name": "Example PDF",
+        "source_metadata_path": "/tmp/metadata.json",
+        "body_path": "/tmp/body.pdf",
+        "url": "https://example.test/example.pdf",
+        "member_name": "Example Member",
+        "family_name": "Member",
+        "given_names": "Example",
+        "electorate": "Example",
+        "state": "Victoria",
+        "section_number": "11",
+        "section_title": "Gifts",
+        "section_text": """
+11. Gifts
+Self AFL Grand Final tickets at invitation of Commonwealth Bank worth $900
+""",
+    }
+
+    records = records_from_house_section(section)
+
+    assert len(records) == 1
+    assert records[0]["counterparty_raw_name"] == "Commonwealth Bank"
+    assert records[0]["estimated_value"] == "900"
+    assert records[0]["counterparty_extraction"]["method"] == (
+        "explicit_provider_phrase:at invitation of"
+    )
+
+
+def test_records_from_house_section_extracts_branded_lounge_provider() -> None:
+    section = {
+        "source_id": "source-1",
+        "source_name": "Example PDF",
+        "source_metadata_path": "/tmp/metadata.json",
+        "body_path": "/tmp/body.pdf",
+        "url": "https://example.test/example.pdf",
+        "member_name": "Example Member",
+        "family_name": "Member",
+        "given_names": "Example",
+        "electorate": "Example",
+        "state": "Victoria",
+        "section_number": "14",
+        "section_title": "Other interests",
+        "section_text": """
+14. Other interests
+Self Virgin Club membership
+""",
+    }
+
+    records = records_from_house_section(section)
+
+    assert len(records) == 1
+    assert records[0]["counterparty_raw_name"] == "Virgin Australia"
+    assert records[0]["counterparty_extraction"]["method"] == (
+        "known_brand_provider:virgin_australia"
+    )

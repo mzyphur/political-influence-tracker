@@ -18,8 +18,12 @@ PROVIDER_PHRASES = (
     "paid by",
     "as guest of",
     "guest of",
+    "at invitation of",
+    "on invitation of",
     "invited by",
     "invitation from",
+    "with support from",
+    "with assistance from",
     "from",
     "by organisers",
     "by organizers",
@@ -59,14 +63,48 @@ PROVIDER_PATTERN = re.compile(
     flags=re.IGNORECASE,
 )
 
+BRANDED_PROVIDER_PATTERNS = (
+    (
+        "Qantas",
+        "qantas",
+        re.compile(r"\b(qantas|chairman'?s lounge|chairmans lounge|qantas club)\b", re.IGNORECASE),
+    ),
+    (
+        "Virgin Australia",
+        "virgin_australia",
+        re.compile(r"\b(virgin australia|virgin beyond|beyond lounge|virgin club)\b", re.IGNORECASE),
+    ),
+    (
+        "Qatar Airways",
+        "qatar_airways",
+        re.compile(r"\bqatar airways\b", re.IGNORECASE),
+    ),
+    (
+        "Emirates",
+        "emirates",
+        re.compile(r"\bemirates\b", re.IGNORECASE),
+    ),
+    (
+        "Etihad Airways",
+        "etihad_airways",
+        re.compile(r"\betihad\b", re.IGNORECASE),
+    ),
+    (
+        "Foxtel",
+        "foxtel",
+        re.compile(r"\bfoxtel\b", re.IGNORECASE),
+    ),
+)
+
 VALUE_PATTERNS = (
     re.compile(
-        r"\b(?P<context>valued\s+at|value(?:d)?|cost(?:ing)?|cost\s+of|estimated\s+value)\s*"
-        r"(?P<currency>AUD|A\$|\$)?\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]{1,2})?)",
+        r"\b(?P<context>valued\s+at|value(?:d)?|cost(?:ing)?|cost\s+of|estimated\s+value|"
+        r"estimated\s+at|worth|approx(?:imately)?(?:\s+valued\s+at)?)\s*"
+        r"(?P<currency>AUD|AUD\$|A\$|\$)?\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]{1,2})?)",
         flags=re.IGNORECASE,
     ),
     re.compile(
-        r"\(\s*(?P<currency>AUD|A\$|\$)\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*\)",
+        r"\(\s*(?P<currency>AUD|AUD\$|A\$|\$)\s*(?P<amount>[0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*\)",
         flags=re.IGNORECASE,
     ),
 )
@@ -89,7 +127,8 @@ def _clean_provider_name(name: str) -> str:
     name = _clean_text(name)
     name = re.sub(r"\s+-\s+.*$", "", name)
     name = re.sub(
-        r"\s+(?:on|at|for|to attend|to the|valued at|value|cost(?:ing)?|including)\b.*$",
+        r"\s+(?:on|at|for|to attend|to the|valued at|value|cost(?:ing)?|including|"
+        r"estimated at|estimated value|worth|approx(?:imately)?)\b.*$",
         "",
         name,
         flags=re.IGNORECASE,
@@ -140,6 +179,16 @@ def extract_provider(description: str, *, fields: dict[str, Any] | None = None) 
                 "method": f"explicit_provider_phrase:{match.group('phrase').lower()}",
                 "raw_span": match.group(0).strip(),
             }
+    for field_name, text in texts:
+        for provider, method_suffix, pattern in BRANDED_PROVIDER_PATTERNS:
+            match = pattern.search(text)
+            if match:
+                return {
+                    "value": provider,
+                    "source_field": field_name,
+                    "method": f"known_brand_provider:{method_suffix}",
+                    "raw_span": match.group(0).strip(),
+                }
     return {"value": "", "source_field": "", "method": "", "raw_span": ""}
 
 
