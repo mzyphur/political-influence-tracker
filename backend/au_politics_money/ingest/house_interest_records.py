@@ -45,6 +45,7 @@ HEADER_LINES = {
     "details of travel/hospitality",
     "details of travel hospitality",
     "hospitality exceeds $300",
+    "house of representatives",
     "item details",
     "location purpose for which owned",
     "name",
@@ -60,7 +61,10 @@ HEADER_LINES = {
     "nature of interest",
     "nature of liability creditor",
     "nature of operation",
+    "parliament of australia",
     "purpose for which owned",
+    "signed date",
+    "signature date",
     "type of investment",
 }
 
@@ -158,7 +162,11 @@ def _is_noise_line(line: str) -> bool:
     normalized = _normal_value(cleaned)
     if not cleaned:
         return True
+    if "\ufffd" in cleaned:
+        return True
     if re.fullmatch(r"\d{1,3}", cleaned):
+        return True
+    if normalized in {"australia", "australi"}:
         return True
     if normalized in {_normal_value(value) for value in HEADER_LINES} or normalized in NON_VALUES:
         return True

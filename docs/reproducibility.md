@@ -138,10 +138,21 @@ rerun after each scheduled pipeline run. The database is therefore a
 serving/indexing layer over reproducible artifacts rather than the only copy of
 the evidence.
 
+Money-flow and register-interest rows are loaded as current source snapshots.
+When a later processed artifact no longer contains a previously loaded
+`money_flow` or `gift_interest` row from the same source family, the row is
+retained with `is_current = false` and withdrawal metadata instead of being
+silently destroyed. The derived public `influence_event` surface is rebuilt
+only from current base rows; withdrawn derived events are deleted when possible
+or marked rejected if another claim-evidence table still references them. This
+preserves auditability and manual-review history while preventing corrected or
+withdrawn source records from staying in public totals.
+
 When `--apply-schema` is used, the loader applies the baseline schema and then
 all additive migrations. Routine weekly runs should use `migrate-postgres`
-followed by `load-postgres --include-vote-divisions` so the serving database is
-updated from the newest reproducible artifacts.
+followed by `load-postgres` so the serving database is updated from the newest
+reproducible artifacts. `--include-vote-divisions` should be added only when a
+They Vote For You API key is configured.
 
 ## Pipeline Stages
 
@@ -226,7 +237,8 @@ The federal foundation pipeline currently performs:
     lounge/club access, airline upgrades, and Foxtel subscriptions.
     Non-disclosed providers, values, or dates remain labelled as missing rather
     than inferred.
-18. Optional, when `THEY_VOTE_FOR_YOU_API_KEY` is available: fetch They Vote For
+18. Optional, when `THEY_VOTE_FOR_YOU_API_KEY` or `TVFY_API_KEY` is available:
+    fetch They Vote For
     You division lists/details, archive raw public JSON with API-key-free
     request metadata, and normalize divisions, votes, linked civic policies,
     and bills into JSONL. Date windows that hit the API's 100-record cap are

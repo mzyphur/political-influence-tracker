@@ -130,6 +130,8 @@ def _assert_expected_indexes(conn) -> None:
             "postcode_electorate_crosswalk_source_document_idx",
             "postcode_electorate_crosswalk_unresolved_postcode_idx",
             "postcode_electorate_crosswalk_unresolved_source_document_idx",
+            "money_flow_current_source_dataset_idx",
+            "gift_interest_current_chamber_idx",
         ):
             cur.execute("SELECT to_regclass(%s)", (index_name,))
             assert cur.fetchone()[0] is not None, index_name
@@ -1286,6 +1288,161 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
         council_summary["top_local_electorates"][0]["gift_or_donation_reported_amount_total"]
         == 0
     )
+
+
+def test_withdrawn_source_rows_do_not_remain_public_events(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document ORDER BY id LIMIT 1")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM jurisdiction ORDER BY id LIMIT 1")
+            jurisdiction_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO money_flow (
+                    external_key, source_entity_id, source_raw_name,
+                    recipient_person_id, recipient_raw_name, amount,
+                    jurisdiction_id, source_document_id, source_row_ref,
+                    original_text, confidence, is_current, metadata
+                )
+                VALUES (
+                    'pytest-withdrawn-money-flow', %s, 'Withdrawn Donor',
+                    %s, 'Withdrawn Recipient', 123.00, %s, %s,
+                    'withdrawn-row', '{}', 'resolved', FALSE, %s
+                )
+                RETURNING id
+                """,
+                (
+                    integration_db.entity_id,
+                    integration_db.person_id,
+                    jurisdiction_id,
+                    source_document_id,
+                    Jsonb(
+                        {
+                            "source_dataset": "pytest_dataset",
+                            "source_record_status": "not_in_latest_snapshot",
+                        }
+                    ),
+                ),
+            )
+            withdrawn_money_flow_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO influence_event (
+                    external_key, event_family, event_type, source_entity_id,
+                    recipient_person_id, jurisdiction_id, money_flow_id, amount,
+                    currency, amount_status, disclosure_system, evidence_status,
+                    review_status, description, source_document_id,
+                    missing_data_flags, metadata
+                )
+                VALUES (
+                    'money_flow:pytest-withdrawn-money-flow', 'money',
+                    'donation_or_gift', %s, %s, %s, %s, 123.00, 'AUD',
+                    'reported', 'pytest', 'official_record_parsed',
+                    'not_required', 'Withdrawn Donor to Withdrawn Recipient',
+                    %s, '[]'::jsonb, %s
+                )
+                RETURNING id
+                """,
+                (
+                    integration_db.entity_id,
+                    integration_db.person_id,
+                    jurisdiction_id,
+                    withdrawn_money_flow_id,
+                    source_document_id,
+                    Jsonb({"derived_loader": "load_influence_events_v1"}),
+                ),
+            )
+            withdrawn_event_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO evidence_claim (
+                    claim_text, claim_level, evidence_class, subject_person_id,
+                    status
+                )
+                VALUES (
+                    'Withdrawn fixture claim', 1, 'source_record',
+                    %s, 'draft'
+                )
+                RETURNING id
+                """,
+                (integration_db.person_id,),
+            )
+            claim_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO claim_evidence (
+                    claim_id, source_document_id, money_flow_id,
+                    influence_event_id, evidence_note
+                )
+                VALUES (%s, %s, %s, %s, 'preserve referenced event row')
+                """,
+                (
+                    claim_id,
+                    source_document_id,
+                    withdrawn_money_flow_id,
+                    withdrawn_event_id,
+                ),
+            )
+
+            cur.execute(
+                """
+                INSERT INTO money_flow (
+                    external_key, source_entity_id, source_raw_name,
+                    recipient_person_id, recipient_raw_name, amount,
+                    jurisdiction_id, source_document_id, source_row_ref,
+                    original_text, confidence, is_current, metadata
+                )
+                VALUES (
+                    'pytest-never-current-money-flow', %s, 'Never Current Donor',
+                    %s, 'Never Current Recipient', 456.00, %s, %s,
+                    'never-current-row', '{}', 'resolved', FALSE, %s
+                )
+                """,
+                (
+                    integration_db.entity_id,
+                    integration_db.person_id,
+                    jurisdiction_id,
+                    source_document_id,
+                    Jsonb(
+                        {
+                            "source_dataset": "pytest_dataset",
+                            "source_record_status": "not_in_latest_snapshot",
+                        }
+                    ),
+                ),
+            )
+        conn.commit()
+
+        summary = load_influence_events(conn)
+        assert summary["suppressed_withdrawn_source_record_events"] >= 1
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT review_status, missing_data_flags, metadata->>'source_record_status'
+                FROM influence_event
+                WHERE external_key = 'money_flow:pytest-withdrawn-money-flow'
+                """
+            )
+            status, flags, source_record_status = cur.fetchone()
+            assert status == "rejected"
+            assert "source_record_not_in_latest_snapshot" in flags
+            assert source_record_status == "not_in_latest_snapshot"
+
+            cur.execute(
+                """
+                SELECT count(*)
+                FROM influence_event
+                WHERE external_key = 'money_flow:pytest-never-current-money-flow'
+                """
+            )
+            assert cur.fetchone()[0] == 0
 
 
 def test_qld_participant_loader_requires_review_for_candidate_name_only_matches(

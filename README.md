@@ -108,12 +108,14 @@ Current local serving baseline loaded into PostgreSQL:
 - 192,201 AEC annual money-flow rows, plus election-period, public-funding,
   QLD ECQ state/local, and campaign-support records where reproducible adapters
   are active.
-- 5,853 House interest records from PDF text/OCR extraction.
+- 5,838 current House interest records from PDF text/OCR extraction; 49 older
+  parsed rows are retained as non-current source evidence after parser
+  hardening but are not served as active influence events.
 - 1,752 Senate interest records from the official APH-backed Senate interests API.
-- 302,312 non-rejected unified `influence_event` rows: 217,531 money events,
-  77,176 campaign-support events, 1,421 benefit events, 4,700 private-interest
+- 302,297 non-rejected unified `influence_event` rows: 217,531 money events,
+  77,176 campaign-support events, 1,406 benefit events, 4,700 private-interest
   events, 1,384 organisational-role events, and 100 other declared interests.
-- 7,838 rows are currently person-linked. Reported non-rejected amounts total
+- 7,823 rows are currently person-linked. Reported non-rejected amounts total
   AUD 12,857,350,922.47 across loaded event families, with campaign-support
   and direct person-level records kept as separate attribution families.
 - 50 direct AEC House-member return money rows are now person-linked to MP

@@ -16,8 +16,20 @@ if [[ ! -x ".venv/bin/python" ]]; then
   .venv/bin/python -m pip install -e '.[dev]'
 fi
 
+PIPELINE_ARGS=(run-federal-foundation-pipeline)
+LOAD_ARGS=(load-postgres)
+if .venv/bin/dotenv -f .env run -- \
+  bash -c 'test -n "${THEY_VOTE_FOR_YOU_API_KEY:-${TVFY_API_KEY:-}}"'; then
+  PIPELINE_ARGS+=(--include-votes)
+  LOAD_ARGS+=(--include-vote-divisions)
+else
+  printf '%s\n' \
+    "Skipping optional They Vote For You ingestion: no THEY_VOTE_FOR_YOU_API_KEY/TVFY_API_KEY set." \
+    > "${LOG_DIR}/weekly_federal_votes_${TIMESTAMP}.skipped.log"
+fi
+
 .venv/bin/dotenv -f .env run -- \
-  .venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline --include-votes \
+  .venv/bin/python -m au_politics_money.cli "${PIPELINE_ARGS[@]}" \
   > "${LOG_DIR}/weekly_federal_pipeline_${TIMESTAMP}.stdout.log" \
   2> "${LOG_DIR}/weekly_federal_pipeline_${TIMESTAMP}.stderr.log"
 
@@ -27,7 +39,7 @@ fi
   2> "${LOG_DIR}/weekly_federal_migrate_${TIMESTAMP}.stderr.log"
 
 .venv/bin/dotenv -f .env run -- \
-  .venv/bin/python -m au_politics_money.cli load-postgres --include-vote-divisions \
+  .venv/bin/python -m au_politics_money.cli "${LOAD_ARGS[@]}" \
   > "${LOG_DIR}/weekly_federal_load_${TIMESTAMP}.stdout.log" \
   2> "${LOG_DIR}/weekly_federal_load_${TIMESTAMP}.stderr.log"
 

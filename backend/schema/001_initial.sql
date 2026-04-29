@@ -336,6 +336,10 @@ CREATE TABLE money_flow (
     source_row_ref TEXT,
     original_text TEXT,
     confidence TEXT NOT NULL DEFAULT 'unresolved',
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    withdrawn_at TIMESTAMPTZ,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 
@@ -363,6 +367,10 @@ CREATE TABLE gift_interest (
     source_page_ref TEXT,
     original_text TEXT,
     extraction_confidence TEXT NOT NULL DEFAULT 'unresolved',
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    withdrawn_at TIMESTAMPTZ,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb
 );
 

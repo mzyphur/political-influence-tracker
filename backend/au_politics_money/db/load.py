@@ -578,6 +578,44 @@ def as_jsonb(value: Any):
     return Jsonb(value)
 
 
+def _begin_money_flow_source_refresh(conn, source_dataset: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE money_flow
+            SET is_current = FALSE,
+                withdrawn_at = now(),
+                metadata = metadata || jsonb_build_object(
+                    'source_record_status', 'not_in_latest_snapshot',
+                    'source_record_withdrawn_at', now()
+                )
+            WHERE metadata->>'source_dataset' = %s
+              AND is_current = TRUE
+            """,
+            (source_dataset,),
+        )
+        return int(cur.rowcount or 0)
+
+
+def _begin_gift_interest_source_refresh(conn, chamber: str) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE gift_interest
+            SET is_current = FALSE,
+                withdrawn_at = now(),
+                metadata = metadata || jsonb_build_object(
+                    'source_record_status', 'not_in_latest_snapshot',
+                    'source_record_withdrawn_at', now()
+                )
+            WHERE chamber = %s
+              AND is_current = TRUE
+            """,
+            (chamber,),
+        )
+        return int(cur.rowcount or 0)
+
+
 def apply_schema(conn, schema_path: Path | None = None) -> None:
     path = schema_path or PROJECT_ROOT / "backend" / "schema" / "001_initial.sql"
     with conn.cursor() as cur:
@@ -1334,6 +1372,7 @@ def _load_aec_money_flow_jsonl(
 ) -> dict[str, int]:
     source_doc_cache: dict[str, int] = {}
     jurisdiction_cache: dict[tuple[str, str, str], int] = {}
+    deactivated_before_reload = _begin_money_flow_source_refresh(conn, default_source_dataset)
 
     def record_jurisdiction_id(record: dict[str, Any]) -> int:
         name = record.get("jurisdiction_name") or "Commonwealth"
@@ -1378,11 +1417,12 @@ def _load_aec_money_flow_jsonl(
                         recipient_entity_id, recipient_raw_name, amount,
                         financial_year, date_received, return_type, receipt_type,
                         disclosure_category, jurisdiction_id, source_document_id,
-                        source_row_ref, original_text, confidence, metadata
+                        source_row_ref, original_text, confidence, is_current,
+                        last_seen_at, withdrawn_at, metadata
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s
+                        %s, %s, %s, TRUE, now(), NULL, %s
                     )
                     ON CONFLICT (external_key) DO UPDATE SET
                         source_entity_id = EXCLUDED.source_entity_id,
@@ -1400,6 +1440,9 @@ def _load_aec_money_flow_jsonl(
                         source_row_ref = EXCLUDED.source_row_ref,
                         original_text = EXCLUDED.original_text,
                         confidence = EXCLUDED.confidence,
+                        is_current = TRUE,
+                        last_seen_at = now(),
+                        withdrawn_at = NULL,
                         metadata = EXCLUDED.metadata
                     """,
                     (
@@ -1419,7 +1462,14 @@ def _load_aec_money_flow_jsonl(
                         f"{record['source_table']}:{record['source_row_number']}",
                         json.dumps(record["original"], sort_keys=True),
                         "unresolved",
-                        as_jsonb({**record, "date_validation": date_validation}),
+                        as_jsonb(
+                            {
+                                **record,
+                                "date_validation": date_validation,
+                                "source_artifact_path": str(path),
+                                "source_record_status": "current",
+                            }
+                        ),
                     ),
                 )
             count += 1
@@ -1427,7 +1477,12 @@ def _load_aec_money_flow_jsonl(
     conn.commit()
     direct_link_summary = link_aec_direct_representative_money_flows(conn)
     campaign_link_summary = link_aec_candidate_campaign_money_flows(conn)
-    return {"money_flows": count, **direct_link_summary, **campaign_link_summary}
+    return {
+        "money_flows": count,
+        "money_flows_deactivated_before_reload": deactivated_before_reload,
+        **direct_link_summary,
+        **campaign_link_summary,
+    }
 
 
 def load_aec_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, int]:
@@ -2396,6 +2451,7 @@ def load_house_interest_records(conn, jsonl_path: Path | None = None) -> dict[st
     electorate_lookup = _house_electorate_person_lookup(conn)
     source_doc_cache: dict[str, int] = {}
     jurisdiction_id = get_or_create_jurisdiction(conn, "Commonwealth", "federal", "CWLTH")
+    deactivated_before_reload = _begin_gift_interest_source_refresh(conn, "house")
 
     row_count = 0
     skipped_unmatched = 0
@@ -2441,9 +2497,13 @@ def load_house_interest_records(conn, jsonl_path: Path | None = None) -> dict[st
                         interest_category, description, parliament_number, chamber,
                         estimated_value, currency, date_received,
                         source_document_id, source_page_ref, original_text,
-                        extraction_confidence, metadata
+                        extraction_confidence, is_current, last_seen_at, withdrawn_at,
+                        metadata
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, TRUE, now(), NULL, %s
+                    )
                     ON CONFLICT (external_key) DO UPDATE SET
                         person_id = EXCLUDED.person_id,
                         source_entity_id = EXCLUDED.source_entity_id,
@@ -2457,6 +2517,9 @@ def load_house_interest_records(conn, jsonl_path: Path | None = None) -> dict[st
                         source_page_ref = EXCLUDED.source_page_ref,
                         original_text = EXCLUDED.original_text,
                         extraction_confidence = EXCLUDED.extraction_confidence,
+                        is_current = TRUE,
+                        last_seen_at = now(),
+                        withdrawn_at = NULL,
                         metadata = EXCLUDED.metadata
                     """,
                     (
@@ -2475,7 +2538,13 @@ def load_house_interest_records(conn, jsonl_path: Path | None = None) -> dict[st
                         f"section:{record['section_number']}:owner:{record['owner_context']}",
                         record["original_section_text"],
                         "pdf_section_line_heuristic",
-                        as_jsonb(record),
+                        as_jsonb(
+                            {
+                                **record,
+                                "source_artifact_path": str(path),
+                                "source_record_status": "current",
+                            }
+                        ),
                     ),
                 )
             row_count += 1
@@ -2483,6 +2552,7 @@ def load_house_interest_records(conn, jsonl_path: Path | None = None) -> dict[st
     conn.commit()
     return {
         "house_interest_records": row_count,
+        "house_interest_records_deactivated_before_reload": deactivated_before_reload,
         "fallback_people_from_house_interests": sorted(fallback_people),
         "fallback_people_from_house_interests_count": len(fallback_people),
         "skipped_unmatched_people": skipped_unmatched,
@@ -2504,6 +2574,7 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
     path = jsonl_path or latest_file(PROCESSED_DIR / "senate_interest_records", "*.jsonl")
     person_lookup = _person_lookup(conn)
     source_doc_cache: dict[str, int] = {}
+    deactivated_before_reload = _begin_gift_interest_source_refresh(conn, "senate")
 
     row_count = 0
     skipped_unmatched = 0
@@ -2542,9 +2613,13 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
                         interest_category, description, estimated_value, currency,
                         date_received, date_reported,
                         parliament_number, chamber, source_document_id, source_page_ref,
-                        original_text, extraction_confidence, metadata
+                        original_text, extraction_confidence, is_current, last_seen_at,
+                        withdrawn_at, metadata
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, TRUE, now(), NULL, %s
+                    )
                     ON CONFLICT (external_key) DO UPDATE SET
                         person_id = EXCLUDED.person_id,
                         source_entity_id = EXCLUDED.source_entity_id,
@@ -2559,6 +2634,9 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
                         source_page_ref = EXCLUDED.source_page_ref,
                         original_text = EXCLUDED.original_text,
                         extraction_confidence = EXCLUDED.extraction_confidence,
+                        is_current = TRUE,
+                        last_seen_at = now(),
+                        withdrawn_at = NULL,
                         metadata = EXCLUDED.metadata
                     """,
                     (
@@ -2578,7 +2656,13 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
                         f"cdap:{record['cdap_id']}:interest:{record['interest_id']}",
                         json.dumps(record.get("original", {}), sort_keys=True),
                         _senate_interest_extraction_confidence(record),
-                        as_jsonb(record),
+                        as_jsonb(
+                            {
+                                **record,
+                                "source_artifact_path": str(path),
+                                "source_record_status": "current",
+                            }
+                        ),
                     ),
                 )
             row_count += 1
@@ -2586,6 +2670,7 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
     conn.commit()
     return {
         "senate_interest_records": row_count,
+        "senate_interest_records_deactivated_before_reload": deactivated_before_reload,
         "skipped_unmatched_people": skipped_unmatched,
         "unmatched_people": sorted(unmatched_names),
     }
@@ -2605,6 +2690,42 @@ def _delete_stale_influence_events(conn) -> None:
             """,
             (INFLUENCE_EVENT_LOADER_NAME,),
         )
+
+
+def _suppress_withdrawn_source_record_events(conn) -> int:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE influence_event
+            SET review_status = 'rejected',
+                missing_data_flags = CASE
+                    WHEN missing_data_flags ? 'source_record_not_in_latest_snapshot'
+                    THEN missing_data_flags
+                    ELSE missing_data_flags || '["source_record_not_in_latest_snapshot"]'::jsonb
+                END,
+                metadata = metadata || jsonb_build_object(
+                    'source_record_status', 'not_in_latest_snapshot',
+                    'source_record_withdrawn_at', now()
+                )
+            WHERE metadata->>'derived_loader' = %s
+              AND (
+                    EXISTS (
+                        SELECT 1
+                        FROM money_flow
+                        WHERE money_flow.id = influence_event.money_flow_id
+                          AND money_flow.is_current = FALSE
+                    )
+                    OR EXISTS (
+                        SELECT 1
+                        FROM gift_interest
+                        WHERE gift_interest.id = influence_event.gift_interest_id
+                          AND gift_interest.is_current = FALSE
+                    )
+              )
+            """,
+            (INFLUENCE_EVENT_LOADER_NAME,),
+        )
+        return int(cur.rowcount or 0)
 
 
 def _upsert_influence_event(conn, event: dict[str, Any]) -> None:
@@ -2693,6 +2814,7 @@ def _upsert_influence_event(conn, event: dict[str, Any]) -> None:
 
 def load_influence_events(conn) -> dict[str, Any]:
     jurisdiction_id = get_or_create_jurisdiction(conn, "Commonwealth", "federal", "CWLTH")
+    suppressed_withdrawn_events = _suppress_withdrawn_source_record_events(conn)
     _delete_stale_influence_events(conn)
 
     money_count = 0
@@ -2712,6 +2834,7 @@ def load_influence_events(conn) -> dict[str, Any]:
                 disclosure_category, jurisdiction_id, source_document_id,
                 source_row_ref, original_text, confidence, metadata
             FROM money_flow
+            WHERE is_current = TRUE
             """
         )
         money_rows = cur.fetchall()
@@ -2887,6 +3010,7 @@ def load_influence_events(conn) -> dict[str, Any]:
                 source_document_id, source_page_ref, original_text,
                 extraction_confidence, metadata
             FROM gift_interest
+            WHERE is_current = TRUE
             """
         )
         interest_rows = cur.fetchall()
@@ -2981,6 +3105,7 @@ def load_influence_events(conn) -> dict[str, Any]:
         "event_family_counts": dict(sorted(family_counts.items())),
         "event_type_counts": dict(sorted(type_counts.items())),
         "review_status_counts": dict(sorted(review_counts.items())),
+        "suppressed_withdrawn_source_record_events": suppressed_withdrawn_events,
     }
 
 

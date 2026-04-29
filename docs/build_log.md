@@ -71,6 +71,20 @@ Completed:
   captures as heuristic review items. Regenerated the House/Senate interest
   artifacts and narrowly refreshed local `gift_interest` plus `influence_event`
   records without rebuilding map geometry.
+- Hardened House PDF interest parsing against form/OCR artifacts such as
+  "HOUSE OF REPRESENTATIVES", "PARLIAMENT OF AUSTRALIA", signature/date rows,
+  and replacement-character OCR fragments. The local active serving surface now
+  has 5,838 current House interest rows and 1,406 non-rejected benefit events;
+  the obvious form artifacts are retained only as non-current base evidence.
+- Added source-snapshot current flags for `money_flow` and `gift_interest`.
+  Reloads now mark rows absent from the latest source-family artifact as
+  `is_current = false`, rebuild the public `influence_event` surface from
+  current rows only, and suppress retained claim-linked withdrawn events as
+  rejected rather than keeping them in public totals.
+- Made the weekly federal runner key-aware for They Vote For You. Scheduled
+  runs now skip optional TVFY fetch/load steps when neither
+  `THEY_VOTE_FOR_YOU_API_KEY` nor `TVFY_API_KEY` is configured, instead of
+  aborting the whole federal refresh.
 - Added `docs/theory_of_influence.md` as the standing theory/methodology layer
   connecting engineering decisions to mechanisms of influence, democratic
   transparency, operating hypotheses, allowed claims, non-claims, and the

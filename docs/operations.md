@@ -157,8 +157,10 @@ scripts/run_weekly_federal_pipeline.sh
 ```
 
 Run it from cron, systemd, launchd, or a CI runner.
-The script loads `backend/.env` and includes optional vote ingestion so TVFY
-division data updates when `THEY_VOTE_FOR_YOU_API_KEY` is present.
+The script loads `backend/.env` and includes optional vote ingestion only when
+`THEY_VOTE_FOR_YOU_API_KEY` or `TVFY_API_KEY` is present. When neither key is
+set, the weekly run writes a `weekly_federal_votes_<timestamp>.skipped.log`
+file and still refreshes the rest of the federal database.
 
 Example cron entry for a server using UTC, running Sundays at 18:00 UTC
 which is Monday morning in eastern Australia depending on daylight saving:
@@ -515,11 +517,16 @@ Current local baseline after the 2026-04-29 federal/state-local load:
 - `office_term`: 226.
 - `money_flow`: 294,707 rows: AEC annual/election/public-funding records plus
   active QLD ECQ state/local disclosure rows.
-- `gift_interest`: 7,605 total rows: 5,853 House and 1,752 Senate.
-- `gift_interest` gift/travel subset: House gifts 538, House sponsored travel/hospitality 317, Senate gifts 227, Senate sponsored travel/hospitality 263.
+- `gift_interest`: 7,639 total rows: 5,838 current House rows, 49
+  non-current House rows retained for audit, and 1,752 current Senate rows.
+  Non-current source rows are excluded from active public `influence_event`
+  totals.
+- `gift_interest` current gift/travel subset: House gifts 531, House sponsored
+  travel/hospitality 309, Senate gifts 227, Senate sponsored
+  travel/hospitality 263.
 - `electorate_boundary`: 150 current federal House boundaries in `aec_federal_2025_current`; all canonical source geometries are SRID 4326, valid, and non-empty.
 - `electorate_boundary_display_geometry`: 150 `land_clipped_display` rows for web-map use.
-- `influence_event`: 302,312 non-rejected derived rows: 217,531 money events, 77,176 campaign-support events, 1,421 benefit events, 4,700 private-interest events, 1,384 organisational-role events, and 100 other declared interests.
+- `influence_event`: 302,297 non-rejected derived rows: 217,531 money events, 77,176 campaign-support events, 1,406 benefit events, 4,700 private-interest events, 1,384 organisational-role events, and 100 other declared interests.
 - `influence_event` benefit subtypes include 386 membership/lounge access rows, 288 event ticket/pass rows, 69 private-aircraft/flight rows, 42 meal/reception rows, 24 accommodation rows, and 83 subscription/service rows; most benefit records do not disclose value.
 - `entity_industry_classification`: 35,874 generated rows from `public_interest_sector_rules_v1`.
 - `official_identifier_observation`: 3,591 unique official observations: 3,590 current lobbyist-register observations from 3,602 parsed rows plus one ABN Lookup web-service smoke record for BHP Group Limited.

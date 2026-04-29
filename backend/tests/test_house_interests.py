@@ -185,6 +185,35 @@ Children
     ]
 
 
+def test_records_from_house_section_skips_form_headers_signature_and_ocr_noise() -> None:
+    section = {
+        "source_id": "source-1",
+        "source_name": "Example PDF",
+        "source_metadata_path": "/tmp/metadata.json",
+        "body_path": "/tmp/body.pdf",
+        "url": "https://example.test/example.pdf",
+        "member_name": "Example Member",
+        "family_name": "Member",
+        "given_names": "Example",
+        "electorate": "Example",
+        "state": "Victoria",
+        "section_number": "12",
+        "section_title": "Sponsored travel or hospitality",
+        "section_text": """
+12. Sponsored travel or hospitality
+HOUSE OF REPRESENTATIVES
+PARLIAMENT OF AUSTRALIA
+Self Signed: Date:
+Self � AUSTRALI�,, k
+Self Two tickets from Rugby Australia
+""",
+    }
+
+    records = records_from_house_section(section)
+
+    assert [record["description"] for record in records] == ["Two tickets from Rugby Australia"]
+
+
 def test_records_from_house_section_handles_spouse_slash_prefix() -> None:
     section = {
         "source_id": "source-1",
