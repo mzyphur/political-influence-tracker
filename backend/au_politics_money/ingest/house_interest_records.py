@@ -379,40 +379,18 @@ def records_from_house_section(section: dict[str, Any]) -> list[dict[str, Any]]:
     lines = _strip_section_heading(section["section_text"])
     section_uses_owner_context = any(_line_has_context_prefix(line) for line in lines)
     metadata_noise_values = _section_metadata_noise_values(section)
-    for line in lines:
-        if _is_noise_line(line):
-            continue
-        if _normal_value(line) in STOP_MARKERS:
-            break
-        if any(_normal_value(line).startswith(_normal_value(marker)) for marker in STOP_MARKERS):
-            break
 
-        current_context, value, consumed_context = _consume_context_prefix(line, current_context)
-        if section_uses_owner_context and current_context == "member_unspecified" and not consumed_context:
-            continue
-        if _normal_value(value) in metadata_noise_values:
-            continue
-        source_text_value = value
-        cross_reference = ""
-        if _is_as_above_reference(value):
-            if not output:
-                continue
-            value = output[-1]["description"]
-            cross_reference = "as_above_resolved_to_previous_record"
-        if not _looks_like_value(value) or _is_noise_line(value):
-            continue
-
-        if output and output[-1]["owner_context"] == current_context and _should_append_to_previous(
-            output[-1]["description"], value
-        ):
-            output[-1]["description"] = f"{output[-1]['description']} {value}"
-            output[-1].update(extracted_interest_fields(output[-1]["description"]))
-            continue
-
+    def append_record(
+        *,
+        owner_context: str,
+        value: str,
+        source_text_value: str,
+        cross_reference: str,
+    ) -> None:
         digest = hashlib.sha1(
             (
                 f"{section['source_id']}:{section_number}:{section_digest}:"
-                f"{current_context}:{len(output)}:{value}"
+                f"{owner_context}:{len(output)}:{value}"
             ).encode("utf-8")
         ).hexdigest()[:12]
         extracted = extracted_interest_fields(value)
@@ -432,13 +410,70 @@ def records_from_house_section(section: dict[str, Any]) -> list[dict[str, Any]]:
                 "section_number": section_number,
                 "section_title": section["section_title"],
                 "interest_category": category,
-                "owner_context": current_context,
+                "owner_context": owner_context,
                 "description": value,
                 "source_description": source_text_value,
                 "description_cross_reference": cross_reference,
                 **extracted,
                 "original_section_text": section["section_text"],
             }
+        )
+
+    for line in lines:
+        if _is_noise_line(line):
+            continue
+        if _normal_value(line) in STOP_MARKERS:
+            break
+        if any(_normal_value(line).startswith(_normal_value(marker)) for marker in STOP_MARKERS):
+            break
+
+        current_context, value, consumed_context = _consume_context_prefix(line, current_context)
+        if section_uses_owner_context and current_context == "member_unspecified" and not consumed_context:
+            continue
+        if _normal_value(value) in metadata_noise_values:
+            continue
+        source_text_value = value
+        cross_reference = ""
+        if _is_as_above_reference(value):
+            if not output:
+                continue
+            previous_owner = output[-1]["owner_context"]
+            previous_owner_block = []
+            for record in reversed(output):
+                if record["owner_context"] != previous_owner:
+                    break
+                previous_owner_block.append(record)
+            previous_owner_block.reverse()
+            if previous_owner != current_context and len(previous_owner_block) > 1:
+                for reference_record in previous_owner_block:
+                    append_record(
+                        owner_context=current_context,
+                        value=reference_record["description"],
+                        source_text_value=source_text_value,
+                        cross_reference="as_above_resolved_to_previous_owner_block",
+                    )
+                continue
+            value = previous_owner_block[-1]["description"]
+            cross_reference = (
+                "as_above_resolved_to_previous_owner_block"
+                if previous_owner != current_context
+                else "as_above_resolved_to_previous_record"
+            )
+        if not _looks_like_value(value) or _is_noise_line(value):
+            continue
+
+        if output and output[-1]["owner_context"] == current_context and _should_append_to_previous(
+            output[-1]["description"], value
+        ):
+            output[-1]["description"] = f"{output[-1]['description']} {value}"
+            output[-1].update(extracted_interest_fields(output[-1]["description"]))
+            continue
+
+        append_record(
+            owner_context=current_context,
+            value=value,
+            source_text_value=source_text_value,
+            cross_reference=cross_reference,
         )
     return output
 

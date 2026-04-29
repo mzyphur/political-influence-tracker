@@ -20,6 +20,14 @@ Completed:
   state map payload. The State details panel now shows these roster facts while
   explicitly avoiding claims that ECQ disclosure rows are personal receipts or
   electorate-level attributions.
+- Hardened House-register `As above` handling for multi-record owner blocks.
+  When a spouse/partner row says `As above` after several self disclosures, the
+  parser now preserves the whole preceding owner block rather than only the
+  immediately previous row. After regenerating and loading the House interest
+  artifact, the local DB has 5,846 current House interest records, 1,364
+  benefit events, 314,040 non-rejected influence events, and 7,831
+  person-linked influence events. The refreshed federal review bundle is
+  `data/audit/review_bundles/federal_review_bundle_20260429T175537Z.summary.json`.
 - Added jurisdiction filtering to the state/local API and frontend summary
   panel. `/api/state-local/summary` and `/api/state-local/records` now accept
   `jurisdiction_code` (`ACT`, `NSW`, `NT`, `QLD`, `SA`, `TAS`, `VIC`, `WA`);

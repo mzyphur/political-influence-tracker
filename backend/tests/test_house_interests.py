@@ -359,8 +359,54 @@ Children
         "Dinner from Example Association",
     ]
     assert records[1]["source_description"] == "As above"
-    assert records[1]["description_cross_reference"] == "as_above_resolved_to_previous_record"
+    assert records[1]["description_cross_reference"] == "as_above_resolved_to_previous_owner_block"
     assert records[1]["counterparty_raw_name"] == "Example Association"
+
+
+def test_records_from_house_section_resolves_as_above_to_previous_owner_block() -> None:
+    section = {
+        "source_id": "source-1",
+        "source_name": "Example PDF",
+        "source_metadata_path": "/tmp/metadata.json",
+        "body_path": "/tmp/body.pdf",
+        "url": "https://example.test/example.pdf",
+        "member_name": "Example Member",
+        "family_name": "Member",
+        "given_names": "Example",
+        "electorate": "Example",
+        "state": "Victoria",
+        "section_number": "12",
+        "section_title": "Sponsored travel or hospitality",
+        "section_text": """
+12. Sponsored travel or hospitality
+Self Dinner from Example Association
+Tickets from Example Stadium
+Spouse/ As above
+Partner
+Dependent Not Applicable
+Children
+""",
+    }
+
+    records = records_from_house_section(section)
+
+    assert [record["owner_context"] for record in records] == [
+        "self",
+        "self",
+        "spouse_partner",
+        "spouse_partner",
+    ]
+    assert [record["description"] for record in records] == [
+        "Dinner from Example Association",
+        "Tickets from Example Stadium",
+        "Dinner from Example Association",
+        "Tickets from Example Stadium",
+    ]
+    assert [record["description_cross_reference"] for record in records[2:]] == [
+        "as_above_resolved_to_previous_owner_block",
+        "as_above_resolved_to_previous_owner_block",
+    ]
+    assert all(record["source_description"] == "As above" for record in records[2:])
 
 
 def test_records_from_house_section_handles_spouse_slash_prefix() -> None:
