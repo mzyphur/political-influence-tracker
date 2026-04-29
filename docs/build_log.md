@@ -26,6 +26,9 @@ Completed:
   public-facing `Source basis` and `What this supports` language. Default
   non-values such as unrecorded source rows, missing disclosure thresholds, and
   empty missing-field flags are hidden unless they add substantive information.
+  When a source/provider field is not named but the public description contains
+  useful text, collapsed cards now use that description instead of leading with
+  "Source not named".
 - Added the first source-backed council map layer. The new QLD
   local-government boundary adapter fetches the official Queensland government
   ArcGIS/QSpatial local-government layer, normalizes 78 current council areas

@@ -1117,11 +1117,12 @@ function eventFamilyLabel(value: string): string {
 }
 
 function eventSourceLabel(event: RepresentativeEvent): string {
-  return (
+  const explicitSource =
     (isUsefulRecordText(event.source_entity_name) ? event.source_entity_name : null) ||
-    (isUsefulRecordText(event.source_raw_name) ? event.source_raw_name : null) ||
-    (event.event_family === "benefit" ? "Provider not named" : "Source not named")
-  );
+    (isUsefulRecordText(event.source_raw_name) ? event.source_raw_name : null);
+  if (explicitSource) return explicitSource;
+  if (isUsefulRecordText(event.description)) return compactRecordText(event.description);
+  return event.event_family === "benefit" ? "Provider not named" : "Source not named";
 }
 
 function eventDetailMeta(event: RepresentativeEvent): string[] {
@@ -1197,13 +1198,20 @@ function isUsefulRecordText(value: string | null | undefined): value is string {
     "na",
     "n a",
     "n/a",
-    "rna",
     "not applicable",
     "not disclosed",
     "source not identified",
     "provider not named",
     "source not named"
   ]).has(normalized);
+}
+
+function compactRecordText(value: string): string {
+  return value
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\((.+)\)$/, "$1")
+    .trim();
 }
 
 function eventDescription(event: RepresentativeEvent): string | null {
