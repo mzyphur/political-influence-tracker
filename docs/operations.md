@@ -788,26 +788,27 @@ docker compose exec -T postgres psql -U au_politics -d au_politics \
   -c "select count(*) from money_flow;"
 ```
 
-Current local baseline after the 2026-04-29 federal/state-local load:
+Current local baseline after the 2026-04-29 federal/state-local load and
+House-interest artifact cleanup:
 
 - `person`: 226, including one House-register-derived fallback person for Sussan Ley/Farrer because the APH contact CSV omitted that seat.
 - `office_term`: 226.
-- `money_flow`: 317,701 rows total; 295,211 current rows across AEC
+- `money_flow`: 326,286 rows total; 303,230 current rows across AEC
   annual/election/public-funding records plus active QLD ECQ, ACT Elections,
   NT NTEC, and VEC state/local disclosure rows.
-- `gift_interest`: 7,639 total rows: 5,838 current House rows, 49
+- `gift_interest`: 7,878 total rows: 5,818 current House rows, 308
   non-current House rows retained for audit, and 1,752 current Senate rows.
   Non-current source rows are excluded from active public `influence_event`
   totals.
-- `gift_interest` current gift/travel subset: House gifts 531, House sponsored
-  travel/hospitality 309, Senate gifts 227, Senate sponsored
+- `gift_interest` current gift/travel subset: House gifts 474, House sponsored
+  travel/hospitality 268, Senate gifts 227, Senate sponsored
   travel/hospitality 263.
 - `electorate_boundary`: 150 current federal House boundaries in `aec_federal_2025_current`; all canonical source geometries are SRID 4326, valid, and non-empty.
 - `electorate_boundary_display_geometry`: 150 `land_clipped_display` rows for web-map use.
-- `influence_event`: 306,013 non-rejected derived rows: 217,814 money events,
-  77,176 campaign-support events, 202 grant events, 1,425 benefit events,
-  4,700 private-interest events, 1,384 organisational-role events, 3,212 access
-  events, and 100 other declared interests.
+- `influence_event`: 314,012 non-rejected derived rows: 225,800 money events,
+  77,176 campaign-support events, 202 grant events, 1,360 benefit events,
+  4,653 private-interest events, 1,373 organisational-role events, 3,212 access
+  events, and 236 other declared interests.
 - `influence_event` benefit subtypes include 386 membership/lounge access rows, 288 event ticket/pass rows, 69 private-aircraft/flight rows, 42 meal/reception rows, 24 accommodation rows, and 83 subscription/service rows; most benefit records do not disclose value.
 - `entity_industry_classification`: 35,874 generated rows from `public_interest_sector_rules_v1`.
 - `official_identifier_observation`: 3,591 unique official observations: 3,590 current lobbyist-register observations from 3,602 parsed rows plus one ABN Lookup web-service smoke record for BHP Group Limited.
@@ -831,10 +832,10 @@ Current local baseline after the 2026-04-29 federal/state-local load:
   8,084 TVFY-only person-vote rows retained mainly for House divisions pending
   official House person-vote parsing.
 - Current review queue exports should include the official identifier match
-  candidates, QLD ECQ participant match candidates, benefit events with
-  extraction or missing-data review flags, and inferred entity classifications
-  recommended for review. QLD ECQ lookup hits are still review candidates unless
-  an importer has explicitly accepted the match.
+  candidates, QLD ECQ participant match candidates, 1,340 cleaned benefit events
+  with extraction or missing-data review flags, and inferred entity
+  classifications recommended for review. QLD ECQ lookup hits are still review
+  candidates unless an importer has explicitly accepted the match.
 - Current classifier sector totals include 14,833 `individual_uncoded`, 1,482 `unions`, 1,017 `finance`, 904 `political_entity`, 582 `property_development`, 278 `mining`, and 205 `fossil_fuels`.
 - They Vote For You list requests are recursively split when the API returns
   its 100-record cap; a one-day capped response still fails closed unless

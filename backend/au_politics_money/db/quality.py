@@ -18,9 +18,20 @@ class ServingDatabaseQualityConfig:
 
 
 FORM_NOISE_DESCRIPTIONS = (
+    "48TH PARLIAMENT",
+    "FAMILY NAME",
+    "GIVEN NAMES",
     "HOUSE OF REPRESENTATIVES",
+    "N/A",
     "PARLIAMENT OF AUSTRALIA",
     "Signed: Date:",
+    "Value: Unknown",
+)
+
+FORM_NOISE_REGEXES = (
+    r"^(?:family name|given names|electoral division)(?:\b|$)",
+    r"^(?:\d{1,2})?(?:st|nd|rd|th)?\s*parliament$",
+    r"^[a-z]+(?:\s+i)?\s+state\s+(?:act|nsw|nt|qld|sa|tas|vic|wa)$",
 )
 
 
@@ -158,9 +169,12 @@ def run_serving_database_quality_checks(
         SELECT count(*)
         FROM influence_event
         WHERE review_status <> 'rejected'
-          AND description = ANY(%s)
+          AND (
+              description = ANY(%s)
+              OR description ~* ANY(%s)
+          )
         """,
-        (list(FORM_NOISE_DESCRIPTIONS),),
+        (list(FORM_NOISE_DESCRIPTIONS), list(FORM_NOISE_REGEXES)),
     )
     _check(
         checks,

@@ -70,6 +70,14 @@ Completed:
   cleaned federal review bundle was then generated at
   `data/audit/review_bundles/federal_review_bundle_20260429T163520Z.summary.json`
   with 1,340 benefit-event review rows.
+- Expanded the serving-database QA gate so future runs fail if known House
+  form/OCR artifacts reappear through exact or regex matches. The current
+  local serving QA run passes with 150 House boundaries, zero public events
+  from non-current source rows, zero obvious form-noise events, 11 unmatched
+  official APH roster votes under the configured maximum of 25, 314,012
+  non-rejected influence events, 7,803 person-linked influence events, 303,230
+  current money-flow rows, 7,570 current gift-interest rows, 150 current House
+  office terms, and 76 current Senate office terms.
 - Hardened ACT annual-return receipt handling after review. Broad annual
   `act_annual_receipt` rows are now loaded as state source-row context with
   `public_amount_counting_role =
