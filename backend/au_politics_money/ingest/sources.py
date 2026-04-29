@@ -443,6 +443,187 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="qld_ecq_eds_public_map",
+        name="ECQ Electronic Disclosure System Gift Map",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_public_map",
+        url="https://disclosures.ecq.qld.gov.au/Map",
+        expected_format="html_plus_js",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "Public ECQ Electronic Disclosure System map surface for Queensland "
+            "state and local gift disclosure records. Use as a discovery surface "
+            "for stable public-data requests, not as a geocoding authority."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_expenditures",
+        name="ECQ Electronic Disclosure System Expenditure Table",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_expenditure_table",
+        url="https://disclosures.ecq.qld.gov.au/Expenditures",
+        expected_format="html_plus_js",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "Public ECQ Electronic Disclosure System expenditure table for "
+            "Queensland state and local electoral expenditure disclosure records."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_map_export_csv",
+        name="ECQ EDS Gift Map CSV Export",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_export_csv",
+        url="https://disclosures.ecq.qld.gov.au/Map/ExportCsv",
+        expected_format="csv_post_form",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "CSV export endpoint for ECQ EDS gift-map records. Requires form fields "
+            "from the current `/Map` page and must be fetched with a POST request."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_expenditure_export_csv",
+        name="ECQ EDS Expenditure CSV Export",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_export_csv",
+        url="https://disclosures.ecq.qld.gov.au/Expenditures/ExportCsv",
+        expected_format="csv_post_form",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "CSV export endpoint for ECQ EDS electoral expenditure records. Requires "
+            "form fields from the current `/Expenditures` page and must be fetched "
+            "with a POST request."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_reports",
+        name="ECQ Electronic Disclosure System Reports",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_reports",
+        url="https://disclosures.ecq.qld.gov.au/Report",
+        expected_format="html_plus_js",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "Public ECQ Electronic Disclosure System reports surface for "
+            "Queensland state and local political donation and expenditure data."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_api_political_electors",
+        name="ECQ EDS Political Electors API",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_lookup_api",
+        url="https://disclosures.ecq.qld.gov.au/api/political/electors",
+        expected_format="json",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "Public lookup endpoint referenced by ECQ EDS JavaScript for candidate "
+            "and elector filters. Supports Queensland state and local disclosure "
+            "normalization; not itself a money-flow table."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_api_political_parties",
+        name="ECQ EDS Political Parties API",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_lookup_api",
+        url="https://disclosures.ecq.qld.gov.au/api/political/political-parties",
+        expected_format="json",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "Public lookup endpoint referenced by ECQ EDS JavaScript for political "
+            "party filters."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_api_associated_entities",
+        name="ECQ EDS Associated Entities API",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_lookup_api",
+        url=(
+            "https://disclosures.ecq.qld.gov.au/api/political/organisations"
+            "?DisclosureRole=AssociatedEntity"
+        ),
+        expected_format="json",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes="Public lookup endpoint referenced by ECQ EDS reports for associated entities.",
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_api_political_events",
+        name="ECQ EDS Political Events API",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_lookup_api",
+        url="https://disclosures.ecq.qld.gov.au/api/political/events",
+        expected_format="json",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "Public lookup endpoint referenced by ECQ EDS JavaScript for election "
+            "event filters."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_api_local_groups",
+        name="ECQ EDS Local Groups API",
+        jurisdiction="Queensland",
+        level="council",
+        source_type="state_local_financial_disclosure_lookup_api",
+        url="https://disclosures.ecq.qld.gov.au/api/political/local-groups",
+        expected_format="json",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes="Public lookup endpoint referenced by ECQ EDS JavaScript for local-government groups.",
+    ),
+    SourceRecord(
+        source_id="qld_ecq_eds_api_local_electorates",
+        name="ECQ EDS Local Electorates API",
+        jurisdiction="Queensland",
+        level="council",
+        source_type="state_local_financial_disclosure_lookup_api",
+        url="https://disclosures.ecq.qld.gov.au/api/political/local-electorates",
+        expected_format="json",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "Public lookup endpoint referenced by ECQ EDS expenditure/map pages "
+            "for local-government electorate filters."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_disclosure_return_archives",
+        name="ECQ Disclosure Return Archives",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_archive",
+        url="https://www.ecq.qld.gov.au/disclosurereturnarchives",
+        expected_format="html_plus_downloads",
+        update_frequency="historical_archive",
+        priority="high",
+        notes=(
+            "Official ECQ historical disclosure archive linked from the Electronic "
+            "Disclosure System. Use for historical state and local records that "
+            "may not be exposed through current EDS views."
+        ),
+    ),
+    SourceRecord(
         source_id="sa_ecsa_funding_disclosure",
         name="Electoral Commission SA Funding and Disclosure",
         jurisdiction="South Australia",

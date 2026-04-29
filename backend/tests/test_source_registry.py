@@ -33,6 +33,18 @@ def test_subnational_seed_sources_exist() -> None:
         "nsw_electoral_disclosures",
         "vic_vec_disclosures",
         "qld_ecq_disclosures",
+        "qld_ecq_eds_public_map",
+        "qld_ecq_eds_expenditures",
+        "qld_ecq_eds_map_export_csv",
+        "qld_ecq_eds_expenditure_export_csv",
+        "qld_ecq_eds_reports",
+        "qld_ecq_eds_api_political_electors",
+        "qld_ecq_eds_api_political_parties",
+        "qld_ecq_eds_api_associated_entities",
+        "qld_ecq_eds_api_political_events",
+        "qld_ecq_eds_api_local_groups",
+        "qld_ecq_eds_api_local_electorates",
+        "qld_ecq_disclosure_return_archives",
         "sa_ecsa_funding_disclosure",
         "waec_returns_reports",
         "tas_tec_disclosure_funding",
@@ -44,6 +56,11 @@ def test_subnational_seed_sources_exist() -> None:
     assert required <= set(sources)
     assert sources["nsw_electoral_disclosures"].level == "state_council"
     assert sources["qld_ecq_disclosures"].level == "state_council"
+    assert sources["qld_ecq_eds_public_map"].source_type.endswith("_public_map")
+    assert sources["qld_ecq_eds_map_export_csv"].expected_format == "csv_post_form"
+    assert sources["qld_ecq_eds_api_local_groups"].level == "council"
+    assert sources["qld_ecq_eds_api_political_parties"].expected_format == "json"
+    assert "historical" in sources["qld_ecq_disclosure_return_archives"].notes.lower()
     assert "campaign context" in sources["act_elections_funding_disclosure"].notes
 
 
@@ -191,6 +208,43 @@ def test_discover_qld_disclosure_links() -> None:
         "Electoral Act 1992",
     }
     assert all("contact-us" not in link.url for link in links)
+
+
+def test_discover_qld_eds_map_machine_links() -> None:
+    source = get_source("qld_ecq_eds_public_map")
+    html = """
+    <html>
+      <body>
+        <button formaction="/Map/ExportCsv">CSV</button>
+        <button formaction="/Map?resetNav=true">Apply</button>
+        <script src="/js/maps-shared.min.js?v=abc123"></script>
+        <script src="/js/site.min.js?v=abc123"></script>
+      </body>
+    </html>
+    """
+    links = discover_links_from_html(source, html)
+
+    assert {(link.link_type, link.url) for link in links} == {
+        ("csv", "https://disclosures.ecq.qld.gov.au/Map/ExportCsv"),
+        ("js", "https://disclosures.ecq.qld.gov.au/js/maps-shared.min.js?v=abc123"),
+    }
+
+
+def test_discover_qld_eds_report_script() -> None:
+    source = get_source("qld_ecq_eds_reports")
+    html = """
+    <html>
+      <body>
+        <script src="/js/report/index.min.js?v=def456"></script>
+        <script src="/js/site.min.js?v=def456"></script>
+      </body>
+    </html>
+    """
+    links = discover_links_from_html(source, html)
+
+    assert len(links) == 1
+    assert links[0].link_type == "js"
+    assert links[0].url == "https://disclosures.ecq.qld.gov.au/js/report/index.min.js?v=def456"
 
 
 def test_discovered_source_ids_are_stable() -> None:

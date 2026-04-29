@@ -1,6 +1,6 @@
 # Reproducibility and Auto-Update Standard
 
-Last updated: 2026-04-28
+Last updated: 2026-04-29
 
 ## Core Rule
 
@@ -36,6 +36,54 @@ cd backend
 
 The smoke run executes all pipeline stages but limits House interests PDF work to
 a small subset. It is for CI/development only, not production data publication.
+
+## Current Subnational Pipeline
+
+The first active state/local adapter is Queensland ECQ EDS. It is deliberately
+separate from the federal foundation command while the state/council framework
+is being generalized.
+
+```bash
+cd backend
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_public_map
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_expenditures
+.venv/bin/python -m au_politics_money.cli fetch-qld-ecq-eds-exports
+.venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-money-flows
+```
+
+The export fetcher does not depend on a manual browser download. It reads the
+latest archived ECQ EDS public map and expenditure pages, extracts their current
+HTML form fields, and posts those source-backed fields to the official ECQ CSV
+export endpoints. Raw CSV bodies and request/response metadata are archived
+under:
+
+```text
+data/raw/qld_ecq_eds_map_export_csv/<timestamp>/
+data/raw/qld_ecq_eds_expenditure_export_csv/<timestamp>/
+```
+
+The normalizer writes:
+
+```text
+data/processed/qld_ecq_eds_money_flows/<timestamp>.jsonl
+data/processed/qld_ecq_eds_money_flows/<timestamp>.summary.json
+```
+
+Current normalized coverage is 49,839 rows: 22,726 gift/donation rows and
+27,113 electoral expenditure rows. Gift/donation rows are normalized as
+state/local money records at the actor level supported by the ECQ export.
+Electoral expenditure rows are normalized as `campaign_support` with event type
+`state_local_electoral_expenditure`; they must not be described as money
+received personally by a representative.
+
+The serving database loader includes the latest processed QLD ECQ EDS artifact
+when money-flow loading is enabled:
+
+```bash
+cd backend
+export DATABASE_URL=postgresql://au_politics:change-me-local-only@localhost:54329/au_politics
+.venv/bin/python -m au_politics_money.cli load-postgres
+```
 
 ## Database Rebuild
 
@@ -248,6 +296,10 @@ Recommended initial schedule:
   and AEC money-flow context before review replay, so accepted/rejected
   decisions can be replayed after a database rebuild without overwriting the
   original candidate evidence.
+- QLD ECQ EDS export rows should be refreshed on the same cadence as the state
+  source pages. Because the EDS covers state and local disclosures, downstream
+  state/council UI surfaces should show source-family coverage and caveats
+  before presenting row counts as complete jurisdictional coverage.
 - Vote/policy-topic artifacts should be included on the weekly federal run when
   API keys are available, because reviewed sector-policy links depend on loaded
   `policy_topic` rows. Loads without vote artifacts intentionally skip

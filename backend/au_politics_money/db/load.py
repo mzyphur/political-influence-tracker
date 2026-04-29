@@ -78,6 +78,7 @@ CAMPAIGN_SUPPORT_FLOW_KINDS = {
     "election_media_advertising_expenditure",
     "election_public_funding_paid",
     "election_third_party_campaign_expenditure",
+    "qld_electoral_expenditure",
 }
 
 REPRESENTATIVE_RETURN_TITLE_TOKENS = {
@@ -397,7 +398,7 @@ def classify_money_event_type(disclosure_category: str, receipt_type: str) -> st
 
 def is_campaign_support_money_flow(metadata: dict[str, Any]) -> bool:
     return (
-        metadata.get("source_dataset") in {"aec_election", "aec_public_funding"}
+        metadata.get("source_dataset") in {"aec_election", "aec_public_funding", "qld_ecq_eds"}
         and metadata.get("flow_kind") in CAMPAIGN_SUPPORT_FLOW_KINDS
     )
 
@@ -421,6 +422,8 @@ def campaign_support_event_type(metadata: dict[str, Any], fallback_event_type: s
         return "election_public_funding_paid"
     if flow_kind == "election_third_party_campaign_expenditure":
         return "third_party_campaign_expenditure"
+    if flow_kind == "qld_electoral_expenditure":
+        return "state_local_electoral_expenditure"
     return fallback_event_type
 
 
@@ -989,7 +992,16 @@ def _load_aec_money_flow_jsonl(
     default_source_dataset: str,
 ) -> dict[str, int]:
     source_doc_cache: dict[str, int] = {}
-    jurisdiction_id = get_or_create_jurisdiction(conn, "Commonwealth", "federal", "CWLTH")
+    jurisdiction_cache: dict[tuple[str, str, str], int] = {}
+
+    def record_jurisdiction_id(record: dict[str, Any]) -> int:
+        name = record.get("jurisdiction_name") or "Commonwealth"
+        level = record.get("jurisdiction_level") or "federal"
+        code = record.get("jurisdiction_code") or "CWLTH"
+        key = (str(name), str(level), str(code))
+        if key not in jurisdiction_cache:
+            jurisdiction_cache[key] = get_or_create_jurisdiction(conn, *key)
+        return jurisdiction_cache[key]
 
     count = 0
     with path.open("r", encoding="utf-8") as handle:
@@ -1008,6 +1020,7 @@ def _load_aec_money_flow_jsonl(
                 record.get("financial_year") or "",
             )
             source_dataset = record.get("source_dataset") or default_source_dataset
+            jurisdiction_id = record_jurisdiction_id(record)
             external_key = (
                 f"{source_dataset}:{record['source_table']}:{record['source_row_number']}:"
                 f"{record.get('financial_year') or record.get('event_name') or ''}:"
@@ -1032,10 +1045,20 @@ def _load_aec_money_flow_jsonl(
                     )
                     ON CONFLICT (external_key) DO UPDATE SET
                         source_entity_id = EXCLUDED.source_entity_id,
+                        source_raw_name = EXCLUDED.source_raw_name,
                         recipient_entity_id = EXCLUDED.recipient_entity_id,
+                        recipient_raw_name = EXCLUDED.recipient_raw_name,
                         amount = EXCLUDED.amount,
+                        financial_year = EXCLUDED.financial_year,
                         date_received = EXCLUDED.date_received,
+                        return_type = EXCLUDED.return_type,
+                        receipt_type = EXCLUDED.receipt_type,
+                        disclosure_category = EXCLUDED.disclosure_category,
+                        jurisdiction_id = EXCLUDED.jurisdiction_id,
                         source_document_id = EXCLUDED.source_document_id,
+                        source_row_ref = EXCLUDED.source_row_ref,
+                        original_text = EXCLUDED.original_text,
+                        confidence = EXCLUDED.confidence,
                         metadata = EXCLUDED.metadata
                     """,
                     (
@@ -1091,6 +1114,17 @@ def load_aec_public_funding_money_flows(conn, jsonl_path: Path | None = None) ->
             "skipped_reason": "no_processed_aec_public_funding_money_flows",
         }
     return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="aec_public_funding")
+
+
+def load_qld_ecq_eds_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(PROCESSED_DIR / "qld_ecq_eds_money_flows", "*.jsonl")
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_qld_ecq_eds_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="qld_ecq_eds")
 
 
 def _person_lookup(conn) -> dict[str, int]:
@@ -4378,6 +4412,7 @@ def load_processed_artifacts(
             summary["money_flows"] = load_aec_money_flows(conn)
             summary["election_money_flows"] = load_aec_election_money_flows(conn)
             summary["public_funding_money_flows"] = load_aec_public_funding_money_flows(conn)
+            summary["qld_ecq_eds_money_flows"] = load_qld_ecq_eds_money_flows(conn)
         if include_house_interests:
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:

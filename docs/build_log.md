@@ -82,6 +82,19 @@ Completed:
   funding, annual-return, and portal links), and Queensland (22 ECQ state/local
   disclosure, EDS, register, and participant links). The generated manifests are
   under ignored `data/processed/discovered_links/<source_id>/20260429T003319Z.json`.
+- Added the first active state/local disclosure adapter for Queensland ECQ EDS.
+  The source registry now includes the EDS public map, expenditure, report, CSV
+  export, and public lookup API surfaces discovered from official ECQ pages.
+  `fetch-qld-ecq-eds-exports` archives current gift and expenditure CSV exports
+  by POSTing source-backed form fields from the archived ECQ pages, and
+  `normalize-qld-ecq-eds-money-flows` converts those exports into normalized
+  state/local influence-event input records.
+- Loaded the current Queensland ECQ EDS exports into the local PostgreSQL
+  database. The normalized artifact contains 49,839 source-backed rows:
+  22,726 gift/donation rows from the public map export and 27,113 electoral
+  expenditure rows from the expenditure export. Expenditure rows are loaded as
+  `campaign_support` / `state_local_electoral_expenditure`, not as personal
+  receipt by a representative.
 
 Verification:
 
@@ -104,6 +117,10 @@ Verification:
   prioritize active parliamentary party records.
 - Focused source-registry/discovery tests passed after adding NSW/Victoria/Queensland
   subnational link-retention coverage.
+- Focused QLD ECQ EDS parser and source-registry tests passed, along with the
+  existing DB loader tests. A local DB reload confirmed the new QLD rows extend
+  the unified `influence_event` surface while preserving the direct-money versus
+  campaign-support separation.
 
 ## 2026-04-28
 

@@ -73,6 +73,11 @@ from au_politics_money.ingest.official_identifiers import (
     fetch_lobbyist_register_snapshot,
 )
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
+from au_politics_money.ingest.qld_ecq_eds import (
+    QLD_ECQ_EDS_EXPORTS,
+    fetch_qld_ecq_eds_exports,
+    normalize_qld_ecq_eds_money_flows,
+)
 from au_politics_money.ingest.senate_interests import (
     extract_senate_interest_records,
     fetch_senate_interest_statements,
@@ -210,6 +215,18 @@ def normalize_aec_election_command() -> int:
 
 def normalize_aec_public_funding_command() -> int:
     summary_path = normalize_aec_public_funding()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def fetch_qld_ecq_eds_exports_command(export_names: list[str] | None) -> int:
+    summary_path = fetch_qld_ecq_eds_exports(export_names=export_names)
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def normalize_qld_ecq_eds_money_flows_command() -> int:
+    summary_path = normalize_qld_ecq_eds_money_flows()
     print(str(Path(summary_path).resolve()))
     return 0
 
@@ -567,6 +584,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("normalize-aec-public-funding")
 
+    qld_eds_exports_parser = subparsers.add_parser("fetch-qld-ecq-eds-exports")
+    qld_eds_exports_parser.add_argument(
+        "--export",
+        action="append",
+        choices=[spec.export_name for spec in QLD_ECQ_EDS_EXPORTS],
+        help="Fetch one QLD ECQ EDS CSV export. Repeat for multiple exports; omit for all.",
+    )
+    subparsers.add_parser("normalize-qld-ecq-eds-money-flows")
+
     subparsers.add_parser("extract-house-interest-sections")
 
     subparsers.add_parser("extract-house-interest-records")
@@ -753,6 +779,10 @@ def main() -> int:
         return normalize_aec_election_command()
     if args.command == "normalize-aec-public-funding":
         return normalize_aec_public_funding_command()
+    if args.command == "fetch-qld-ecq-eds-exports":
+        return fetch_qld_ecq_eds_exports_command(args.export)
+    if args.command == "normalize-qld-ecq-eds-money-flows":
+        return normalize_qld_ecq_eds_money_flows_command()
     if args.command == "extract-house-interest-sections":
         return extract_house_interest_sections_command()
     if args.command == "extract-house-interest-records":

@@ -59,6 +59,30 @@ It writes raw source bodies and metadata under `data/raw/` and command logs
 under `data/audit/logs/`. Parsing remains a separate step so acquisition,
 normalization, and interpretation stay reproducible and auditable.
 
+## Queensland ECQ EDS State/Local Exports
+
+Queensland is the first active state/local electoral-finance adapter. Refresh
+the official ECQ EDS source pages, fetch the current CSV exports from the
+archived page form fields, and normalize them into money-flow artifacts:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_public_map
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_expenditures
+.venv/bin/python -m au_politics_money.cli fetch-qld-ecq-eds-exports
+.venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-money-flows
+```
+
+The fetcher archives raw CSV bodies and metadata under
+`data/raw/qld_ecq_eds_map_export_csv/` and
+`data/raw/qld_ecq_eds_expenditure_export_csv/`. The normalized JSONL artifact
+is written under `data/processed/qld_ecq_eds_money_flows/` and is loaded by
+`load-postgres` when money-flow loading is enabled.
+
+ECQ gift/donation rows are money records. ECQ expenditure rows are
+campaign-support records with event type `state_local_electoral_expenditure`;
+they are campaign activity, not personal receipt by a representative.
+
 ## Frontend Development
 
 Start the backend API:

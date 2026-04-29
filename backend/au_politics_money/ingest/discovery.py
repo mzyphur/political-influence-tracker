@@ -11,6 +11,13 @@ from au_politics_money.config import PROCESSED_DIR, RAW_DIR
 from au_politics_money.models import DiscoveredLink, SourceRecord
 
 
+QLD_ECQ_EDS_SOURCE_IDS = {
+    "qld_ecq_eds_public_map",
+    "qld_ecq_eds_expenditures",
+    "qld_ecq_eds_reports",
+}
+
+
 def latest_body_path(source_id: str, raw_dir: Path = RAW_DIR) -> Path | None:
     source_dir = raw_dir / source_id
     if not source_dir.exists():
@@ -54,6 +61,8 @@ def _link_type(url: str, title: str) -> str:
     if path.endswith(".js") or "javascript" in title_lower:
         return "js"
     if path.endswith(".csv") or "csv" in title_lower:
+        return "csv"
+    if "exportcsv" in path:
         return "csv"
     if path.endswith((".xls", ".xlsx")) or "excel" in title_lower:
         return "xlsx"
@@ -143,6 +152,17 @@ def _should_keep_link(source_id: str, url: str, title: str) -> bool:
             )
         )
 
+    if source_id in QLD_ECQ_EDS_SOURCE_IDS:
+        if netloc != "disclosures.ecq.qld.gov.au":
+            return False
+        if path in {"/map/exportcsv", "/expenditures/exportcsv"}:
+            return True
+        if source_id in {"qld_ecq_eds_public_map", "qld_ecq_eds_expenditures"}:
+            return path.endswith("/js/maps-shared.min.js")
+        if source_id == "qld_ecq_eds_reports":
+            return path.endswith("/js/report/index.min.js")
+        return False
+
     return False
 
 
@@ -159,6 +179,14 @@ def discover_links_from_html(source: SourceRecord, html: str) -> list[Discovered
         for script in soup.find_all("script", src=True):
             src = str(script["src"]).strip()
             candidates.append((src, Path(urlparse(src).path).name or "script"))
+
+    if source.source_id in QLD_ECQ_EDS_SOURCE_IDS:
+        for script in soup.find_all("script", src=True):
+            src = str(script["src"]).strip()
+            candidates.append((src, Path(urlparse(src).path).name or "script"))
+        for element in soup.find_all(attrs={"formaction": True}):
+            action = str(element["formaction"]).strip()
+            candidates.append((action, element.get_text(" ", strip=True)))
 
     for href, raw_title in candidates:
         if not href or href.startswith(("#", "mailto:", "tel:")):

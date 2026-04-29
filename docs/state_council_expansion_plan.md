@@ -108,6 +108,11 @@ Notes:
 - Queensland is a strong first council-level target because ECQ documentation
   explicitly covers state and local disclosure through the Electronic Disclosure
   System.
+- The first implemented subnational adapter is the ECQ Electronic Disclosure
+  System export path. It archives the public EDS map and expenditure pages,
+  reuses their current hidden form fields, POSTs to the official CSV export
+  endpoints, and normalizes gifts/donations and electoral expenditure into the
+  same influence-event evidence surface used by the federal build.
 
 ### South Australia
 
@@ -288,6 +293,30 @@ Next adapter task: inspect the EDS portal and published-disclosure-return pages
 for stable query/export behaviour. Queensland should be the first council-level
 implementation candidate because the ECQ disclosure system explicitly covers
 both state and local government electoral finance disclosures.
+
+Current implementation status:
+
+- Active reproducible exports:
+  - `qld_ecq_eds_map_export_csv` for current gift/donation map rows;
+  - `qld_ecq_eds_expenditure_export_csv` for electoral expenditure rows.
+- The current normalized artifact contains 49,839 rows: 22,726 gift/donation
+  rows and 27,113 electoral expenditure rows.
+- The gift/donation export is loaded as source-backed state/local money records
+  at the actor level supported by the ECQ export fields.
+- The expenditure export is loaded as `campaign_support` with event type
+  `state_local_electoral_expenditure`, because electoral expenditure is campaign
+  activity, not personal receipt by a representative.
+- Public lookup API snapshots for electors, parties, associated entities,
+  events, local groups, and local electorates have been archived for later
+  linking, filtering, and candidate/party/entity enrichment.
+- The historical disclosure-return archive currently returned HTTP 401 during
+  reproducible fetch. Treat it as a blocked/pending source until an official
+  public access path is confirmed.
+
+Next adapter task: use the archived QLD lookup API snapshots to replace free-text
+actors with ECQ-backed participant identifiers where possible, then map
+candidate/group/electorate records into state and local electoral districts
+without reclassifying campaign expenditure as personal receipt.
 
 ## Data Model Requirements
 
