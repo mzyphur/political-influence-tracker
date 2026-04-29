@@ -124,6 +124,9 @@ function App() {
   );
   const selectedCoverageRows = numberValue(selectedCoverageLayer?.counts.money_flow_rows);
   const selectedLevelHasPartialData = dataLevel !== "federal" && selectedCoverageRows > 0;
+  const hasPostcodeLimitations = searchLimitations.some(
+    (limitation) => limitation.feature === "postcode_search"
+  );
 
   useEffect(() => {
     if (dataLevel !== "federal") {
@@ -153,6 +156,7 @@ function App() {
         setMapCaveat(payload.caveat);
         setMapStatus("ready");
         setSelectedFeature((current) => {
+          if (pendingSearchResult) return null;
           if (!current) return payload.features[0] ?? null;
           return payload.features.find((feature) => feature.id === current.id) ?? payload.features[0] ?? null;
         });
@@ -416,6 +420,7 @@ function App() {
     if (result.type === "postcode") {
       setDataLevel("federal");
       setChamber("house");
+      setSelectedFeature(null);
       if (resultState && states.includes(resultState)) {
         setStateFilter(resultState);
       }
@@ -660,8 +665,11 @@ function App() {
               {searchStatus === "error" && (
                 <p className="muted">Search failed: {searchCaveat}</p>
               )}
-              {searchStatus === "ready" && searchResults.length === 0 && (
+              {searchStatus === "ready" && searchResults.length === 0 && !hasPostcodeLimitations && (
                 <p className="muted">No source-backed results matched this search.</p>
+              )}
+              {searchStatus === "ready" && searchResults.length === 0 && hasPostcodeLimitations && (
+                <p className="muted">No map-linked postcode result is loaded for this search.</p>
               )}
               {searchLimitations.length > 0 && (
                 <div className="search-limitations" aria-label="Search limitations">
