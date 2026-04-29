@@ -72,7 +72,9 @@ from au_politics_money.ingest.nsw_electoral import (
 )
 from au_politics_money.ingest.nt_ntec import (
     ANNUAL_GIFTS_SOURCE_ID as NT_NTEC_ANNUAL_GIFTS_SOURCE_ID,
+    ANNUAL_RETURNS_SOURCE_ID as NT_NTEC_ANNUAL_RETURNS_SOURCE_ID,
     normalize_nt_ntec_annual_gifts,
+    normalize_nt_ntec_annual_returns,
 )
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
 from au_politics_money.ingest.qld_ecq_eds import (
@@ -871,11 +873,18 @@ def _run_nt_state_local_pipeline(*, smoke: bool = False) -> Path:
     nt_artifacts: dict[str, Path] = {}
 
     def fetch_nt_sources() -> dict[str, Any]:
-        metadata_path = fetch_source(get_source(NT_NTEC_ANNUAL_GIFTS_SOURCE_ID))
-        nt_artifacts["annual_gifts_metadata_path"] = Path(metadata_path)
+        annual_returns_metadata_path = fetch_source(
+            get_source(NT_NTEC_ANNUAL_RETURNS_SOURCE_ID)
+        )
+        annual_gifts_metadata_path = fetch_source(get_source(NT_NTEC_ANNUAL_GIFTS_SOURCE_ID))
+        nt_artifacts["annual_returns_metadata_path"] = Path(annual_returns_metadata_path)
+        nt_artifacts["annual_gifts_metadata_path"] = Path(annual_gifts_metadata_path)
         return {
-            "source_count": 1,
-            "metadata_paths": {NT_NTEC_ANNUAL_GIFTS_SOURCE_ID: str(metadata_path)},
+            "source_count": 2,
+            "metadata_paths": {
+                NT_NTEC_ANNUAL_RETURNS_SOURCE_ID: str(annual_returns_metadata_path),
+                NT_NTEC_ANNUAL_GIFTS_SOURCE_ID: str(annual_gifts_metadata_path),
+            },
         }
 
     manifest = PipelineManifest(
@@ -887,20 +896,28 @@ def _run_nt_state_local_pipeline(*, smoke: bool = False) -> Path:
         dependency_versions=_dependency_versions(),
         parameters={
             "jurisdiction": "nt",
-            "source_family": "nt_ntec_annual_returns_gifts",
+            "source_family": "nt_ntec_annual_returns",
             "smoke": smoke,
             "loads_database": False,
             "claim_boundary": (
-                "Fetch and normalize NTEC 2024-2025 annual gift-return rows. Rows "
-                "are source-backed donor-to-recipient gifts over the threshold in "
-                "recipient-side annual disclosure tables; they are not claims of "
-                "wrongdoing, causation, quid pro quo, or improper influence."
+                "Fetch and normalize NTEC 2024-2025 annual return and annual "
+                "gift-return rows. Rows are source-backed state disclosure "
+                "observations; they are not claims of wrongdoing, causation, quid "
+                "pro quo, or improper influence. NT annual return rows are not "
+                "consolidated reported amount totals until cross-source "
+                "deduplication exists."
             ),
         },
     )
 
     steps: list[tuple[str, Callable[[], Any]]] = [
-        ("fetch_nt_ntec_annual_gift_source", fetch_nt_sources),
+        ("fetch_nt_ntec_annual_return_sources", fetch_nt_sources),
+        (
+            "normalize_nt_ntec_annual_returns",
+            lambda: normalize_nt_ntec_annual_returns(
+                metadata_path=nt_artifacts["annual_returns_metadata_path"],
+            ),
+        ),
         (
             "normalize_nt_ntec_annual_gifts",
             lambda: normalize_nt_ntec_annual_gifts(

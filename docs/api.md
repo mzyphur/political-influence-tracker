@@ -59,7 +59,7 @@ http://127.0.0.1:8008/docs
   `party_entity_link` rows only; `include_candidates=true` adds candidate
   party/entity link edges with `evidence_status="candidate_requires_review"`.
 - `GET /api/state-local/summary` - first state/local summary surface. It
-  returns QLD ECQ, ACT Elections, NT NTEC annual gift-return, and VEC
+  returns QLD ECQ, ACT Elections, NT NTEC annual-return/annual-gift, and VEC
   funding-register source-family totals, identifier-backed counts where
   available, top gift/gift-in-kind donors and recipients, top campaign-spend
   actors, and top public-funding recipients. It also returns NSW donor-location
@@ -67,12 +67,14 @@ http://127.0.0.1:8008/docs
   State/council maps and representative joins remain under construction.
 - `GET /api/state-local/records` - paginated state/local source-row feed for
   the summary panel. It accepts `level=state|council|local`,
-  `flow_kind=act_gift_of_money|act_gift_in_kind|nt_annual_gift|qld_gift|qld_electoral_expenditure|vic_public_funding_payment|vic_administrative_funding_entitlement|vic_policy_development_funding_payment`,
+  `flow_kind=act_gift_of_money|act_gift_in_kind|nt_annual_gift|nt_annual_receipt|nt_donor_return_donation|nt_annual_debt|qld_gift|qld_electoral_expenditure|vic_public_funding_payment|vic_administrative_funding_entitlement|vic_policy_development_funding_payment`,
   `limit`, and an opaque `cursor`; cursors are bound to the current level and
   flow-kind filters so rows are not skipped if a UI changes slices. NT rows
-  expose annual gift-return caveats because the recipient-side NTEC tables do
-  not publish per-row gift dates. VEC rows expose public-funding context and
-  date caveats; they are not private donations, gifts, or personal income.
+  expose annual-return and annual gift-return caveats because the NTEC source
+  families include overlapping recipient-side and donor-side disclosure views,
+  and the annual gift tables do not publish per-row gift dates. VEC rows expose
+  public-funding context and date caveats; they are not private donations,
+  gifts, or personal income.
 
 ## Search Behaviour
 
@@ -215,9 +217,9 @@ classifications.
 
 `/api/state-local/summary` is the first public API surface for non-federal data.
 It currently supports Queensland ECQ Electronic Disclosure System money-flow
-rows, ACT Elections gift-return rows, Northern Territory NTEC annual gift-return
-rows, Victoria VEC funding-register rows, and NSW Electoral Commission aggregate
-donor-location context.
+rows, ACT Elections gift-return rows, Northern Territory NTEC annual-return and
+annual gift-return rows, Victoria VEC funding-register rows, and NSW Electoral
+Commission aggregate donor-location context.
 
 Useful parameters:
 
@@ -271,7 +273,7 @@ Gift-in-kind rows are reported non-cash values. Electoral expenditure rows are
 expenditure incurred by a named actor; they are campaign-support context, not
 evidence that another person or office-holder received money.
 NT annual gift rows are donor-recipient gift observations from the official
-NTEC annual return page. They carry `date_reported` as the return received date
+NTEC annual return gifts page. They carry `date_reported` as the return received date
 where available because the recipient-side table does not publish per-row gift
 transaction dates. They remain visible in state/local source-family totals, but
 their `public_amount_counting_role` is
@@ -280,6 +282,13 @@ do not add those amounts until cross-source deduplication against Commonwealth
 and donor-side returns exists. The state/local record API keeps source row
 references and document URLs visible but does not echo address-bearing NTEC
 `original_text` by default.
+NT annual-return financial rows add recipient-side receipts over $1,500,
+associated-entity debts over $1,500, and donor-side donation-return rows from
+the broader NTEC annual-return page. These flow kinds are
+`nt_annual_receipt`, `nt_annual_debt`, and `nt_donor_return_donation`. They are
+displayed as source-row context, not consolidated reported totals, because they
+can overlap with the annual gift-return page, donor-side returns, and
+Commonwealth disclosure records.
 
 ECQ identifiers are attached only when the archived public lookup APIs provide
 an evidence-backed participant ID and the loader can make an exact unique match

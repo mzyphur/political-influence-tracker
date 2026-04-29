@@ -553,6 +553,7 @@ def load_postgres_command(
     skip_qld_ecq: bool,
     skip_nsw_aggregates: bool,
     skip_act_gift_returns: bool,
+    skip_nt_ntec_annual_returns: bool,
     skip_nt_ntec_annual_gifts: bool,
     skip_vic_vec_funding_register: bool,
     skip_house_interests: bool,
@@ -576,6 +577,7 @@ def load_postgres_command(
         include_qld_ecq=not skip_qld_ecq,
         include_nsw_aggregates=not skip_nsw_aggregates,
         include_act_gift_returns=not skip_act_gift_returns,
+        include_nt_ntec_annual_returns=not skip_nt_ntec_annual_returns,
         include_nt_ntec_annual_gifts=not skip_nt_ntec_annual_gifts,
         include_vic_vec_funding_register=not skip_vic_vec_funding_register,
         include_house_interests=not skip_house_interests,
@@ -1175,6 +1177,14 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     load_parser.add_argument(
+        "--skip-nt-ntec-annual-returns",
+        action="store_true",
+        help=(
+            "Skip NTEC annual-return artifacts during this load. These rows are "
+            "Northern Territory receipts, debts, and donor-return observations."
+        ),
+    )
+    load_parser.add_argument(
         "--skip-nt-ntec-annual-gifts",
         action="store_true",
         help=(
@@ -1394,6 +1404,7 @@ def main() -> int:
             args.skip_qld_ecq,
             args.skip_nsw_aggregates,
             args.skip_act_gift_returns,
+            args.skip_nt_ntec_annual_returns,
             args.skip_nt_ntec_annual_gifts,
             args.skip_vic_vec_funding_register,
             args.skip_house_interests,

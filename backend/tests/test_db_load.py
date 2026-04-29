@@ -27,6 +27,7 @@ from au_politics_money.db.load import (
     normalize_name,
     normalize_representative_return_name,
     nt_ntec_annual_gifts_path_from_pipeline_manifest,
+    nt_ntec_annual_returns_path_from_pipeline_manifest,
     nsw_aggregate_context_path_from_pipeline_manifest,
     parse_aec_money_flow_date,
     parse_date,
@@ -891,6 +892,95 @@ def test_nt_pipeline_manifest_selects_annual_gift_artifact(tmp_path) -> None:
     source_body_path.write_text("<html>changed</html>", encoding="utf-8")
     with pytest.raises(ValueError, match="Source body hash mismatch"):
         nt_ntec_annual_gifts_path_from_pipeline_manifest(manifest_path)
+
+
+def test_nt_pipeline_manifest_selects_annual_return_artifact(tmp_path) -> None:
+    def sha256_path(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    source_body_path = tmp_path / "nt-annual.html"
+    source_body_path.write_text("<html>fixture</html>", encoding="utf-8")
+    source_body_sha256 = sha256_path(source_body_path)
+    source_metadata_path = tmp_path / "metadata.json"
+    source_metadata_path.write_text(
+        json.dumps(
+            {
+                "body_path": str(source_body_path),
+                "sha256": source_body_sha256,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    source_metadata_sha256 = sha256_path(source_metadata_path)
+    jsonl_path = tmp_path / "nt-annual.jsonl"
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "source_id": "nt_ntec_annual_returns_2024_2025",
+                "source_dataset": "nt_ntec_annual_returns",
+                "normalizer_name": "nt_ntec_annual_return_financial_html_normalizer",
+                "source_metadata_path": str(source_metadata_path),
+                "source_metadata_sha256": source_metadata_sha256,
+                "source_body_path": str(source_body_path),
+                "source_body_sha256": source_body_sha256,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary_path = tmp_path / "nt-annual.summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "normalizer_name": "nt_ntec_annual_return_financial_html_normalizer",
+                "source_dataset": "nt_ntec_annual_returns",
+                "source_id": "nt_ntec_annual_returns_2024_2025",
+                "jsonl_path": str(jsonl_path),
+                "jsonl_sha256": sha256_path(jsonl_path),
+                "source_metadata_path": str(source_metadata_path),
+                "source_metadata_sha256": source_metadata_sha256,
+                "source_body_path": str(source_body_path),
+                "source_body_sha256": source_body_sha256,
+                "source_counts": {"nt_ntec_annual_returns_2024_2025": 1},
+                "total_count": 1,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "state_local_nt_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "nt_ntec_annual_returns",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_nt_ntec_annual_returns",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": sha256_path(summary_path),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert nt_ntec_annual_returns_path_from_pipeline_manifest(manifest_path) == jsonl_path
+
+    source_body_path.write_text("<html>changed</html>", encoding="utf-8")
+    with pytest.raises(ValueError, match="Source body hash mismatch"):
+        nt_ntec_annual_returns_path_from_pipeline_manifest(manifest_path)
 
 
 def test_display_geometry_repair_buffer_validates_range() -> None:

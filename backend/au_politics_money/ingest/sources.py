@@ -757,6 +757,26 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="nt_ntec_annual_returns_2024_2025",
+        name="NTEC Annual Returns 2024-2025",
+        jurisdiction="Northern Territory",
+        level="state",
+        source_type="state_financial_disclosure_annual_return_table",
+        url=(
+            "https://ntec.nt.gov.au/financial-disclosure/published-annual-returns/"
+            "2024-2025-annual-returns"
+        ),
+        expected_format="html_tables",
+        update_frequency="annual",
+        priority="high",
+        notes=(
+            "Official NTEC annual return page with party and associated-entity "
+            "return summaries, recipient-side receipts and debts over $1,500, "
+            "and donor-side donation return tables. Rows can overlap with NTEC "
+            "annual gift-return and Commonwealth disclosure records."
+        ),
+    ),
+    SourceRecord(
         source_id="nt_ntec_annual_returns_gifts_2024_2025",
         name="NTEC Annual Returns Gifts 2024-2025",
         jurisdiction="Northern Territory",

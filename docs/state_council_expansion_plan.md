@@ -195,21 +195,24 @@ Notes:
   and election-period expenditure.
 - First implemented adapter:
   `run-state-local-pipeline --jurisdiction nt` archives the official NTEC
-  2024-2025 annual gift-return page and normalizes recipient-side "gifts
-  received over the threshold" HTML tables into
-  `data/processed/nt_ntec_annual_gift_money_flows/`. Current coverage is 78
-  annual gift rows with $1,066,817.76 in reported value. These rows are
-  source-backed donor-to-recipient gift observations. The source table does not
-  publish per-row gift transaction dates, so the normalized records retain the
-  return received date as `date_reported` where available and carry an explicit
-  date caveat. The row sums are checked against source-published table totals.
-  These rows are shown in NT state/local source-family totals, but are excluded
-  from consolidated influence totals until cross-source deduplication against
-  Commonwealth and donor-side returns exists.
-- The next NT task is to add party/associated-entity annual financial return
-  tables, donor-side annual return tables, candidate returns, and election
-  expenditure returns without double-counting the same gift from both recipient
-  and donor disclosure tables.
+  2024-2025 annual-return page and annual gift-return page. Current coverage is
+  96 annual-return financial rows: 49 recipient-side receipts over $1,500, 2
+  associated-entity debt rows over $1,500, and 45 donor-side donation-return
+  rows, with $821,044.16 in source-row reported value. The paired gift-return
+  artifact adds 78 recipient-side annual gift rows with $1,066,817.76 in
+  reported value. These rows are source-backed disclosure observations, but the
+  annual-return, gift-return, donor-side, and Commonwealth tables can observe
+  overlapping underlying transactions. NT rows therefore remain visible in
+  state/local source-family views while consolidated influence totals exclude
+  them until cross-source deduplication exists. The annual gift source table
+  does not publish per-row gift transaction dates, so normalized gift records
+  retain the return received date as `date_reported` where available and carry
+  an explicit date caveat. Both normalizers check row sums against
+  source-published table totals.
+- The next NT task is to add candidate returns and election expenditure returns,
+  then link annual-return parties, associated entities, candidates, and donors
+  to reviewed identifiers without double-counting the same gift from recipient,
+  donor, and Commonwealth disclosure tables.
 
 ### ACT
 

@@ -127,7 +127,8 @@ Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command
 also loads QLD ECQ EDS rows and participant identifiers by default, but
 federal-only scheduled runs use `load-postgres --skip-qld-ecq
---skip-nsw-aggregates --skip-act-gift-returns --skip-nt-ntec-annual-gifts
+--skip-nsw-aggregates --skip-act-gift-returns
+--skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
 --skip-vic-vec-funding-register` so stale state/local artifacts are not
 promoted when the state/local fetch/normalize steps did not run. Public
 state/local API summaries read only current rows.
@@ -179,7 +180,8 @@ validates manifest summary hashes, JSONL hashes, source metadata hashes, source
 body hashes, source ID, source dataset, non-zero counts, and row counts before
 inserting rows.
 
-Northern Territory is wired as a current annual gift-return state adapter:
+Northern Territory is wired as a current annual-return and annual gift-return
+state adapter:
 
 ```bash
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
@@ -190,21 +192,26 @@ MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --
   .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 ```
 
-The NT runner archives the official NTEC 2024-2025 annual return gifts page and
-normalizes recipient-side "gifts received over the threshold" tables into
-`data/processed/nt_ntec_annual_gift_money_flows/`. Rows are loaded into
-`money_flow` as NT state gift disclosure records. The current 2026-04-29
-artifact has 78 annual gift rows and $1,066,817.76 in reported value. The NTEC
-table does not publish per-row gift transaction dates; normalized rows retain
-the return received date as `date_reported` where available and carry a date
-caveat so the UI does not imply transaction-day precision. The normalizer
-checks extracted row sums against the source-published table totals. NT rows
-are marked as jurisdictional cross-disclosure observations: state/local
-source-family totals show the reported NTEC values, but consolidated influence
-totals exclude those amounts until cross-source deduplication is available.
-Raw artifacts preserve the official public address text, while the generic
-state/local records API does not echo address-bearing `original_text` by
-default.
+The NT runner archives the official NTEC 2024-2025 annual return page and the
+separate annual return gifts page. It normalizes 96 annual-return financial rows
+into `data/processed/nt_ntec_annual_return_money_flows/`: 49 recipient-side
+receipts over $1,500, 2 associated-entity debt rows over $1,500, and 45
+donor-side donation-return rows, with $821,044.16 in source-row reported value.
+It also normalizes 78 recipient-side annual gift rows into
+`data/processed/nt_ntec_annual_gift_money_flows/`, with $1,066,817.76 in
+reported annual gift value. Rows are loaded into `money_flow` as NT state
+disclosure records. The annual gift table does not publish per-row gift
+transaction dates; normalized rows retain the return received date as
+`date_reported` where available and carry a date caveat so the UI does not
+imply transaction-day precision. Both NT normalizers check extracted row sums
+against source-published table totals. NT rows are marked as jurisdictional
+cross-disclosure observations: state/local record views show the annual-return
+source-row values, state/local gift-family summaries show annual gift-return
+values, and consolidated influence totals exclude those amounts until
+cross-source deduplication against NTEC gift tables, donor-side returns, and
+Commonwealth records is available. Raw artifacts preserve the official public
+address text, while the generic state/local records API does not echo
+address-bearing `original_text` by default.
 
 Victoria is wired as a VEC funding-register state adapter:
 
@@ -281,7 +288,8 @@ as AEC postcode lookups, current AEC boundaries, and official APH
 decision-record documents are fetched again instead of being silently reused.
 The weekly federal load also uses
 `--skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns
---skip-nt-ntec-annual-gifts --skip-vic-vec-funding-register`; QLD, NSW, ACT,
+--skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
+--skip-vic-vec-funding-register`; QLD, NSW, ACT,
 NT, and VIC state/local rows should be refreshed by the jurisdiction-specific
 commands above.
 After loading, the script runs `qa-serving-database`. That QA gate fails the

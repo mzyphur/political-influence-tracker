@@ -5,19 +5,21 @@
 Completed:
 
 - Added `run-state-local-pipeline --jurisdiction nt` for the first Northern
-  Territory state-level gift adapter. It archives the official NTEC 2024-2025
-  annual return gifts page, validates recipient-side gift table headers,
-  normalizes 78 over-threshold annual gift rows into
-  `data/processed/nt_ntec_annual_gift_money_flows/`, and loads the exact
-  manifest-referenced artifact into Postgres after checking summary, JSONL,
-  source metadata, and source body hashes. Current NT coverage is $1,066,817.76
-  in source-backed donor-to-recipient annual gift observations. The source does
-  not publish per-row gift transaction dates, so rows preserve the NTEC return
-  received date as `date_reported` where available and carry a date caveat.
-  The parser now validates extracted row sums against source-published table
-  totals. NT gift values are visible in state/local source-family totals but
-  excluded from consolidated influence totals until cross-source deduplication
-  is implemented.
+  Territory state-level disclosure adapter. It archives the official NTEC
+  2024-2025 annual-return page plus the annual return gifts page, validates
+  source table headers and totals, and normalizes 96 annual-return financial
+  rows into `data/processed/nt_ntec_annual_return_money_flows/`: 49
+  recipient-side receipts over $1,500, 2 associated-entity debt rows over
+  $1,500, and 45 donor-side donation-return rows, with $821,044.16 in
+  source-row reported value. It also normalizes 78 over-threshold annual gift
+  rows into `data/processed/nt_ntec_annual_gift_money_flows/`, with
+  $1,066,817.76 in source-backed donor-to-recipient annual gift observations.
+  NT rows are visible in state/local source-family views but excluded from
+  consolidated influence totals until cross-source deduplication against NTEC
+  gift tables, donor-side returns, and Commonwealth records is implemented.
+  Annual gift rows preserve the NTEC return received date as `date_reported`
+  where available because the source does not publish per-row gift transaction
+  dates.
 - Added `run-state-local-pipeline --jurisdiction vic` for the first Victoria
   state-level adapter. It archives the official VEC funding-register page,
   fetches the linked DOCX files, validates source/document hashes, and

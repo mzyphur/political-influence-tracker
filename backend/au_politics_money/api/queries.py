@@ -27,6 +27,7 @@ SEARCH_TYPES = {
 }
 
 STATE_LOCAL_MONEY_SOURCE_DATASETS = (
+    "nt_ntec_annual_returns",
     "act_elections_gift_returns",
     "nt_ntec_annual_returns_gifts",
     "qld_ecq_eds",
@@ -35,7 +36,10 @@ STATE_LOCAL_MONEY_SOURCE_DATASETS = (
 STATE_LOCAL_RECORD_FLOW_KINDS = {
     "act_gift_in_kind",
     "act_gift_of_money",
+    "nt_annual_debt",
     "nt_annual_gift",
+    "nt_annual_receipt",
+    "nt_donor_return_donation",
     "qld_electoral_expenditure",
     "qld_gift",
     "vic_administrative_funding_entitlement",
@@ -1819,7 +1823,15 @@ def _qld_recent_money_flow_rows(
             money_flow.date_received,
             money_flow.date_reported,
             money_flow.source_row_ref,
-            money_flow.original_text,
+            CASE
+                WHEN money_flow.metadata->>'source_dataset'
+                     IN (
+                         'nt_ntec_annual_returns',
+                         'nt_ntec_annual_returns_gifts'
+                     )
+                THEN NULL
+                ELSE money_flow.original_text
+            END AS original_text,
             money_flow.confidence,
             money_flow.metadata->>'transaction_kind' AS transaction_kind,
             COALESCE(
@@ -1965,7 +1977,10 @@ def get_state_local_records(
                 money_flow.source_row_ref,
                 CASE
                     WHEN money_flow.metadata->>'source_dataset'
-                         = 'nt_ntec_annual_returns_gifts'
+                         IN (
+                             'nt_ntec_annual_returns',
+                             'nt_ntec_annual_returns_gifts'
+                         )
                     THEN NULL
                     ELSE money_flow.original_text
                 END AS original_text,
@@ -2052,8 +2067,11 @@ def get_state_local_records(
                 "gift-in-kind, expenditure, and public-funding rows are different "
                 "evidence families. ACT gift-in-kind amounts are reported non-cash "
                 "values; NT annual gift rows are over-threshold gifts with no per-row "
-                "gift date in the source table; Queensland expenditure is "
-                "campaign-support context, not personal receipt; VEC funding-register "
+                "gift date in the source table; NT annual-return receipts, debts, and "
+                "donor-return donations are source-row context and can overlap with "
+                "gift-return or Commonwealth records until cross-source deduplication "
+                "exists; Queensland expenditure is campaign-support context, not "
+                "personal receipt; VEC funding-register "
                 "rows are public "
                 "funding/admin/policy context, not private donations or personal "
                 "income, and some VEC dates are election-day or calendar-period "
@@ -2347,8 +2365,10 @@ def get_state_local_summary(
             "caveat": (
                 "State/local rows are disclosure records from implemented jurisdiction "
                 "adapters. Queensland gift/donation rows, NT annual gift rows, and ACT "
-                "gift-of-money rows are source-backed money records; ACT gift-in-kind "
-                "rows are reported non-cash "
+                "gift-of-money rows are source-backed money records; NT annual-return "
+                "receipts, debts, and donor-return donations are source-row context "
+                "that remains excluded from consolidated totals until cross-source "
+                "deduplication exists; ACT gift-in-kind rows are reported non-cash "
                 "values; Queensland electoral expenditure rows are campaign-support "
                 "context and not personal receipt; VEC funding-register rows are public "
                 "funding/admin/policy-funding context, not private donations or personal "

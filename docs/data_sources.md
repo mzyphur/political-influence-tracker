@@ -67,6 +67,7 @@ under `data/processed/discovered_links/`.
 | `waec_returns_reports` | Western Australia | WAEC returns and reports | https://www.elections.wa.gov.au/returns-and-reports | Annual and election returns for gifts, income, expenditure, and reimbursements. Council records may require local CEO/council handling. |
 | `tas_tec_disclosure_funding` | Tasmania | TEC disclosure and funding | https://www.tec.tas.gov.au/disclosure-and-funding/ | New disclosure and funding regime from 2025-07-01; preserve regime-start date in coverage caveats. |
 | `nt_ntec_annual_returns` | Northern Territory | NTEC annual returns | https://ntec.nt.gov.au/about-us/media-and-publications/media-releases/2025/20242025-annual-returns | Annual gift returns, annual returns, candidate returns, donor returns, and election expenditure context. |
+| `nt_ntec_annual_returns_2024_2025` | Northern Territory | NTEC 2024-2025 annual returns | https://ntec.nt.gov.au/financial-disclosure/published-annual-returns/2024-2025-annual-returns | Active reproducible HTML-table adapter. Current artifact has 96 rows: 49 recipient-side receipts over $1,500, 2 associated-entity debt rows over $1,500, and 45 donor-side donation-return rows, with $821,044.16 in source-row reported value. These rows can overlap with NTEC annual gift returns, donor-side returns, and Commonwealth records, so state/local source-row views show them while consolidated influence totals exclude them until cross-source deduplication exists. |
 | `nt_ntec_annual_returns_gifts_2024_2025` | Northern Territory | NTEC 2024-2025 annual return gifts | https://ntec.nt.gov.au/financial-disclosure/published-annual-returns/2024-2025-annual-returns-gifts | Active reproducible HTML-table adapter. Current artifact has 78 recipient-side over-threshold annual gift rows with $1,066,817.76 in reported value. The source table does not publish per-row gift transaction dates, so `date_received` is empty, `date_reported` stores the return received date where available, and the API surfaces a date caveat. State/local source-family totals show these reported values, but consolidated influence totals exclude them until cross-source deduplication against Commonwealth and donor-side returns is implemented. |
 | `act_elections_funding_disclosure` | ACT | Elections ACT funding/disclosure obligations | https://www.elections.act.gov.au/funding-disclosures-and-registers/funding-and-disclosure-obligations | Gift returns, annual returns, election returns, expenditure caps, public funding, receipts, gifts, payments, and debts. Party-endorsed candidate expenditure may sit in party grouping returns. |
 | `act_gift_returns_2025_2026` | ACT | Elections ACT gift returns 2025-2026 | https://www.elections.act.gov.au/funding-disclosures-and-registers/gift-returns/gift-returns-2025-2026 | Active reproducible HTML-table adapter. Current artifact has 225 rows: 206 gifts of money and 19 gifts-in-kind. The ACT threshold is a gift, or cumulative gifts from one donor, totalling $1,000 or more, so individual rows may be below $1,000. Gift-in-kind values are non-cash reported values, not cash payments. |
@@ -93,10 +94,13 @@ under `data/processed/discovered_links/`.
 - State regimes differ materially and change over time.
 - NT annual gift rows currently come from recipient-side annual disclosure
   tables. They are source-backed donor-to-recipient gift observations, but the
-  NTEC table does not publish per-row gift transaction dates. Raw artifacts
-  preserve public address text from the official source; the generic
-  state/local API record list does not echo address-bearing `original_text` by
-  default.
+  NTEC table does not publish per-row gift transaction dates. NT annual-return
+  financial rows add recipient-side receipts, associated-entity debts, and
+  donor-side donation returns; those rows can overlap with the gift tables and
+  Commonwealth records, so consolidated influence totals exclude them until
+  cross-source deduplication exists. Raw artifacts preserve public address text
+  from the official source; the generic state/local API record list does not
+  echo address-bearing `original_text` by default.
 - VEC public-donation disclosure pages were redirecting to the VEC maintenance
   page during the 2026-04-29 build, while the funding register remained
   available. Victoria private-donation rows therefore remain pending and should

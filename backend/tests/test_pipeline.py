@@ -409,7 +409,7 @@ def test_state_local_vic_pipeline_records_funding_register_steps(monkeypatch) ->
     assert calls["document_summary_path"] == "vic-documents-summary"
 
 
-def test_state_local_nt_pipeline_records_annual_gift_steps(monkeypatch) -> None:
+def test_state_local_nt_pipeline_records_annual_return_steps(monkeypatch) -> None:
     calls: dict[str, object] = {}
 
     monkeypatch.setattr("au_politics_money.pipeline._git_commit", lambda: "nt123")
@@ -422,15 +422,23 @@ def test_state_local_nt_pipeline_records_annual_gift_steps(monkeypatch) -> None:
     def fake_fetch_source(source):
         return f"fetch:{source.source_id}"
 
-    def fake_normalize_nt(*, metadata_path):
-        calls["metadata_path"] = str(metadata_path)
+    def fake_normalize_nt_gifts(*, metadata_path):
+        calls["gift_metadata_path"] = str(metadata_path)
         return "nt-gift-summary"
+
+    def fake_normalize_nt_returns(*, metadata_path):
+        calls["annual_return_metadata_path"] = str(metadata_path)
+        return "nt-annual-return-summary"
 
     monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
     monkeypatch.setattr("au_politics_money.pipeline.fetch_source", fake_fetch_source)
     monkeypatch.setattr(
         "au_politics_money.pipeline.normalize_nt_ntec_annual_gifts",
-        fake_normalize_nt,
+        fake_normalize_nt_gifts,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_nt_ntec_annual_returns",
+        fake_normalize_nt_returns,
     )
 
     assert run_state_local_pipeline(jurisdiction="nt", smoke=True) == "manifest.json"
@@ -439,19 +447,22 @@ def test_state_local_nt_pipeline_records_annual_gift_steps(monkeypatch) -> None:
     assert manifest.pipeline_name == "state_local"
     assert manifest.git_commit == "nt123"
     assert manifest.parameters["jurisdiction"] == "nt"
-    assert manifest.parameters["source_family"] == "nt_ntec_annual_returns_gifts"
+    assert manifest.parameters["source_family"] == "nt_ntec_annual_returns"
     assert manifest.parameters["loads_database"] is False
-    assert "gifts over the threshold" in manifest.parameters["claim_boundary"]
+    assert "annual return" in manifest.parameters["claim_boundary"]
     assert [step.name for step in manifest.steps] == [
-        "fetch_nt_ntec_annual_gift_source",
+        "fetch_nt_ntec_annual_return_sources",
+        "normalize_nt_ntec_annual_returns",
         "normalize_nt_ntec_annual_gifts",
     ]
     assert manifest.steps[0].output["metadata_paths"] == {
+        "nt_ntec_annual_returns_2024_2025": "fetch:nt_ntec_annual_returns_2024_2025",
         "nt_ntec_annual_returns_gifts_2024_2025": (
             "fetch:nt_ntec_annual_returns_gifts_2024_2025"
-        )
+        ),
     }
-    assert calls["metadata_path"] == "fetch:nt_ntec_annual_returns_gifts_2024_2025"
+    assert calls["annual_return_metadata_path"] == "fetch:nt_ntec_annual_returns_2024_2025"
+    assert calls["gift_metadata_path"] == "fetch:nt_ntec_annual_returns_gifts_2024_2025"
 
 
 def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:

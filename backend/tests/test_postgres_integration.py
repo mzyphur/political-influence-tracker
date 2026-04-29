@@ -1668,6 +1668,25 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
             nt_source_document_id = cur.fetchone()[0]
             cur.execute(
                 """
+                INSERT INTO source_document (
+                    source_id, source_name, source_type, jurisdiction, url, fetched_at,
+                    http_status, content_type, sha256, storage_path, metadata
+                )
+                VALUES (
+                    'nt_ntec_annual_returns_2024_2025',
+                    'NTEC Annual Returns 2024-2025',
+                    'state_financial_disclosure_annual_return_table',
+                    'Northern Territory',
+                    'https://ntec.nt.gov.au/financial-disclosure/published-annual-returns/2024-2025-annual-returns',
+                    now(), 200, 'text/html', 'pytest-nt-annual-sha256',
+                    '/tmp/nt-annual.html', '{}'::jsonb
+                )
+                RETURNING id
+                """
+            )
+            nt_annual_source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
                 INSERT INTO jurisdiction (name, level, code)
                 VALUES ('Northern Territory', 'state', 'NT')
                 RETURNING id
@@ -1708,20 +1727,59 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                 ),
             )
             nt_money_flow_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO money_flow (
+                    external_key, source_raw_name, recipient_raw_name, amount,
+                    date_reported, financial_year, receipt_type,
+                    disclosure_category, jurisdiction_id, source_document_id,
+                    source_row_ref, original_text, confidence, is_current, metadata
+                )
+                VALUES (
+                    'pytest-nt-annual-receipt', 'Example NT Source',
+                    'Example NT Party', 2500, DATE '2025-07-31', '2024-2025',
+                    'Receipt over $1,500', 'nt_annual_receipt', %s, %s,
+                    'nt_ntec_annual_returns_2024_2025_html:t1:r2:def67890',
+                    '{"address":"2 Public Street DARWIN NT 0800"}',
+                    'unresolved', TRUE, %s
+                )
+                RETURNING id
+                """,
+                (
+                    nt_state_id,
+                    nt_annual_source_document_id,
+                    Jsonb(
+                        {
+                            "flow_kind": "nt_annual_receipt",
+                            "public_amount_counting_role": (
+                                "jurisdictional_cross_disclosure_observation"
+                            ),
+                            "source_dataset": "nt_ntec_annual_returns",
+                            "transaction_kind": "receipt",
+                        }
+                    ),
+                ),
+            )
+            nt_annual_money_flow_id = cur.fetchone()[0]
         conn.commit()
         load_influence_events(conn)
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT amount_status, missing_data_flags
+                SELECT money_flow_id, amount_status, missing_data_flags
                 FROM influence_event
-                WHERE money_flow_id = %s
+                WHERE money_flow_id IN (%s, %s)
                 """,
-                (nt_money_flow_id,),
+                (nt_money_flow_id, nt_annual_money_flow_id),
             )
-            nt_event_status, nt_flags = cur.fetchone()
-    assert nt_event_status == "not_applicable"
-    assert "jurisdictional_cross_disclosure_not_counted_in_reported_total" in nt_flags
+            nt_events = {
+                money_flow_id: (amount_status, missing_data_flags)
+                for money_flow_id, amount_status, missing_data_flags in cur.fetchall()
+            }
+    for money_flow_id in (nt_money_flow_id, nt_annual_money_flow_id):
+        nt_event_status, nt_flags = nt_events[money_flow_id]
+        assert nt_event_status == "not_applicable"
+        assert "jurisdictional_cross_disclosure_not_counted_in_reported_total" in nt_flags
 
     nt_records_response = client.get(
         "/api/state-local/records",
@@ -1736,6 +1794,33 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert nt_records["records"][0]["public_amount_counting_role"] == (
         "jurisdictional_cross_disclosure_observation"
     )
+
+    nt_annual_records_response = client.get(
+        "/api/state-local/records",
+        params={"level": "state", "flow_kind": "nt_annual_receipt", "limit": "5"},
+    )
+    assert nt_annual_records_response.status_code == 200
+    nt_annual_records = nt_annual_records_response.json()
+    assert nt_annual_records["total_count"] == 1
+    assert nt_annual_records["records"][0]["source_dataset"] == "nt_ntec_annual_returns"
+    assert nt_annual_records["records"][0]["original_text"] is None
+
+    nt_summary_response = client.get(
+        "/api/state-local/summary",
+        params={"level": "state", "limit": "10"},
+    )
+    assert nt_summary_response.status_code == 200
+    nt_recent_records = [
+        row
+        for row in nt_summary_response.json()["recent_records"]
+        if row["source_dataset"]
+        in {"nt_ntec_annual_returns", "nt_ntec_annual_returns_gifts"}
+    ]
+    assert {row["source_dataset"] for row in nt_recent_records} == {
+        "nt_ntec_annual_returns",
+        "nt_ntec_annual_returns_gifts",
+    }
+    assert all(row["original_text"] is None for row in nt_recent_records)
 
     invalid_cursor_response = client.get(
         "/api/state-local/records",
