@@ -224,6 +224,8 @@ export type StateLocalSummaryResponse = {
   requested_level: string;
   db_level: string;
   totals_by_level: StateLocalSummaryTotalRow[];
+  source_document_count: number;
+  latest_source_fetched_at: string | null;
   top_gift_donors: StateLocalSummaryEntityRow[];
   top_gift_recipients: StateLocalSummaryEntityRow[];
   top_expenditure_actors: StateLocalSummaryEntityRow[];

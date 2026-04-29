@@ -1000,7 +1000,10 @@ function StateLocalSummaryPanel({
     <div className="state-local-summary" aria-label="State and local disclosure summary">
       <div className="state-summary-header">
         <strong>QLD ECQ disclosures</strong>
-        <span>{levelName} partial data</span>
+        <span>
+          {levelName} partial data · refreshed{" "}
+          {formatCompactDateTime(summary.latest_source_fetched_at)}
+        </span>
       </div>
       <div className="state-summary-grid">
         <Metric
@@ -1039,6 +1042,8 @@ function StateLocalSummaryPanel({
         <strong>{formatMoney(totals.giftOrDonationReportedAmountTotal)}</strong>
         <span>Campaign spend total</span>
         <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
+        <span>Source snapshots</span>
+        <strong>{summary.source_document_count.toLocaleString("en-AU")}</strong>
       </div>
       <StateLocalRecentRecords
         rows={mergedRecentRows}
@@ -1251,6 +1256,16 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function formatCompactDateTime(value: string | null): string {
+  if (!value) return "not available";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-AU", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  }).format(parsed);
 }
 
 function StateLocalRankList({

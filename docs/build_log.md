@@ -14,6 +14,10 @@ Completed:
   whichever source snapshot happens to be latest. Added
   `load-state-local-pipeline-manifest` so scheduled loads can load the exact
   processed JSONL artifacts referenced by that manifest.
+- Added QLD state/local freshness metadata to `/api/state-local/summary` and
+  the frontend State/Council panel. The public UI now shows the newest ECQ
+  source fetch time and source-snapshot count next to the partial-data caveat,
+  making update recency visible without treating source coverage as complete.
 - Added a reproducible AEC Electorate Finder postcode crosswalk pipeline:
   archived AEC postcode search pages, normalized source-backed postcode to
   electorate-candidate rows with ambiguity/confidence/locality metadata, added

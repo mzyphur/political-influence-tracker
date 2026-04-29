@@ -1377,6 +1377,8 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     )
     assert state_summary_response.status_code == 200
     state_summary = state_summary_response.json()
+    assert state_summary["source_document_count"] == 1
+    assert state_summary["latest_source_fetched_at"] is not None
     assert state_summary["totals_by_level"][0]["money_flow_count"] == 1
     assert state_summary["totals_by_level"][0]["gift_or_donation_count"] == 1
     assert state_summary["totals_by_level"][0]["source_identifier_backed_count"] == 1

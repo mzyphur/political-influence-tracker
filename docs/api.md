@@ -219,6 +219,10 @@ Useful parameters:
 
 The response includes:
 
+- `source_document_count` and `latest_source_fetched_at`: freshness indicators
+  for the current ECQ source snapshots backing the loaded rows. These values
+  help users see when the state/local disclosure family was last refreshed;
+  they are not completeness guarantees.
 - `totals_by_level`: money-flow row counts, gift/donation counts, electoral
   expenditure counts, separate gift/donation and electoral-expenditure reported
   amount totals, ECQ event/local-electorate context-backed row counts, and

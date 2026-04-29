@@ -133,6 +133,8 @@ def test_state_local_summary_endpoint_delegates_to_query_layer(monkeypatch) -> N
             "requested_level": level,
             "db_level": "local",
             "totals_by_level": [],
+            "source_document_count": 0,
+            "latest_source_fetched_at": None,
             "top_gift_donors": [],
             "top_gift_recipients": [],
             "top_expenditure_actors": [],

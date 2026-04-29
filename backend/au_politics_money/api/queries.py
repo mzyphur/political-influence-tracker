@@ -2051,6 +2051,23 @@ def get_state_local_summary(
             """,
             params,
         )
+        freshness_rows = _fetch_dicts(
+            conn,
+            f"""
+            SELECT
+                count(DISTINCT source_document.id) AS source_document_count,
+                max(source_document.fetched_at) AS latest_source_fetched_at
+            FROM money_flow
+            JOIN jurisdiction
+              ON jurisdiction.id = money_flow.jurisdiction_id
+            JOIN source_document
+              ON source_document.id = money_flow.source_document_id
+            WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+              AND money_flow.is_current IS TRUE
+              {level_filter}
+            """,
+            params,
+        )
         top_gift_donors = _qld_summary_rows(
             conn,
             role="source",
@@ -2098,6 +2115,12 @@ def get_state_local_summary(
             "requested_level": level or "all",
             "db_level": db_level or "all",
             "totals_by_level": totals_rows,
+            "source_document_count": (
+                freshness_rows[0]["source_document_count"] if freshness_rows else 0
+            ),
+            "latest_source_fetched_at": (
+                freshness_rows[0]["latest_source_fetched_at"] if freshness_rows else None
+            ),
             "top_gift_donors": top_gift_donors,
             "top_gift_recipients": top_gift_recipients,
             "top_expenditure_actors": top_expenditure_actors,
