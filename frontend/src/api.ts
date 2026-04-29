@@ -38,7 +38,7 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 }
 
 export async function fetchElectorateMap(options: {
-  chamber: "house" | "senate";
+  chamber: "house" | "senate" | "state";
   state?: string;
   boundarySet?: string;
   includeGeometry?: boolean;

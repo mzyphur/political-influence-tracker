@@ -234,19 +234,30 @@ function App() {
   const detailsCollapseButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousControlsCollapsedRef = useRef(controlsCollapsed);
   const previousDetailsCollapsedRef = useRef(detailsCollapsed);
-  const selectedCoverageLayer = coverage?.coverage_layers.find(
-    (item) => item.level === dataLevel
+  const selectedCoverageLayers =
+    coverage?.coverage_layers.filter((item) => item.level === dataLevel) ?? [];
+  const selectedCoverageRows = selectedCoverageLayers.reduce(
+    (sum, layer) => sum + numberValue(layer.counts.money_flow_rows),
+    0
   );
-  const selectedCoverageRows = numberValue(selectedCoverageLayer?.counts.money_flow_rows);
-  const selectedLevelHasPartialData = dataLevel !== "federal" && selectedCoverageRows > 0;
+  const selectedCoverageBoundaries = selectedCoverageLayers.reduce(
+    (sum, layer) => sum + numberValue(layer.counts.boundaries),
+    0
+  );
+  const selectedLevelHasPartialData =
+    dataLevel !== "federal" && (selectedCoverageRows > 0 || selectedCoverageBoundaries > 0);
   const hasPostcodeLimitations = searchLimitations.some(
     (limitation) => limitation.feature === "postcode_search"
   );
 
   useEffect(() => {
-    if (dataLevel !== "federal") {
-      const layer = coverage?.coverage_layers.find((item) => item.level === dataLevel);
-      const rowCount = numberValue(layer?.counts.money_flow_rows);
+    if (dataLevel === "council") {
+      const levelLayers =
+        coverage?.coverage_layers.filter((item) => item.level === dataLevel) ?? [];
+      const rowCount = levelLayers.reduce(
+        (sum, layer) => sum + numberValue(layer.counts.money_flow_rows),
+        0
+      );
       const activeText = rowCount
         ? `${levelLabels[dataLevel]} source data is partially active (${rowCount.toLocaleString("en-AU")} state/local disclosure rows loaded). Map drilldown for this level is still being built.`
         : `${levelLabels[dataLevel]} data is part of the planned expansion. The current map is Commonwealth/federal.`;
@@ -261,7 +272,7 @@ function App() {
     setMapStatus("loading");
     setMapError("");
     fetchElectorateMap({
-      chamber,
+      chamber: dataLevel === "state" ? "state" : chamber,
       state: stateFilter === "All" ? undefined : stateFilter,
       includeGeometry: true,
       signal: controller.signal

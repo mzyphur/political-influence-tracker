@@ -1,6 +1,6 @@
 # State and Council Expansion Plan
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 This document defines the first expansion path after the federal/Commonwealth
 pilot. The goal is not merely to add more rows. The goal is to preserve the same
@@ -123,6 +123,13 @@ Notes:
   reuses their current hidden form fields, POSTs to the official CSV export
   endpoints, and normalizes gifts/donations and electoral expenditure into the
   same influence-event evidence surface used by the federal build.
+- Queensland is also the first state map layer. The `qld_state_electoral_boundaries_arcgis`
+  source archives the Queensland government ArcGIS/QSpatial state-electorate
+  boundary layer, normalizes 93 current electorates, and stores land-clipped
+  display geometries separately from the official source geometry. These
+  boundaries support State-mode map drilldown only. ECQ disclosure rows remain
+  state/local source records until a public source or reviewed model supports a
+  narrower link to a state electorate, candidate, party branch, or current MP.
 
 ### South Australia
 

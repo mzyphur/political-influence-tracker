@@ -503,6 +503,28 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="qld_state_electoral_boundaries_arcgis",
+        name="Queensland current state electorate boundaries ArcGIS GeoJSON",
+        jurisdiction="Queensland",
+        level="state",
+        source_type="state_electoral_boundary_geojson",
+        url=(
+            "https://spatial-gis.information.qld.gov.au/arcgis/rest/services/"
+            "Boundaries/AdministrativeBoundaries/MapServer/5/query"
+            "?where=1%3D1&outFields=*&returnGeometry=true&f=geojson&outSR=4326"
+        ),
+        expected_format="arcgis_rest_geojson",
+        update_frequency="redistribution",
+        priority="high",
+        notes=(
+            "Official Queensland government spatial service layer for current "
+            "state electoral district polygons. ECQ states that state electorate "
+            "GIS data are available through QSpatial. These boundaries support "
+            "state map drilldown only; they do not by themselves link disclosure "
+            "rows to current state MPs."
+        ),
+    ),
+    SourceRecord(
         source_id="qld_ecq_eds_public_map",
         name="ECQ Electronic Disclosure System Gift Map",
         jurisdiction="Queensland",

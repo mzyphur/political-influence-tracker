@@ -123,6 +123,31 @@ processed artifacts is intentional. Prefer `load-state-local-pipeline-manifest`
 for normal scheduled QLD refreshes because it performs that exact-artifact
 selection from the pipeline manifest.
 
+## Queensland State Electorate Boundaries
+
+Queensland is the first active state map layer. Refresh the official Queensland
+government ArcGIS/QSpatial boundary source, normalize it, then load it into the
+same source-preserving boundary tables used by the federal map:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+.venv/bin/python -m au_politics_money.cli fetch-qld-state-boundaries
+.venv/bin/python -m au_politics_money.cli extract-qld-state-boundaries
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli migrate-postgres
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-qld-state-boundaries
+```
+
+The loader expects 93 current QLD state electorate polygons and then creates a
+matching `land_clipped_display` geometry for each boundary. The official
+geometry remains preserved in `electorate_boundary.geom`; the display geometry
+only prevents coastline/ocean fill artifacts in the interactive map. The State
+mode UI may show these map features before state MP office-term joins exist.
+That is intentional: state disclosure rows remain source-level records unless a
+source-backed or reviewed attribution step links them to a state electorate,
+candidate, party branch, or current state MP.
+
 Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command
 also loads QLD ECQ EDS rows and participant identifiers by default, but

@@ -4,6 +4,14 @@
 
 Completed:
 
+- Added the first source-backed state electorate map layer. The new QLD
+  boundary adapter fetches the official Queensland government ArcGIS/QSpatial
+  state electorate layer, normalizes 93 current electorates into
+  `data/processed/qld_state_electorate_boundaries/`, loads them as `state`
+  chamber boundaries, and creates 93 land-clipped display geometries using the
+  Australian coastline display mask. `/api/map/electorates?chamber=state`
+  now serves QLD state map features with a caveat that disclosure rows remain
+  separate until a source or reviewed model supports electorate/MP attribution.
 - Added jurisdiction filtering to the state/local API and frontend summary
   panel. `/api/state-local/summary` and `/api/state-local/records` now accept
   `jurisdiction_code` (`ACT`, `NSW`, `NT`, `QLD`, `SA`, `TAS`, `VIC`, `WA`);

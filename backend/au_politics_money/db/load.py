@@ -79,6 +79,12 @@ from au_politics_money.ingest.qld_ecq_eds import (
     PARTICIPANT_PARSER_NAME as QLD_ECQ_PARTICIPANT_PARSER_NAME,
     QLD_ECQ_EDS_PARTICIPANT_LOOKUPS,
 )
+from au_politics_money.ingest.qld_boundaries import (
+    BOUNDARY_SET as QLD_STATE_BOUNDARY_SET,
+    PARSER_NAME as QLD_STATE_BOUNDARY_PARSER_NAME,
+    PARSER_VERSION as QLD_STATE_BOUNDARY_PARSER_VERSION,
+    latest_qld_state_boundaries_geojson,
+)
 from au_politics_money.ingest.sa_ecsa import (
     PARSER_NAME as SA_ECSA_RETURN_INDEX_PARSER_NAME,
     SOURCE_DATASET as SA_ECSA_SOURCE_DATASET,
@@ -1015,6 +1021,10 @@ def get_or_create_boundary_electorate(
     name: str,
     jurisdiction_id: int,
     source_document_id: int,
+    chamber: str = "house",
+    state_or_territory: str = "",
+    boundary_source: str = BOUNDARY_SET,
+    boundary_loader: str = "aec_federal_boundaries_postgis_v1",
 ) -> int:
     normalized = normalize_electorate_name(name)
     with conn.cursor() as cur:
@@ -1024,14 +1034,14 @@ def get_or_create_boundary_electorate(
             FROM electorate
             LEFT JOIN office_term
               ON office_term.electorate_id = electorate.id
-             AND office_term.chamber = 'house'
+             AND office_term.chamber = %s
              AND office_term.term_end IS NULL
             WHERE electorate.jurisdiction_id = %s
-              AND electorate.chamber = 'house'
+              AND electorate.chamber = %s
             GROUP BY electorate.id, electorate.name
             ORDER BY office_count DESC, electorate.id
             """,
-            (jurisdiction_id,),
+            (chamber, jurisdiction_id, chamber),
         )
         for electorate_id, electorate_name, _office_count in cur.fetchall():
             if normalize_electorate_name(electorate_name) != normalized:
@@ -1040,15 +1050,17 @@ def get_or_create_boundary_electorate(
                 """
                 UPDATE electorate
                 SET source_document_id = COALESCE(electorate.source_document_id, %s),
+                    state_or_territory = COALESCE(NULLIF(electorate.state_or_territory, ''), %s),
                     metadata = electorate.metadata || %s
                 WHERE id = %s
                 """,
                 (
                     source_document_id,
+                    state_or_territory,
                     as_jsonb(
                         {
-                            "boundary_source": BOUNDARY_SET,
-                            "boundary_loader": "aec_federal_boundaries_postgis_v1",
+                            "boundary_source": boundary_source,
+                            "boundary_loader": boundary_loader,
                         }
                     ),
                     electorate_id,
@@ -1059,22 +1071,29 @@ def get_or_create_boundary_electorate(
         cur.execute(
             """
             INSERT INTO electorate (
-                name, jurisdiction_id, chamber, source_document_id, metadata
+                name, jurisdiction_id, chamber, state_or_territory,
+                source_document_id, metadata
             )
-            VALUES (%s, %s, 'house', %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (name, jurisdiction_id, chamber) DO UPDATE SET
                 source_document_id = COALESCE(electorate.source_document_id, EXCLUDED.source_document_id),
+                state_or_territory = COALESCE(
+                    NULLIF(electorate.state_or_territory, ''),
+                    EXCLUDED.state_or_territory
+                ),
                 metadata = electorate.metadata || EXCLUDED.metadata
             RETURNING id
             """,
             (
                 name,
                 jurisdiction_id,
+                chamber,
+                state_or_territory,
                 source_document_id,
                 as_jsonb(
                     {
-                        "boundary_source": BOUNDARY_SET,
-                        "boundary_loader": "aec_federal_boundaries_postgis_v1",
+                        "boundary_source": boundary_source,
+                        "boundary_loader": boundary_loader,
                     }
                 ),
             ),
@@ -7070,6 +7089,117 @@ def load_electorate_boundaries(conn, geojson_path: Path | None = None) -> dict[s
         "house_electorates_without_boundary": missing_boundaries,
         "boundaries_without_current_house_office": boundaries_without_current_office,
         "stale_boundary_only_electorates_deleted": stale_electorates_deleted,
+        "source_document_id": source_document_id,
+        "display_geometry": display_geometry_summary,
+    }
+
+
+def load_qld_state_electorate_boundaries(
+    conn,
+    geojson_path: Path | None = None,
+) -> dict[str, Any]:
+    geojson_path = geojson_path or latest_qld_state_boundaries_geojson()
+    if geojson_path is None:
+        raise FileNotFoundError(
+            "No processed QLD state boundary GeoJSON found. Run "
+            "`au-politics-money extract-qld-state-boundaries` first."
+        )
+    geojson = json.loads(geojson_path.read_text(encoding="utf-8"))
+    features = geojson.get("features", [])
+    if len(features) != 93:
+        raise RuntimeError(
+            f"Expected 93 current QLD state electorate boundary features; found {len(features)}."
+        )
+
+    source_metadata_path = _source_metadata_path_from_boundary_geojson(geojson)
+    source_document_id = upsert_source_document(conn, source_metadata_path)
+    jurisdiction_id = get_or_create_jurisdiction(conn, "Queensland", "state", "QLD")
+    boundary_set = str(features[0]["properties"].get("boundary_set") or QLD_STATE_BOUNDARY_SET)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE source_document
+            SET parser_name = %s,
+                parser_version = %s,
+                parsed_at = now(),
+                metadata = metadata || %s
+            WHERE id = %s
+            """,
+            (
+                QLD_STATE_BOUNDARY_PARSER_NAME,
+                QLD_STATE_BOUNDARY_PARSER_VERSION,
+                as_jsonb({"processed_geojson_path": str(geojson_path.resolve())}),
+                source_document_id,
+            ),
+        )
+        cur.execute("DELETE FROM electorate_boundary WHERE boundary_set = %s", (boundary_set,))
+
+    inserted = 0
+    division_names: list[str] = []
+    for feature in features:
+        properties = feature["properties"]
+        division_name = str(properties["division_name"]).strip()
+        if not division_name:
+            raise RuntimeError(f"QLD boundary feature is missing division_name: {properties}")
+        electorate_id = get_or_create_boundary_electorate(
+            conn,
+            name=division_name,
+            jurisdiction_id=jurisdiction_id,
+            source_document_id=source_document_id,
+            chamber="state",
+            state_or_territory="QLD",
+            boundary_source=boundary_set,
+            boundary_loader="qld_state_electorate_boundaries_postgis_v1",
+        )
+        geometry_json = json.dumps(feature["geometry"], separators=(",", ":"), sort_keys=True)
+        metadata = {
+            **properties,
+            "source_geojson_path": str(geojson_path.resolve()),
+            "source_boundary_policy": (
+                "official_qld_state_geometry_preserved_in_electorate_boundary.geom"
+            ),
+        }
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO electorate_boundary (
+                    electorate_id, boundary_set, valid_from, valid_to,
+                    geom, source_document_id, metadata
+                )
+                VALUES (
+                    %s, %s, NULLIF(%s, '')::date, NULL,
+                    ST_Multi(
+                        ST_CollectionExtract(
+                            ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)),
+                            3
+                        )
+                    ),
+                    %s, %s
+                )
+                """,
+                (
+                    electorate_id,
+                    boundary_set,
+                    str(properties.get("date_effective") or ""),
+                    geometry_json,
+                    source_document_id,
+                    as_jsonb(metadata),
+                ),
+            )
+            inserted += cur.rowcount
+        division_names.append(division_name)
+
+    display_geometry_summary = load_electorate_boundary_display_geometries(
+        conn,
+        boundary_set=boundary_set,
+    )
+    conn.commit()
+    return {
+        "boundary_set": boundary_set,
+        "boundaries_inserted": inserted,
+        "division_count": len(division_names),
+        "geojson_path": str(geojson_path.resolve()),
         "source_document_id": source_document_id,
         "display_geometry": display_geometry_summary,
     }

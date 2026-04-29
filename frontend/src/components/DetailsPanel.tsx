@@ -280,6 +280,62 @@ export function DetailsPanel({
   }
 
   const properties = feature.properties;
+  if (properties.chamber.toLowerCase() === "state") {
+    return (
+      <aside className="details-panel" id="selection-details-panel" aria-label="Selection details">
+        <button
+          ref={collapseButtonRef}
+          type="button"
+          className="panel-collapse-button details-collapse-button"
+          aria-label="Collapse selection details"
+          aria-controls="selection-details-panel"
+          aria-expanded={true}
+          title="Collapse selection details"
+          onClick={onCollapse}
+        >
+          <PanelRightClose size={16} aria-hidden="true" />
+        </button>
+        <div className="panel-header" style={{ borderColor: partyColor }}>
+          <div>
+            <p className="eyebrow">{properties.state_or_territory || "State"} · State electorate</p>
+            <h2>{properties.electorate_name}</h2>
+          </div>
+          <span className="party-dot" style={{ background: partyColor }} />
+        </div>
+        <section className="panel-section">
+          <h3>State Map Layer</h3>
+          <p className="scope-caption">
+            This is a source-backed state electorate boundary. State disclosure rows are
+            loaded in the State panel, but they are not yet attributed to this electorate
+            or a current state MP unless the source supports that narrower link.
+          </p>
+          <div className="fact-grid">
+            <Fact
+              icon={<MapPin size={17} />}
+              label="Boundary source"
+              value={humanize(properties.boundary_set || "Loaded")}
+              tooltip="Official QLD state electorate boundary geometry stored separately from disclosure records."
+            />
+            <Fact
+              icon={<CheckCircle2 size={17} />}
+              label="Geometry"
+              value={properties.map_geometry_role === "display" ? "Land-clipped" : "Source"}
+              tooltip="Display geometry may be clipped for map readability while source geometry remains preserved in the database."
+            />
+          </div>
+        </section>
+        <section className="panel-section">
+          <h3>Representative Join Status</h3>
+          <p className="scope-caption">
+            State MP office-term joins are the next state-layer step. Until then, this
+            panel avoids showing direct person-linked money, gifts, or campaign support
+            for a state electorate.
+          </p>
+        </section>
+        <p className="caveat">{caveat}</p>
+      </aside>
+    );
+  }
   return (
     <aside className="details-panel" id="selection-details-panel" aria-label="Selection details">
       <button

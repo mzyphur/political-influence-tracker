@@ -221,6 +221,15 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
 
         cur.execute(
             """
+            INSERT INTO jurisdiction (name, level, code)
+            VALUES ('Queensland', 'state', 'QLD')
+            RETURNING id
+            """
+        )
+        qld_jurisdiction_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
             INSERT INTO party (name, short_name, jurisdiction_id, source_document_id)
             VALUES ('Example Party', 'EX', %s, %s)
             RETURNING id
@@ -279,6 +288,18 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
 
         cur.execute(
             """
+            INSERT INTO electorate (
+                name, jurisdiction_id, chamber, state_or_territory, source_document_id
+            )
+            VALUES ('McDowall', %s, 'state', 'QLD', %s)
+            RETURNING id
+            """,
+            (qld_jurisdiction_id, source_document_id),
+        )
+        qld_state_electorate_id = cur.fetchone()[0]
+
+        cur.execute(
+            """
             INSERT INTO electorate_boundary (
                 electorate_id, boundary_set, valid_from, geom, source_document_id, metadata
             )
@@ -309,6 +330,23 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
             )
             """,
             (farrer_electorate_id, source_document_id, Jsonb({"fixture": True})),
+        )
+
+        cur.execute(
+            """
+            INSERT INTO electorate_boundary (
+                electorate_id, boundary_set, valid_from, geom, source_document_id, metadata
+            )
+            VALUES (
+                %s, 'qld_state_pytest_boundary_set', '2017-10-29',
+                ST_Multi(ST_GeomFromText(
+                    'POLYGON((152.90 -27.45,153.00 -27.45,153.00 -27.35,152.90 -27.35,152.90 -27.45))',
+                    4326
+                )),
+                %s, %s
+            )
+            """,
+            (qld_state_electorate_id, source_document_id, Jsonb({"fixture": True})),
         )
 
         cur.execute(
@@ -703,6 +741,22 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert nsw_senate_payload["feature_count"] == 1
     assert nsw_senate_payload["features"][0]["properties"]["electorate_name"] == "Senate - NSW"
     assert nsw_senate_payload["features"][0]["properties"]["has_boundary"] is True
+
+    qld_state_map_response = client.get(
+        "/api/map/electorates",
+        params={
+            "chamber": "state",
+            "state": "QLD",
+            "boundary_set": "qld_state_pytest_boundary_set",
+        },
+    )
+    assert qld_state_map_response.status_code == 200
+    qld_state_payload = qld_state_map_response.json()
+    assert qld_state_payload["feature_count"] == 1
+    assert qld_state_payload["features"][0]["properties"]["electorate_name"] == "McDowall"
+    assert qld_state_payload["features"][0]["properties"]["state_or_territory"] == "QLD"
+    assert qld_state_payload["features"][0]["properties"]["current_representative_count"] == 0
+    assert "not yet attributed to current state MPs" in qld_state_payload["caveat"]
 
     coverage_response = client.get("/api/coverage")
     assert coverage_response.status_code == 200
@@ -1150,6 +1204,8 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                 """
                 INSERT INTO jurisdiction (name, level, code)
                 VALUES ('Queensland', 'state', 'QLD')
+                ON CONFLICT (name)
+                DO UPDATE SET code = EXCLUDED.code
                 RETURNING id
                 """
             )

@@ -148,6 +148,12 @@ MAP_CAVEAT = (
     "current office-term joins. Influence-event counts are non-rejected disclosed-record "
     "counts for current representatives, not electorate-level allegations or causal claims."
 )
+STATE_MAP_CAVEAT = (
+    "State map features are source-backed state electorate boundary records. "
+    "State disclosure rows are shown in the state/local summary panel; they are "
+    "not yet attributed to current state MPs or state electorates unless a source "
+    "or reviewed model supports that narrower link."
+)
 
 CONTACT_CAVEAT = (
     "Contact details are public APH roster/contact-list records. Email is returned only "
@@ -1107,8 +1113,8 @@ def get_electorate_map(
     database_url: str | None = None,
 ) -> dict[str, Any]:
     chamber = chamber.strip().lower()
-    if chamber not in {"house", "senate"}:
-        raise ValueError("chamber must be 'house' or 'senate'.")
+    if chamber not in {"house", "senate", "state"}:
+        raise ValueError("chamber must be 'house', 'senate', or 'state'.")
     geometry_role = geometry_role.strip().lower()
     if geometry_role not in {"display", "source"}:
         raise ValueError("geometry_role must be 'display' or 'source'.")
@@ -1382,7 +1388,7 @@ def get_electorate_map(
             "simplify_tolerance": simplify_tolerance,
             "geometry_role": geometry_role,
         },
-        "caveat": MAP_CAVEAT,
+        "caveat": STATE_MAP_CAVEAT if chamber == "state" else MAP_CAVEAT,
     }
 
 
@@ -1618,6 +1624,13 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
         codes = [str(row.get("jurisdiction_code")) for row in rows if row.get("jurisdiction_code")]
         return ", ".join(sorted(codes)) if codes else None
 
+    def boundary_count_for_chamber(chamber: str, key: str) -> int:
+        return sum(
+            int(row.get(key) or 0)
+            for row in boundary_rows
+            if row.get("chamber") == chamber
+        )
+
     federal_status = "active"
     state_status = "partial" if state_money_rows else "planned"
     council_status = "partial" if local_money_rows else "planned"
@@ -1642,8 +1655,23 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             "status": federal_status,
             "attribution": "electorate geometry",
             "counts": {
-                "electorates": sum(row["electorate_count"] or 0 for row in boundary_rows),
-                "boundaries": sum(row["boundary_count"] or 0 for row in boundary_rows),
+                "electorates": boundary_count_for_chamber("house", "electorate_count"),
+                "boundaries": boundary_count_for_chamber("house", "boundary_count"),
+            },
+        },
+        {
+            "id": "state_electorate_boundaries",
+            "label": "State electorate boundaries",
+            "level": "state",
+            "status": "partial" if boundary_count_for_chamber("state", "boundary_count") else "planned",
+            "attribution": (
+                "Source-backed state electorate geometry. Disclosure rows remain "
+                "separate until representative/electorate joins are supported."
+            ),
+            "counts": {
+                "electorates": boundary_count_for_chamber("state", "electorate_count"),
+                "boundaries": boundary_count_for_chamber("state", "boundary_count"),
+                "boundary_sets": boundary_count_for_chamber("state", "boundary_set_count"),
             },
         },
         {

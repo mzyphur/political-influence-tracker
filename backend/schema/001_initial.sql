@@ -84,7 +84,7 @@ CREATE TABLE electorate (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
     jurisdiction_id BIGINT NOT NULL REFERENCES jurisdiction(id),
-    chamber TEXT NOT NULL CHECK (chamber IN ('house', 'senate', 'legislative_assembly', 'legislative_council', 'council', 'other')),
+    chamber TEXT NOT NULL CHECK (chamber IN ('house', 'senate', 'state', 'legislative_assembly', 'legislative_council', 'council', 'other')),
     state_or_territory TEXT,
     valid_from DATE,
     valid_to DATE,

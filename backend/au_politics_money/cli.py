@@ -12,6 +12,7 @@ from au_politics_money.db.load import (
     apply_migrations,
     connect,
     load_electorate_boundary_display_geometries,
+    load_qld_state_electorate_boundaries,
     load_influence_events,
     load_processed_artifacts,
     load_postcode_electorate_crosswalk,
@@ -96,6 +97,10 @@ from au_politics_money.ingest.qld_ecq_eds import (
     normalize_qld_ecq_eds_contexts,
     normalize_qld_ecq_eds_money_flows,
     normalize_qld_ecq_eds_participants,
+)
+from au_politics_money.ingest.qld_boundaries import (
+    extract_qld_state_electorate_boundaries,
+    fetch_qld_state_electorate_boundaries,
 )
 from au_politics_money.ingest.senate_interests import (
     extract_senate_interest_records,
@@ -376,6 +381,30 @@ def extract_aec_boundaries_command(metadata_path: str | None) -> int:
         metadata_path=Path(metadata_path) if metadata_path else None,
     )
     print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def fetch_qld_state_boundaries_command(refetch: bool) -> int:
+    metadata_path = fetch_qld_state_electorate_boundaries(refetch=refetch)
+    print(str(Path(metadata_path).resolve()))
+    return 0
+
+
+def extract_qld_state_boundaries_command(metadata_path: str | None) -> int:
+    summary_path = extract_qld_state_electorate_boundaries(
+        metadata_path=Path(metadata_path) if metadata_path else None,
+    )
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def load_qld_state_boundaries_command(geojson_path: str | None) -> int:
+    with connect() as conn:
+        summary = load_qld_state_electorate_boundaries(
+            conn,
+            Path(geojson_path) if geojson_path else None,
+        )
+    print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
@@ -940,6 +969,15 @@ def build_parser() -> argparse.ArgumentParser:
     boundary_extract_parser = subparsers.add_parser("extract-aec-boundaries")
     boundary_extract_parser.add_argument("--metadata-path")
 
+    qld_boundary_fetch_parser = subparsers.add_parser("fetch-qld-state-boundaries")
+    qld_boundary_fetch_parser.add_argument("--refetch", action="store_true")
+
+    qld_boundary_extract_parser = subparsers.add_parser("extract-qld-state-boundaries")
+    qld_boundary_extract_parser.add_argument("--metadata-path")
+
+    qld_boundary_load_parser = subparsers.add_parser("load-qld-state-boundaries")
+    qld_boundary_load_parser.add_argument("--geojson-path")
+
     land_mask_fetch_parser = subparsers.add_parser("fetch-natural-earth-land-mask")
     land_mask_fetch_parser.add_argument("--refetch", action="store_true")
 
@@ -1339,6 +1377,12 @@ def main() -> int:
         return fetch_current_aec_boundaries_command(args.refetch)
     if args.command == "extract-aec-boundaries":
         return extract_aec_boundaries_command(args.metadata_path)
+    if args.command == "fetch-qld-state-boundaries":
+        return fetch_qld_state_boundaries_command(args.refetch)
+    if args.command == "extract-qld-state-boundaries":
+        return extract_qld_state_boundaries_command(args.metadata_path)
+    if args.command == "load-qld-state-boundaries":
+        return load_qld_state_boundaries_command(args.geojson_path)
     if args.command == "fetch-natural-earth-land-mask":
         return fetch_natural_earth_land_mask_command(args.refetch)
     if args.command == "extract-natural-earth-land-mask":
