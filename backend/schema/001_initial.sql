@@ -314,6 +314,51 @@ CREATE TABLE party_entity_link (
 CREATE INDEX party_entity_link_party_idx ON party_entity_link (party_id, review_status);
 CREATE INDEX party_entity_link_entity_idx ON party_entity_link (entity_id, review_status);
 
+CREATE TABLE candidate_contest (
+    id BIGSERIAL PRIMARY KEY,
+    external_key TEXT NOT NULL UNIQUE,
+    source_document_id BIGINT NOT NULL REFERENCES source_document(id),
+    jurisdiction_id BIGINT REFERENCES jurisdiction(id),
+    election_name TEXT,
+    election_date DATE,
+    election_year INTEGER,
+    chamber TEXT,
+    contest_type TEXT NOT NULL,
+    candidate_name TEXT NOT NULL,
+    normalized_candidate_name TEXT NOT NULL,
+    electorate_name TEXT,
+    normalized_electorate_name TEXT,
+    state_or_territory TEXT,
+    party_name TEXT,
+    normalized_party_name TEXT,
+    return_type TEXT,
+    person_id BIGINT REFERENCES person(id),
+    office_term_id BIGINT REFERENCES office_term(id),
+    match_status TEXT NOT NULL CHECK (
+        match_status IN (
+            'linked_temporal',
+            'name_context_only',
+            'unmatched_or_ambiguous'
+        )
+    ),
+    match_method TEXT NOT NULL,
+    confidence TEXT NOT NULL,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+);
+
+CREATE INDEX candidate_contest_name_electorate_idx
+    ON candidate_contest (
+        normalized_candidate_name,
+        normalized_electorate_name,
+        state_or_territory
+    );
+CREATE INDEX candidate_contest_person_idx ON candidate_contest (person_id, match_status);
+CREATE INDEX candidate_contest_office_term_idx ON candidate_contest (office_term_id);
+CREATE INDEX candidate_contest_source_document_idx
+    ON candidate_contest (source_document_id);
+
 CREATE TABLE money_flow (
     id BIGSERIAL PRIMARY KEY,
     external_key TEXT UNIQUE,
@@ -332,6 +377,8 @@ CREATE TABLE money_flow (
     receipt_type TEXT,
     disclosure_category TEXT,
     jurisdiction_id BIGINT REFERENCES jurisdiction(id),
+    candidate_contest_id BIGINT REFERENCES candidate_contest(id),
+    office_term_id BIGINT REFERENCES office_term(id),
     source_document_id BIGINT NOT NULL REFERENCES source_document(id),
     source_row_ref TEXT,
     original_text TEXT,
@@ -346,6 +393,8 @@ CREATE TABLE money_flow (
 CREATE INDEX money_flow_source_entity_idx ON money_flow (source_entity_id);
 CREATE INDEX money_flow_recipient_entity_idx ON money_flow (recipient_entity_id);
 CREATE INDEX money_flow_recipient_person_idx ON money_flow (recipient_person_id);
+CREATE INDEX money_flow_candidate_contest_idx ON money_flow (candidate_contest_id);
+CREATE INDEX money_flow_office_term_idx ON money_flow (office_term_id);
 CREATE INDEX money_flow_year_idx ON money_flow (financial_year);
 CREATE INDEX money_flow_amount_idx ON money_flow (amount);
 CREATE INDEX money_flow_qld_ecq_current_record_feed_idx
@@ -420,6 +469,8 @@ CREATE TABLE influence_event (
     recipient_party_id BIGINT REFERENCES party(id),
     recipient_raw_name TEXT,
     jurisdiction_id BIGINT REFERENCES jurisdiction(id),
+    candidate_contest_id BIGINT REFERENCES candidate_contest(id),
+    office_term_id BIGINT REFERENCES office_term(id),
     money_flow_id BIGINT REFERENCES money_flow(id),
     gift_interest_id BIGINT REFERENCES gift_interest(id),
     amount NUMERIC(14, 2),
@@ -467,6 +518,9 @@ CREATE INDEX influence_event_source_entity_idx ON influence_event (source_entity
 CREATE INDEX influence_event_recipient_entity_idx ON influence_event (recipient_entity_id);
 CREATE INDEX influence_event_recipient_person_idx ON influence_event (recipient_person_id);
 CREATE INDEX influence_event_recipient_party_idx ON influence_event (recipient_party_id);
+CREATE INDEX influence_event_candidate_contest_idx
+    ON influence_event (candidate_contest_id);
+CREATE INDEX influence_event_office_term_idx ON influence_event (office_term_id);
 CREATE INDEX influence_event_date_idx ON influence_event (event_date);
 CREATE INDEX influence_event_amount_idx ON influence_event (amount);
 CREATE INDEX influence_event_review_status_idx ON influence_event (review_status);
@@ -623,6 +677,7 @@ CREATE TABLE person_vote (
     person_id BIGINT NOT NULL REFERENCES person(id),
     vote TEXT NOT NULL CHECK (vote IN ('aye', 'no', 'abstain', 'absent', 'paired', 'tell_aye', 'tell_no', 'unknown')),
     party_id BIGINT REFERENCES party(id),
+    office_term_id BIGINT REFERENCES office_term(id),
     rebelled_against_party BOOLEAN,
     source_document_id BIGINT REFERENCES source_document(id),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -634,6 +689,7 @@ CREATE TABLE person_vote (
 );
 CREATE INDEX person_vote_current_division_idx
     ON person_vote (division_id, is_current);
+CREATE INDEX person_vote_office_term_idx ON person_vote (office_term_id);
 
 CREATE TABLE policy_topic (
     id BIGSERIAL PRIMARY KEY,

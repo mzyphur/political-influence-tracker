@@ -19,7 +19,9 @@ from au_politics_money.db.load import (
     apply_migrations,
     apply_schema,
     connect,
+    link_aec_candidate_campaign_money_flows,
     link_aec_direct_representative_money_flows,
+    load_aec_candidate_contests,
     load_influence_events,
     load_postcode_electorate_crosswalk,
     load_qld_ecq_eds_contexts,
@@ -144,6 +146,15 @@ def _assert_expected_indexes(conn) -> None:
             "influence_event_person_campaign_feed_idx",
             "money_flow_qld_ecq_current_record_feed_idx",
             "money_flow_qld_ecq_current_kind_record_feed_idx",
+            "candidate_contest_name_electorate_idx",
+            "candidate_contest_person_idx",
+            "candidate_contest_office_term_idx",
+            "candidate_contest_source_document_idx",
+            "money_flow_candidate_contest_idx",
+            "money_flow_office_term_idx",
+            "influence_event_candidate_contest_idx",
+            "influence_event_office_term_idx",
+            "person_vote_office_term_idx",
         ):
             cur.execute("SELECT to_regclass(%s)", (index_name,))
             assert cur.fetchone()[0] is not None, index_name
@@ -2146,6 +2157,119 @@ def test_aec_direct_member_return_rows_link_to_unique_people(
     assert recipient_person_id == integration_db.person_id
     assert confidence == "exact_name_context"
     assert status == "linked"
+
+
+def test_candidate_contest_spine_preserves_non_temporal_campaign_context(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
+            jurisdiction_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO money_flow (
+                    external_key, source_raw_name, recipient_raw_name, amount,
+                    financial_year, date_received, return_type, receipt_type,
+                    disclosure_category, jurisdiction_id, source_document_id,
+                    source_row_ref, confidence, metadata
+                )
+                VALUES (
+                    'aec-election-candidate:jane-citizen', 'Example Donor Pty Ltd',
+                    'Jane Citizen', 3000.00, NULL, '2025-04-14',
+                    'Election Candidate Return', 'Donation Received',
+                    'election_candidate_or_senate_group_donation_received',
+                    %s, %s, 'Candidate Donations.csv:1', 'unresolved', %s
+                )
+                """,
+                (
+                    jurisdiction_id,
+                    source_document_id,
+                    Jsonb(
+                        {
+                            "source_dataset": "aec_election",
+                            "flow_kind": "election_candidate_or_senate_group_donation_received",
+                            "event_name": "2025 Federal Election",
+                            "candidate_context": {
+                                "event_name": "2025 Federal Election",
+                                "return_type": "Candidate",
+                                "name": "Jane Citizen",
+                                "electorate_name": "Melbourne",
+                                "electorate_state": "VIC",
+                                "party_id": "EX",
+                                "party_name": "Example Party",
+                                "source_table": "Candidate Return.csv",
+                                "source_row_number": "42",
+                            },
+                        }
+                    ),
+                ),
+            )
+        conn.commit()
+
+        link_summary = link_aec_candidate_campaign_money_flows(conn)
+        contest_summary = load_aec_candidate_contests(conn)
+        load_influence_events(conn)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    money_flow.recipient_person_id,
+                    money_flow.candidate_contest_id,
+                    money_flow.office_term_id,
+                    money_flow.metadata->'candidate_contest'->>'match_status',
+                    contest.match_status,
+                    contest.match_method,
+                    contest.person_id,
+                    contest.office_term_id,
+                    contest.election_year,
+                    contest.chamber,
+                    contest.metadata->>'temporal_check'
+                FROM money_flow
+                JOIN candidate_contest contest
+                  ON contest.id = money_flow.candidate_contest_id
+                WHERE money_flow.external_key = 'aec-election-candidate:jane-citizen'
+                """
+            )
+            money_flow_row = cur.fetchone()
+            cur.execute(
+                """
+                SELECT
+                    candidate_contest_id,
+                    office_term_id,
+                    event_family,
+                    event_type,
+                    metadata->'base_metadata'->'candidate_contest'->>'match_status'
+                FROM influence_event
+                WHERE external_key = 'money_flow:aec-election-candidate:jane-citizen'
+                """
+            )
+            event_row = cur.fetchone()
+
+    assert link_summary["candidate_campaign_money_flows_linked"] == 1
+    assert contest_summary["candidate_contests"] == 1
+    assert contest_summary["candidate_contest_name_context_only"] == 1
+    assert money_flow_row[0] == integration_db.person_id
+    assert money_flow_row[1] is not None
+    assert money_flow_row[2] is None
+    assert money_flow_row[3] == "name_context_only"
+    assert money_flow_row[4] == "name_context_only"
+    assert money_flow_row[5] == (
+        "candidate_name_electorate_state_exact_unique_without_temporal_check"
+    )
+    assert money_flow_row[6] == integration_db.person_id
+    assert money_flow_row[7] is None
+    assert money_flow_row[8] == 2025
+    assert money_flow_row[9] == "house"
+    assert money_flow_row[10] == "not_applied"
+    assert event_row[0] == money_flow_row[1]
+    assert event_row[1] is None
+    assert event_row[2] == "campaign_support"
+    assert event_row[3] == "candidate_or_senate_group_donation"
+    assert event_row[4] == "name_context_only"
 
 
 def test_election_disclosure_observations_do_not_inflate_reported_totals(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 from collections import Counter, defaultdict
@@ -1613,11 +1614,17 @@ def _load_aec_money_flow_jsonl(
     conn.commit()
     direct_link_summary = link_aec_direct_representative_money_flows(conn)
     campaign_link_summary = link_aec_candidate_campaign_money_flows(conn)
+    candidate_contest_summary = (
+        load_aec_candidate_contests(conn)
+        if default_source_dataset == "aec_election"
+        else {}
+    )
     return {
         "money_flows": count,
         "money_flows_deactivated_before_reload": deactivated_before_reload,
         **direct_link_summary,
         **campaign_link_summary,
+        **candidate_contest_summary,
     }
 
 
@@ -2362,6 +2369,269 @@ def _unique_house_candidate_campaign_lookup(conn) -> dict[tuple[str, str, str], 
     }
 
 
+def _candidate_contest_external_key(context: dict[str, Any], candidate_name: str) -> str:
+    payload = {
+        "source_dataset": "aec_election",
+        "event_name": context.get("event_name") or "",
+        "return_type": context.get("return_type") or "",
+        "candidate_name": candidate_name,
+        "electorate_name": context.get("electorate_name") or "",
+        "electorate_state": state_code(str(context.get("electorate_state") or "")),
+        "party_id": context.get("party_id") or "",
+        "party_name": context.get("party_name") or "",
+    }
+    digest = hashlib.sha1(json.dumps(payload, sort_keys=True).encode("utf-8")).hexdigest()[:20]
+    return f"candidate_contest:aec_election:{digest}"
+
+
+def _election_year_from_name(value: str) -> int | None:
+    match = re.search(r"\b((?:19|20)\d{2})\b", value or "")
+    return int(match.group(1)) if match else None
+
+
+def _candidate_contest_chamber(return_type: str) -> str:
+    normalized = normalize_name(return_type)
+    if normalized == "candidate":
+        return "house"
+    if normalized == "senate group":
+        return "senate"
+    return "unknown"
+
+
+def _candidate_contest_match_status(
+    person_id: int | None,
+    office_term_id: int | None,
+) -> str:
+    if office_term_id is not None:
+        return "linked_temporal"
+    if person_id is not None:
+        return "name_context_only"
+    return "unmatched_or_ambiguous"
+
+
+def load_aec_candidate_contests(conn) -> dict[str, int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                id,
+                recipient_person_id,
+                office_term_id,
+                source_document_id,
+                jurisdiction_id,
+                confidence,
+                recipient_raw_name,
+                metadata
+            FROM money_flow
+            WHERE is_current = TRUE
+              AND metadata->>'source_dataset' = 'aec_election'
+              AND metadata ? 'candidate_context'
+            ORDER BY id
+            """
+        )
+        rows = cur.fetchall()
+
+    contests: dict[str, dict[str, Any]] = {}
+    for (
+        money_flow_id,
+        person_id,
+        office_term_id,
+        source_document_id,
+        jurisdiction_id,
+        confidence,
+        recipient_raw_name,
+        metadata,
+    ) in rows:
+        base_metadata = metadata or {}
+        context = base_metadata.get("candidate_context")
+        if not isinstance(context, dict):
+            continue
+        candidate_name = (
+            str(context.get("name") or "").strip()
+            or str(recipient_raw_name or "").strip()
+            or "Unknown candidate"
+        )
+        external_key = _candidate_contest_external_key(context, candidate_name)
+        contest = contests.setdefault(
+            external_key,
+            {
+                "external_key": external_key,
+                "source_document_id": source_document_id,
+                "jurisdiction_id": jurisdiction_id,
+                "election_name": context.get("event_name") or base_metadata.get("event_name"),
+                "election_date": None,
+                "election_year": _election_year_from_name(
+                    str(context.get("event_name") or base_metadata.get("event_name") or "")
+                ),
+                "chamber": _candidate_contest_chamber(str(context.get("return_type") or "")),
+                "contest_type": slugify(str(context.get("return_type") or ""), "candidate_context"),
+                "candidate_name": candidate_name,
+                "normalized_candidate_name": normalize_representative_return_name(
+                    aec_candidate_name_to_canonical(candidate_name)
+                ),
+                "electorate_name": context.get("electorate_name") or None,
+                "normalized_electorate_name": normalize_electorate_name(
+                    str(context.get("electorate_name") or "")
+                ),
+                "state_or_territory": state_code(str(context.get("electorate_state") or "")),
+                "party_name": context.get("party_name") or None,
+                "normalized_party_name": normalize_name(str(context.get("party_name") or "")),
+                "return_type": context.get("return_type") or None,
+                "person_id": person_id,
+                "office_term_id": office_term_id,
+                "confidence": confidence or "unresolved",
+                "money_flow_ids": [],
+                "source_row_refs": [],
+                "candidate_context": context,
+                "recipient_person_match": base_metadata.get("recipient_person_match") or {},
+            },
+        )
+        contest["money_flow_ids"].append(int(money_flow_id))
+        if person_id is not None:
+            existing_person_id = contest.get("person_id")
+            contest["person_id"] = (
+                person_id if existing_person_id in (None, person_id) else None
+            )
+        if office_term_id is not None:
+            existing_office_term_id = contest.get("office_term_id")
+            contest["office_term_id"] = (
+                office_term_id
+                if existing_office_term_id in (None, office_term_id)
+                else None
+            )
+        if base_metadata.get("source_row_ref"):
+            contest["source_row_refs"].append(base_metadata["source_row_ref"])
+
+    inserted_or_updated = 0
+    linked_money_flows = 0
+    status_counts: Counter[str] = Counter()
+    for contest in contests.values():
+        person_id = contest.get("person_id")
+        office_term_id = contest.get("office_term_id")
+        match_status = _candidate_contest_match_status(person_id, office_term_id)
+        if match_status == "linked_temporal":
+            match_method = "office_term_date_validated"
+        elif match_status == "name_context_only":
+            match_method = "candidate_name_electorate_state_exact_unique_without_temporal_check"
+        else:
+            match_method = "source_candidate_context_unmatched_or_ambiguous"
+        status_counts[match_status] += 1
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO candidate_contest (
+                    external_key, source_document_id, jurisdiction_id,
+                    election_name, election_date, election_year, chamber,
+                    contest_type, candidate_name, normalized_candidate_name,
+                    electorate_name, normalized_electorate_name, state_or_territory,
+                    party_name, normalized_party_name, return_type, person_id,
+                    office_term_id, match_status, match_method, confidence, metadata
+                )
+                VALUES (
+                    %(external_key)s, %(source_document_id)s, %(jurisdiction_id)s,
+                    %(election_name)s, %(election_date)s, %(election_year)s,
+                    %(chamber)s, %(contest_type)s, %(candidate_name)s,
+                    %(normalized_candidate_name)s, %(electorate_name)s,
+                    %(normalized_electorate_name)s, %(state_or_territory)s,
+                    %(party_name)s, %(normalized_party_name)s, %(return_type)s,
+                    %(person_id)s, %(office_term_id)s, %(match_status)s,
+                    %(match_method)s, %(confidence)s, %(metadata)s
+                )
+                ON CONFLICT (external_key) DO UPDATE SET
+                    source_document_id = EXCLUDED.source_document_id,
+                    jurisdiction_id = EXCLUDED.jurisdiction_id,
+                    election_name = EXCLUDED.election_name,
+                    election_date = EXCLUDED.election_date,
+                    election_year = EXCLUDED.election_year,
+                    chamber = EXCLUDED.chamber,
+                    contest_type = EXCLUDED.contest_type,
+                    candidate_name = EXCLUDED.candidate_name,
+                    normalized_candidate_name = EXCLUDED.normalized_candidate_name,
+                    electorate_name = EXCLUDED.electorate_name,
+                    normalized_electorate_name = EXCLUDED.normalized_electorate_name,
+                    state_or_territory = EXCLUDED.state_or_territory,
+                    party_name = EXCLUDED.party_name,
+                    normalized_party_name = EXCLUDED.normalized_party_name,
+                    return_type = EXCLUDED.return_type,
+                    person_id = EXCLUDED.person_id,
+                    office_term_id = EXCLUDED.office_term_id,
+                    match_status = EXCLUDED.match_status,
+                    match_method = EXCLUDED.match_method,
+                    confidence = EXCLUDED.confidence,
+                    last_seen_at = now(),
+                    metadata = EXCLUDED.metadata
+                RETURNING id
+                """,
+                {
+                    **contest,
+                    "match_status": match_status,
+                    "match_method": match_method,
+                    "metadata": as_jsonb(
+                        {
+                            "source_dataset": "aec_election",
+                            "candidate_context": contest["candidate_context"],
+                            "recipient_person_match": contest["recipient_person_match"],
+                            "input_money_flow_ids": contest["money_flow_ids"],
+                            "source_row_refs": sorted(set(contest["source_row_refs"])),
+                            "attribution_scope": "campaign_context_not_personal_receipt",
+                            "temporal_check": (
+                                "office_term_date_validated"
+                                if match_status == "linked_temporal"
+                                else "not_applied"
+                            ),
+                            "claim_scope": (
+                                "Source-backed candidate or Senate-group campaign context; "
+                                "not a disclosed personal receipt."
+                            ),
+                        }
+                    ),
+                },
+            )
+            candidate_contest_id = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                UPDATE money_flow
+                SET candidate_contest_id = %s,
+                    office_term_id = %s,
+                    metadata = money_flow.metadata || %s
+                WHERE id = ANY(%s)
+                """,
+                (
+                    candidate_contest_id,
+                    office_term_id,
+                    as_jsonb(
+                        {
+                            "candidate_contest": {
+                                "id": candidate_contest_id,
+                                "external_key": contest["external_key"],
+                                "match_status": match_status,
+                                "match_method": match_method,
+                                "temporal_check": (
+                                    "office_term_date_validated"
+                                    if match_status == "linked_temporal"
+                                    else "not_applied"
+                                ),
+                            }
+                        }
+                    ),
+                    contest["money_flow_ids"],
+                ),
+            )
+            linked_money_flows += int(cur.rowcount or 0)
+        inserted_or_updated += 1
+
+    conn.commit()
+    return {
+        "candidate_contests": inserted_or_updated,
+        "candidate_contest_money_flows_linked": linked_money_flows,
+        "candidate_contest_linked_temporal": status_counts.get("linked_temporal", 0),
+        "candidate_contest_name_context_only": status_counts.get("name_context_only", 0),
+        "candidate_contest_unmatched_or_ambiguous": status_counts.get(
+            "unmatched_or_ambiguous", 0
+        ),
+    }
+
+
 def link_aec_candidate_campaign_money_flows(conn) -> dict[str, int]:
     unique_lookup = _unique_house_candidate_campaign_lookup(conn)
     with conn.cursor() as cur:
@@ -2868,6 +3138,11 @@ def _suppress_withdrawn_source_record_events(conn) -> int:
 
 
 def _upsert_influence_event(conn, event: dict[str, Any]) -> None:
+    event = {
+        **event,
+        "candidate_contest_id": event.get("candidate_contest_id"),
+        "office_term_id": event.get("office_term_id"),
+    }
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -2875,25 +3150,26 @@ def _upsert_influence_event(conn, event: dict[str, Any]) -> None:
                 external_key, event_family, event_type, event_subtype,
                 source_entity_id, source_raw_name, recipient_entity_id,
                 recipient_person_id, recipient_party_id, recipient_raw_name,
-                jurisdiction_id, money_flow_id, gift_interest_id, amount,
-                currency, amount_status, event_date, reporting_period,
-                date_reported, chamber, disclosure_system, disclosure_threshold,
-                evidence_status, extraction_method, review_status, description,
-                source_document_id, source_ref, original_text, missing_data_flags,
-                metadata
+                jurisdiction_id, candidate_contest_id, office_term_id,
+                money_flow_id, gift_interest_id, amount, currency, amount_status,
+                event_date, reporting_period, date_reported, chamber,
+                disclosure_system, disclosure_threshold, evidence_status,
+                extraction_method, review_status, description, source_document_id,
+                source_ref, original_text, missing_data_flags, metadata
             )
             VALUES (
                 %(external_key)s, %(event_family)s, %(event_type)s,
                 %(event_subtype)s, %(source_entity_id)s, %(source_raw_name)s,
                 %(recipient_entity_id)s, %(recipient_person_id)s,
                 %(recipient_party_id)s, %(recipient_raw_name)s,
-                %(jurisdiction_id)s, %(money_flow_id)s, %(gift_interest_id)s,
-                %(amount)s, %(currency)s, %(amount_status)s, %(event_date)s,
-                %(reporting_period)s, %(date_reported)s, %(chamber)s,
-                %(disclosure_system)s, %(disclosure_threshold)s,
-                %(evidence_status)s, %(extraction_method)s, %(review_status)s,
-                %(description)s, %(source_document_id)s, %(source_ref)s,
-                %(original_text)s, %(missing_data_flags)s, %(metadata)s
+                %(jurisdiction_id)s, %(candidate_contest_id)s, %(office_term_id)s,
+                %(money_flow_id)s, %(gift_interest_id)s, %(amount)s, %(currency)s,
+                %(amount_status)s, %(event_date)s, %(reporting_period)s,
+                %(date_reported)s, %(chamber)s, %(disclosure_system)s,
+                %(disclosure_threshold)s, %(evidence_status)s,
+                %(extraction_method)s, %(review_status)s, %(description)s,
+                %(source_document_id)s, %(source_ref)s, %(original_text)s,
+                %(missing_data_flags)s, %(metadata)s
             )
             ON CONFLICT (external_key) DO UPDATE SET
                 event_family = EXCLUDED.event_family,
@@ -2906,6 +3182,8 @@ def _upsert_influence_event(conn, event: dict[str, Any]) -> None:
                 recipient_party_id = EXCLUDED.recipient_party_id,
                 recipient_raw_name = EXCLUDED.recipient_raw_name,
                 jurisdiction_id = EXCLUDED.jurisdiction_id,
+                candidate_contest_id = EXCLUDED.candidate_contest_id,
+                office_term_id = EXCLUDED.office_term_id,
                 money_flow_id = EXCLUDED.money_flow_id,
                 gift_interest_id = EXCLUDED.gift_interest_id,
                 amount = EXCLUDED.amount,
@@ -3297,8 +3575,9 @@ def load_influence_events(conn) -> dict[str, Any]:
                 recipient_entity_id, recipient_person_id, recipient_party_id,
                 recipient_raw_name, amount, currency, financial_year,
                 date_received, date_reported, return_type, receipt_type,
-                disclosure_category, jurisdiction_id, source_document_id,
-                source_row_ref, original_text, confidence, metadata
+                disclosure_category, jurisdiction_id, candidate_contest_id,
+                office_term_id, source_document_id, source_row_ref,
+                original_text, confidence, metadata
             FROM money_flow
             WHERE is_current = TRUE
             """
@@ -3324,6 +3603,8 @@ def load_influence_events(conn) -> dict[str, Any]:
             receipt_type,
             disclosure_category,
             row_jurisdiction_id,
+            candidate_contest_id,
+            office_term_id,
             source_document_id,
             source_row_ref,
             original_text,
@@ -3427,6 +3708,8 @@ def load_influence_events(conn) -> dict[str, Any]:
             "recipient_party_id": recipient_party_id,
             "recipient_raw_name": recipient_raw_name,
             "jurisdiction_id": row_jurisdiction_id or jurisdiction_id,
+            "candidate_contest_id": candidate_contest_id,
+            "office_term_id": office_term_id,
             "money_flow_id": money_flow_id,
             "gift_interest_id": None,
             "amount": amount,

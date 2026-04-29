@@ -60,7 +60,12 @@ Official references:
 - Backend `influence_event.event_family` now includes `campaign_support`.
 - AEC election candidate/Senate group donation, benefit, expense, and summary rows are normalised.
 - AEC 2025 public election-funding payments to parties and independent candidates are normalised as `election_public_funding_paid`.
-- Candidate return rows are linked to current/past House representatives only when candidate name, electorate, and state form an exact unique match. Current links are labelled as name/electorate context without a temporal-office check until historical candidate and office-term dating is expanded.
+- Candidate return rows are linked to House representatives only when candidate
+  name, electorate, and state form an exact unique match. The loader now also
+  creates `candidate_contest` rows and links the relevant money-flow/event rows
+  to that contest. Current links are labelled `name_context_only` until a dated
+  `office_term_id` can validate the candidate/representative relationship
+  temporally.
 - Senate records remain at state/group/party context unless a source supports senator-specific attribution.
 - API representative profiles expose `campaign_support_summary`, `campaign_support_recent_events`, and a caveat separate from direct person records.
 - The frontend displays a separate "Campaign and Party-Channelled Support" panel and keeps direct reported totals separate from campaign-support totals.

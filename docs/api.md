@@ -288,6 +288,13 @@ representatives only when the candidate name, electorate, and state form an
 exact unique match; Senate rows stay at state/group/party context unless a
 source supports senator-specific attribution.
 
+Candidate and Senate-group election contexts are also materialised internally as
+`candidate_contest` rows. Current exact House candidate-name/electorate/state
+matches are labelled `name_context_only` and keep `office_term_id` empty until
+historical office-term dates support a temporal match. This prevents campaign
+support from being upgraded into “MP received money” merely because the same
+person later or currently holds the seat.
+
 Entity profiles keep the same separation. `reported_amount_total` fields in
 entity direct-money summaries exclude `campaign_support`; campaign support is
 available in `campaign_support_reported_amount_total` fields and in recent

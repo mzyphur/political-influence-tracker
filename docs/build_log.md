@@ -607,6 +607,13 @@ Verification:
   with `amount_status=not_applicable`, entity/raw-name graph context, and
   explicit caveats that they are registry context only, not evidence of meetings,
   access granted, successful lobbying, improper influence, or wrongdoing.
+- Added the first historical candidate/contest spine: AEC election candidate
+  context is materialised into `candidate_contest` rows, `money_flow` and
+  derived `influence_event` rows carry `candidate_contest_id`, and nullable
+  `office_term_id` fields are ready for later date-validated linking. Exact
+  candidate-name/electorate/state matches are deliberately labelled
+  `name_context_only` until historical office-term dates support a temporal
+  claim.
 
 Notable data observations:
 

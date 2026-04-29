@@ -133,8 +133,11 @@ export DATABASE_URL=postgresql://au_politics:change-me-local-only@localhost:5432
 ```
 
 The loader uses stable keys for source documents, people, current office terms,
-entities, AEC annual money-flow rows, and Senate interest records so it can be
-rerun after each scheduled pipeline run. The database is therefore a
+entities, AEC annual money-flow rows, AEC candidate-contest context rows, and
+Senate interest records so it can be rerun after each scheduled pipeline run.
+Candidate-contest links are source-backed campaign context; exact
+candidate/electorate/state matches remain `name_context_only` until a dated
+office-term link validates the timing. The database is therefore a
 serving/indexing layer over reproducible artifacts rather than the only copy of
 the evidence.
 
