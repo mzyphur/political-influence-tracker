@@ -44,6 +44,21 @@ Completed:
   source id and source/final URL for the claimed declaration URL. This prevents
   partial archive coverage or swapped declaration-document hashes from being
   accepted as reproducible evidence.
+- Regenerated the federal House/Senate interest artifacts after the benefit
+  parser hardening and refreshed the local PostgreSQL `gift_interest` plus
+  unified `influence_event` layers. The refresh loaded 5,838 current House
+  interest records, 1,752 Senate interest records, and 314,032 influence
+  events, including 1,458 disclosed benefit events. The two known travel-class
+  upgrade examples now remain missing-provider rows rather than invented
+  provider entities.
+- Generated a full federal review bundle under
+  `data/audit/review_bundles/federal_review_bundle_20260429T162159Z.summary.json`.
+  The bundle materialized 1,536 party/entity link candidates and exported
+  review queues for 1,438 benefit events, 2,043 official identifier match
+  candidates, 27,059 entity-sector classifications, 1,536 party/entity links,
+  and 18 sector-policy suggestions. These files are review inputs only; public
+  graph/path claims still require accepted review decisions with supporting
+  sources.
 - Hardened ACT annual-return receipt handling after review. Broad annual
   `act_annual_receipt` rows are now loaded as state source-row context with
   `public_amount_counting_role =
