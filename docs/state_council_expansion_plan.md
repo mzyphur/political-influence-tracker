@@ -254,10 +254,19 @@ targets are:
   and public notifications;
 - a district-level state-election donation page for the 2023 NSW State election.
 
-Next adapter task: inspect the EFA disclosure portal for stable request
-parameters or export endpoints, then normalize state/local donation and
-expenditure rows into `influence_event` with jurisdiction-specific thresholds,
-redaction status, and record-retention caveats.
+Implemented first safe adapter: `run-state-local-pipeline --jurisdiction nsw`
+archives the official 2023 pre-election donation page and static heatmap, then
+normalizes 94 donor-location aggregate rows covering 5,077 disclosed donations
+and $6.48m in reported amounts for the 1 Oct 2022 to 25 Mar 2023 window. These
+rows load into `aggregate_context_observation`, not `money_flow`, because the
+heatmap identifies donor-location districts rather than donor-recipient
+transactions or representative-level receipt.
+
+Next NSW adapter task: inspect the EFA disclosure portal for stable request
+parameters or export endpoints and confirm automated access terms. Only after
+that should we normalize granular state/local donation and expenditure rows
+with jurisdiction-specific thresholds, redaction status, and record-retention
+caveats.
 
 ### Victoria Discovery Targets
 

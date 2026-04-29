@@ -424,6 +424,47 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="nsw_2023_state_election_pre_election_donations",
+        name="NSW 2023 State Election Pre-Election Period Donation Disclosures",
+        jurisdiction="New South Wales",
+        level="state",
+        source_type="state_financial_disclosure_reference",
+        url=(
+            "https://elections.nsw.gov.au/electoral-funding/disclosures/"
+            "pre-election-period-donation-disclosure/"
+            "2023-nsw-state-election-donations"
+        ),
+        expected_format="html",
+        update_frequency="event_plus_amendments",
+        priority="high",
+        notes=(
+            "Official NSW Electoral Commission explanatory page for 2023 State "
+            "Election pre-election-period reportable donations. Defines the "
+            "1 October 2022 to 25 March 2023 reporting window and links to the "
+            "official aggregate heatmap."
+        ),
+    ),
+    SourceRecord(
+        source_id="nsw_2023_state_election_donation_heatmap",
+        name="NSW 2023 State Election Donation Heatmap",
+        jurisdiction="New South Wales",
+        level="state",
+        source_type="state_financial_disclosure_aggregate_context",
+        url=(
+            "https://elections.nsw.gov.au/getmedia/"
+            "2ea29d95-d8a4-45ee-b45b-f9f9150a8446/fdc-heat-map.html"
+        ),
+        expected_format="html_flexdashboard",
+        update_frequency="event_plus_amendments",
+        priority="high",
+        notes=(
+            "Official static NSW Electoral Commission heatmap for 2023 State "
+            "Election pre-election-period reportable donations by donor-location "
+            "district. Aggregate context only: rows do not identify donation "
+            "recipients, donors, candidates, parties, MPs, or councillors."
+        ),
+    ),
+    SourceRecord(
         source_id="vic_vec_disclosures",
         name="Victorian Electoral Commission Disclosures",
         jurisdiction="Victoria",

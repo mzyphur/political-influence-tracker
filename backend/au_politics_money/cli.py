@@ -15,10 +15,10 @@ from au_politics_money.db.load import (
     load_influence_events,
     load_processed_artifacts,
     load_postcode_electorate_crosswalk,
-    load_qld_ecq_eds_from_pipeline_manifest,
     load_qld_ecq_eds_contexts,
     load_qld_ecq_eds_money_flows,
     load_qld_ecq_eds_participants,
+    load_state_local_from_pipeline_manifest,
 )
 from au_politics_money.db.review import (
     REVIEW_SUBJECT_TYPES,
@@ -551,6 +551,7 @@ def load_postgres_command(
     skip_roster: bool,
     skip_money_flows: bool,
     skip_qld_ecq: bool,
+    skip_nsw_aggregates: bool,
     skip_house_interests: bool,
     skip_senate_interests: bool,
     skip_electorate_boundaries: bool,
@@ -570,6 +571,7 @@ def load_postgres_command(
         include_roster=not skip_roster,
         include_money_flows=not skip_money_flows,
         include_qld_ecq=not skip_qld_ecq,
+        include_nsw_aggregates=not skip_nsw_aggregates,
         include_house_interests=not skip_house_interests,
         include_senate_interests=not skip_senate_interests,
         include_electorate_boundaries=not skip_electorate_boundaries,
@@ -651,7 +653,7 @@ def load_state_local_pipeline_manifest_command(
     skip_influence_events: bool,
 ) -> int:
     with connect() as conn:
-        summary = load_qld_ecq_eds_from_pipeline_manifest(
+        summary = load_state_local_from_pipeline_manifest(
             conn,
             Path(manifest_path),
             include_influence_events=not skip_influence_events,
@@ -1124,9 +1126,9 @@ def build_parser() -> argparse.ArgumentParser:
     state_local_pipeline_parser = subparsers.add_parser("run-state-local-pipeline")
     state_local_pipeline_parser.add_argument(
         "--jurisdiction",
-        choices=("qld",),
+        choices=("qld", "nsw"),
         default="qld",
-        help="State/local adapter to run. Currently supported: qld.",
+        help="State/local adapter to run. Currently supported: qld, nsw.",
     )
     state_local_pipeline_parser.add_argument(
         "--smoke",
@@ -1148,6 +1150,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Skip Queensland ECQ state/local artifacts during this load. Federal-only "
             "scheduled runs should use this unless the QLD fetch/normalize steps ran."
+        ),
+    )
+    load_parser.add_argument(
+        "--skip-nsw-aggregates",
+        action="store_true",
+        help=(
+            "Skip NSW aggregate context artifacts during this load. These rows are "
+            "state-level donor-location aggregates, not money-flow records."
         ),
     )
     load_parser.add_argument("--skip-house-interests", action="store_true")
@@ -1352,6 +1362,7 @@ def main() -> int:
             args.skip_roster,
             args.skip_money_flows,
             args.skip_qld_ecq,
+            args.skip_nsw_aggregates,
             args.skip_house_interests,
             args.skip_senate_interests,
             args.skip_electorate_boundaries,

@@ -22,6 +22,17 @@ Completed:
 - Hardened QLD manifest replay so state/local loads validate manifest summary
   hashes, processed JSONL hashes, expected export/lookup source scopes, and
   summary row counts before mutating Postgres.
+- Added `run-state-local-pipeline --jurisdiction nsw` as the first NSW
+  state-level adapter. It archives the official NSW Electoral Commission 2023
+  State Election pre-election donation page plus the static heatmap, normalizes
+  94 donor-location aggregate rows covering 5,077 disclosed donations and
+  $6.48m in reported amounts, and records an explicit claim boundary that these
+  rows are aggregate context, not donor-recipient flows or representative-level
+  receipt.
+- Added `aggregate_context_observation` for source-backed aggregate political
+  finance context that should not be forced into the `money_flow` schema. The
+  state/local summary API and frontend now show NSW top donor-location
+  aggregates separately from QLD gift/donation and campaign-expenditure rows.
 - Added a reproducible AEC Electorate Finder postcode crosswalk pipeline:
   archived AEC postcode search pages, normalized source-backed postcode to
   electorate-candidate rows with ambiguity/confidence/locality metadata, added

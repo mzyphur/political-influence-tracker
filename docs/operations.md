@@ -85,9 +85,10 @@ ambient "latest" snapshot; this keeps a manifest tied to the artifacts it
 actually normalized. `load-state-local-pipeline-manifest` then reads that same
 manifest, opens the normalizer summaries it references, and loads those exact
 processed JSONL files after validating summary hashes, JSONL hashes, expected
-QLD source scopes, and row counts. If an older manifest was produced before
-artifact hashes were recorded, rerun `run-state-local-pipeline --jurisdiction
-qld` before loading.
+QLD source scopes, and row counts. If an older QLD manifest was produced before
+artifact hashes were recorded, the loader computes current file hashes from the
+referenced local artifacts and still validates normalizer names, source scopes,
+non-zero counts, JSONL row counts, and source-count totals before loading.
 
 The fetcher archives raw CSV bodies and metadata under
 `data/raw/qld_ecq_eds_map_export_csv/` and
@@ -125,9 +126,27 @@ selection from the pipeline manifest.
 Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command
 also loads QLD ECQ EDS rows and participant identifiers by default, but
-federal-only scheduled runs use `load-postgres --skip-qld-ecq` so stale QLD
-artifacts are not promoted when the QLD fetch/normalize steps did not run.
-Public QLD API summaries read only `money_flow.is_current = true` rows.
+federal-only scheduled runs use `load-postgres --skip-qld-ecq
+--skip-nsw-aggregates` so stale state/local artifacts are not promoted when the
+state/local fetch/normalize steps did not run. Public QLD API summaries read
+only `money_flow.is_current = true` rows.
+
+NSW is now wired as an aggregate-context state adapter:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction nsw)
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+```
+
+The NSW runner archives the official 2023 State Election pre-election donation
+page and static heatmap, then normalizes the heatmap's embedded district table
+into `data/processed/nsw_pre_election_donor_location_aggregates/`. The serving
+loader stores these rows in `aggregate_context_observation`, not `money_flow`.
+They are donor-location aggregates for the 1 Oct 2022 to 25 Mar 2023
+pre-election period, so they can support contextual state summaries but must not
+be displayed as donations received by an MP, candidate, party, or councillor.
 
 ECQ gift/donation rows are money records. ECQ expenditure rows are
 campaign-support records with event type `state_local_electoral_expenditure`;
@@ -180,8 +199,9 @@ file and still refreshes the rest of the federal database. The federal pipeline
 runs with `--refresh-existing-sources`, so update-sensitive cached sources such
 as AEC postcode lookups, current AEC boundaries, and official APH
 decision-record documents are fetched again instead of being silently reused.
-The weekly federal load also uses `--skip-qld-ecq`; QLD state/local rows should
-be refreshed by the QLD-specific commands above.
+The weekly federal load also uses `--skip-qld-ecq --skip-nsw-aggregates`; QLD
+and NSW state/local rows should be refreshed by the jurisdiction-specific
+commands above.
 After loading, the script runs `qa-serving-database`. That QA gate fails the
 weekly run before the database is treated as releasable if core serving
 invariants break, including missing House boundaries, active events pointing at

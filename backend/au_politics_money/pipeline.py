@@ -61,6 +61,10 @@ from au_politics_money.ingest.official_identifiers import (
     fetch_official_identifier_bulk_resources,
     fetch_lobbyist_register_snapshot,
 )
+from au_politics_money.ingest.nsw_electoral import (
+    HEATMAP_SOURCE_ID as NSW_HEATMAP_SOURCE_ID,
+    normalize_nsw_pre_election_donor_location_heatmap,
+)
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
 from au_politics_money.ingest.qld_ecq_eds import (
     QLD_ECQ_EDS_CONTEXT_LOOKUPS,
@@ -515,10 +519,12 @@ def run_federal_foundation_pipeline(
 
 def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) -> Path:
     normalized_jurisdiction = jurisdiction.strip().lower()
-    if normalized_jurisdiction not in {"qld", "queensland"}:
+    if normalized_jurisdiction not in {"qld", "queensland", "nsw", "new south wales"}:
         raise ValueError(
-            "Unsupported state/local jurisdiction. Currently supported: qld."
+            "Unsupported state/local jurisdiction. Currently supported: qld, nsw."
         )
+    if normalized_jurisdiction in {"nsw", "new south wales"}:
+        return _run_nsw_state_local_pipeline(smoke=smoke)
 
     started = utc_now()
     page_source_ids = {spec.page_source_id for spec in QLD_ECQ_EDS_EXPORTS}
@@ -597,6 +603,75 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
             "normalize_qld_ecq_eds_contexts",
             lambda: normalize_qld_ecq_eds_contexts(
                 lookup_metadata_paths=qld_artifacts["lookup_metadata_paths"],
+            ),
+        ),
+    ]
+
+    try:
+        for name, func in steps:
+            manifest.steps.append(_run_step(name, func))
+        manifest.status = "succeeded"
+    except PipelineStepError as exc:
+        manifest.steps.append(exc.result)
+        manifest.status = "failed"
+    finally:
+        finished = utc_now()
+        manifest.finished_at = finished.isoformat()
+        manifest.duration_seconds = (finished - started).total_seconds()
+
+    manifest_path = _write_manifest(manifest)
+    if manifest.status == "failed":
+        raise RuntimeError(f"Pipeline failed. Manifest: {manifest_path}")
+    return manifest_path
+
+
+def _run_nsw_state_local_pipeline(*, smoke: bool = False) -> Path:
+    started = utc_now()
+    nsw_artifacts: dict[str, Path] = {}
+
+    def fetch_nsw_sources() -> dict[str, Any]:
+        source_ids = (
+            "nsw_2023_state_election_pre_election_donations",
+            NSW_HEATMAP_SOURCE_ID,
+        )
+        metadata_paths: dict[str, str] = {}
+        for source_id in source_ids:
+            metadata_path = fetch_source(get_source(source_id))
+            metadata_paths[source_id] = str(metadata_path)
+            if source_id == NSW_HEATMAP_SOURCE_ID:
+                nsw_artifacts["heatmap_metadata_path"] = Path(metadata_path)
+        return {
+            "source_count": len(metadata_paths),
+            "metadata_paths": metadata_paths,
+        }
+
+    manifest = PipelineManifest(
+        pipeline_name="state_local",
+        run_id=f"state_local_nsw_{timestamp(started)}",
+        status="running",
+        started_at=started.isoformat(),
+        git_commit=_git_commit(),
+        dependency_versions=_dependency_versions(),
+        parameters={
+            "jurisdiction": "nsw",
+            "source_family": "nsw_electoral_disclosures",
+            "smoke": smoke,
+            "loads_database": False,
+            "claim_boundary": (
+                "Fetch and normalize NSW Electoral Commission 2023 State Election "
+                "pre-election-period donation heatmap aggregates. Rows are "
+                "donor-location aggregate context, not donor-recipient money flows "
+                "or representative-level receipt."
+            ),
+        },
+    )
+
+    steps: list[tuple[str, Callable[[], Any]]] = [
+        ("fetch_nsw_electoral_disclosure_sources", fetch_nsw_sources),
+        (
+            "normalize_nsw_pre_election_donor_location_heatmap",
+            lambda: normalize_nsw_pre_election_donor_location_heatmap(
+                metadata_path=nsw_artifacts["heatmap_metadata_path"],
             ),
         ),
     ]

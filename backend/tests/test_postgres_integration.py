@@ -156,6 +156,10 @@ def _assert_expected_indexes(conn) -> None:
             "influence_event_candidate_contest_idx",
             "influence_event_office_term_idx",
             "person_vote_office_term_idx",
+            "aggregate_context_observation_source_dataset_idx",
+            "aggregate_context_observation_jurisdiction_idx",
+            "aggregate_context_observation_context_type_idx",
+            "aggregate_context_observation_geography_name_trgm_idx",
         ):
             cur.execute("SELECT to_regclass(%s)", (index_name,))
             assert cur.fetchone()[0] is not None, index_name
@@ -1396,6 +1400,64 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert state_summary["recent_records"][0]["recipient_name"] == "QLD Recipient"
     assert state_summary["recent_records"][0]["source_identifier_backed"] is True
     assert state_summary["recent_records"][0]["event_name"] == "2026 Stafford State By-election"
+
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO aggregate_context_observation (
+                    jurisdiction_id, source_document_id, source_dataset, source_id,
+                    observation_key, context_family, context_type, geography_type,
+                    geography_name, amount, amount_status, record_count,
+                    reporting_period_start, reporting_period_end, evidence_status,
+                    attribution_scope, caveat, metadata, is_current
+                )
+                VALUES (
+                    %s, %s, 'nsw_electoral_disclosures',
+                    'nsw_2023_state_election_donation_heatmap',
+                    'pytest-nsw-heatmap:sydney', 'money_aggregate_context',
+                    'pre_election_reportable_donation_donor_location',
+                    'state_electoral_district_donor_location', 'Sydney', 1234.56,
+                    'reported', 7, DATE '2022-10-01', DATE '2023-03-25',
+                    'official_record_parsed',
+                    'aggregate_context_not_recipient_attribution',
+                    'Aggregate context fixture; not recipient attribution.',
+                    '{}'::jsonb, TRUE
+                )
+                """,
+                (qld_state_id, source_document_id),
+            )
+        conn.commit()
+
+    state_summary_with_aggregates_response = client.get(
+        "/api/state-local/summary",
+        params={"level": "state", "limit": "3"},
+    )
+    assert state_summary_with_aggregates_response.status_code == 200
+    state_summary_with_aggregates = state_summary_with_aggregates_response.json()
+    assert state_summary_with_aggregates["source_family"] == "state_local_disclosures"
+    assert (
+        state_summary_with_aggregates["aggregate_context_totals"][0]["source_dataset"]
+        == "nsw_electoral_disclosures"
+    )
+    assert (
+        state_summary_with_aggregates["aggregate_context_totals"][0][
+            "reported_amount_total"
+        ]
+        == 1234.56
+    )
+    assert (
+        state_summary_with_aggregates["top_aggregate_donor_locations"][0][
+            "geography_name"
+        ]
+        == "Sydney"
+    )
+    assert (
+        state_summary_with_aggregates["top_aggregate_donor_locations"][0][
+            "attribution_scope"
+        ]
+        == "aggregate_context_not_recipient_attribution"
+    )
 
     council_summary_response = client.get(
         "/api/state-local/summary",

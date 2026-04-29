@@ -49,6 +49,11 @@ from au_politics_money.ingest.official_identifiers import (
     OFFICIAL_IDENTIFIER_PARSER_NAME,
     latest_official_identifier_jsonl_paths,
 )
+from au_politics_money.ingest.nsw_electoral import (
+    HEATMAP_SOURCE_ID as NSW_HEATMAP_SOURCE_ID,
+    PARSER_NAME as NSW_HEATMAP_PARSER_NAME,
+    SOURCE_DATASET as NSW_SOURCE_DATASET,
+)
 from au_politics_money.ingest.qld_ecq_eds import (
     CONTEXT_PARSER_NAME as QLD_ECQ_CONTEXT_PARSER_NAME,
     PARSER_NAME as QLD_ECQ_MONEY_PARSER_NAME,
@@ -1675,6 +1680,161 @@ def load_qld_ecq_eds_money_flows(conn, jsonl_path: Path | None = None) -> dict[s
     return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="qld_ecq_eds")
 
 
+def load_nsw_aggregate_context_observations(
+    conn,
+    jsonl_path: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(
+            PROCESSED_DIR / "nsw_pre_election_donor_location_aggregates",
+            "*.jsonl",
+        )
+    except FileNotFoundError:
+        return {
+            "aggregate_context_observations": 0,
+            "skipped_reason": "no_processed_nsw_aggregate_contexts",
+        }
+
+    inserted_or_updated = 0
+    source_document_cache: dict[str, int] = {}
+    jurisdiction_cache: dict[tuple[str, str, str], int] = {}
+    current_keys: set[str] = set()
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if record.get("normalizer_name") != NSW_HEATMAP_PARSER_NAME:
+                raise ValueError(
+                    "Unexpected NSW aggregate normalizer: "
+                    f"{record.get('normalizer_name')!r}"
+                )
+            if record.get("source_dataset") != NSW_SOURCE_DATASET:
+                raise ValueError(
+                    f"Unexpected NSW aggregate source_dataset: {record.get('source_dataset')!r}"
+                )
+            if record.get("source_id") != NSW_HEATMAP_SOURCE_ID:
+                raise ValueError(f"Unexpected NSW aggregate source_id: {record.get('source_id')!r}")
+            metadata_path = str(record.get("source_metadata_path") or "")
+            if not metadata_path:
+                raise ValueError("NSW aggregate record is missing source_metadata_path")
+            if metadata_path not in source_document_cache:
+                source_document_cache[metadata_path] = upsert_source_document(
+                    conn,
+                    Path(metadata_path),
+                )
+            jurisdiction_key = (
+                str(record.get("jurisdiction_name") or "New South Wales"),
+                str(record.get("jurisdiction_level") or "state"),
+                str(record.get("jurisdiction_code") or "NSW"),
+            )
+            if jurisdiction_key not in jurisdiction_cache:
+                jurisdiction_cache[jurisdiction_key] = get_or_create_jurisdiction(
+                    conn,
+                    *jurisdiction_key,
+                )
+            observation_key = str(record.get("observation_key") or "")
+            if not observation_key:
+                raise ValueError("NSW aggregate record is missing observation_key")
+            current_keys.add(observation_key)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO aggregate_context_observation (
+                        jurisdiction_id, source_document_id, source_dataset, source_id,
+                        observation_key, context_family, context_type, geography_type,
+                        geography_name, amount, amount_status, record_count,
+                        reporting_period_start, reporting_period_end, evidence_status,
+                        attribution_scope, caveat, metadata, is_current, updated_at
+                    )
+                    VALUES (
+                        %(jurisdiction_id)s, %(source_document_id)s, %(source_dataset)s,
+                        %(source_id)s, %(observation_key)s, %(context_family)s,
+                        %(context_type)s, %(geography_type)s, %(geography_name)s,
+                        %(amount)s, %(amount_status)s, %(record_count)s,
+                        %(reporting_period_start)s, %(reporting_period_end)s,
+                        %(evidence_status)s, %(attribution_scope)s, %(caveat)s,
+                        %(metadata)s, TRUE, now()
+                    )
+                    ON CONFLICT (source_dataset, observation_key) DO UPDATE SET
+                        jurisdiction_id = EXCLUDED.jurisdiction_id,
+                        source_document_id = EXCLUDED.source_document_id,
+                        source_id = EXCLUDED.source_id,
+                        context_family = EXCLUDED.context_family,
+                        context_type = EXCLUDED.context_type,
+                        geography_type = EXCLUDED.geography_type,
+                        geography_name = EXCLUDED.geography_name,
+                        amount = EXCLUDED.amount,
+                        amount_status = EXCLUDED.amount_status,
+                        record_count = EXCLUDED.record_count,
+                        reporting_period_start = EXCLUDED.reporting_period_start,
+                        reporting_period_end = EXCLUDED.reporting_period_end,
+                        evidence_status = EXCLUDED.evidence_status,
+                        attribution_scope = EXCLUDED.attribution_scope,
+                        caveat = EXCLUDED.caveat,
+                        metadata = EXCLUDED.metadata,
+                        is_current = TRUE,
+                        updated_at = now()
+                    RETURNING id
+                    """,
+                    {
+                        "jurisdiction_id": jurisdiction_cache[jurisdiction_key],
+                        "source_document_id": source_document_cache[metadata_path],
+                        "source_dataset": record.get("source_dataset"),
+                        "source_id": record.get("source_id"),
+                        "observation_key": observation_key,
+                        "context_family": record.get("context_family"),
+                        "context_type": record.get("context_type"),
+                        "geography_type": record.get("geography_type"),
+                        "geography_name": record.get("geography_name"),
+                        "amount": parse_decimal(str(record.get("amount_aud") or "")),
+                        "amount_status": record.get("amount_status") or "reported",
+                        "record_count": int(record.get("donation_count") or 0),
+                        "reporting_period_start": parse_date(
+                            str(record.get("reporting_period_start") or "")
+                        ),
+                        "reporting_period_end": parse_date(
+                            str(record.get("reporting_period_end") or "")
+                        ),
+                        "evidence_status": record.get("evidence_status")
+                        or "official_record_parsed",
+                        "attribution_scope": record.get("attribution_scope")
+                        or "aggregate_context_not_recipient_attribution",
+                        "caveat": record.get("caveat") or "",
+                        "metadata": as_jsonb(
+                            {
+                                "record": record,
+                                "source_body_path": record.get("source_body_path"),
+                            }
+                        ),
+                    },
+                )
+                cur.fetchone()
+                inserted_or_updated += 1
+    if current_keys:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE aggregate_context_observation
+                SET is_current = FALSE,
+                    updated_at = now()
+                WHERE source_dataset = %s
+                  AND source_id = %s
+                  AND NOT (observation_key = ANY(%s::text[]))
+                """,
+                (NSW_SOURCE_DATASET, NSW_HEATMAP_SOURCE_ID, list(current_keys)),
+            )
+            stale_count = cur.rowcount
+    else:
+        stale_count = 0
+    conn.commit()
+    return {
+        "aggregate_context_observations": inserted_or_updated,
+        "stale_observations": stale_count,
+        "jsonl_path": str(path),
+    }
+
+
 def _sha256_path(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
@@ -1815,6 +1975,63 @@ def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, P
     }
 
 
+def nsw_aggregate_context_path_from_pipeline_manifest(manifest_path: Path) -> Path:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("pipeline_name") != "state_local":
+        raise ValueError("Expected a state_local pipeline manifest")
+    parameters = manifest.get("parameters")
+    if (
+        not isinstance(parameters, dict)
+        or parameters.get("source_family") != NSW_SOURCE_DATASET
+    ):
+        raise ValueError("Expected an NSW Electoral Commission state/local manifest")
+    if parameters.get("loads_database") is not False:
+        raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+
+    summary_path, summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_nsw_pre_election_donor_location_heatmap",
+    )
+    actual_summary_sha256 = _sha256_path(summary_path)
+    if summary_sha256 and actual_summary_sha256 != summary_sha256:
+        raise ValueError(
+            f"Summary hash mismatch for {summary_path}: "
+            f"manifest={summary_sha256} actual={actual_summary_sha256}"
+        )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("normalizer_name") != NSW_HEATMAP_PARSER_NAME:
+        raise ValueError(
+            f"Unexpected normalizer in {summary_path}: {summary.get('normalizer_name')!r}"
+        )
+    if summary.get("source_dataset") != NSW_SOURCE_DATASET:
+        raise ValueError(
+            f"Unexpected source_dataset in {summary_path}: {summary.get('source_dataset')!r}"
+        )
+    if summary.get("source_id") != NSW_HEATMAP_SOURCE_ID:
+        raise ValueError(f"Unexpected source_id in {summary_path}: {summary.get('source_id')!r}")
+    jsonl_path = summary.get("jsonl_path")
+    if not jsonl_path:
+        raise ValueError(f"Summary is missing jsonl_path: {summary_path}")
+    path = Path(str(jsonl_path))
+    expected_jsonl_sha256 = str(summary.get("jsonl_sha256") or "")
+    actual_jsonl_sha256 = _sha256_path(path)
+    if expected_jsonl_sha256 and actual_jsonl_sha256 != expected_jsonl_sha256:
+        raise ValueError(
+            f"JSONL hash mismatch for {path}: "
+            f"summary={expected_jsonl_sha256} actual={actual_jsonl_sha256}"
+        )
+    total_count = int(summary.get("total_count") or 0)
+    if total_count <= 0:
+        raise ValueError(f"Summary has no records: {summary_path}")
+    counted_records = _jsonl_line_count(path)
+    if counted_records != total_count:
+        raise ValueError(
+            f"Summary total_count does not match JSONL rows for {path}: "
+            f"summary={total_count} rows={counted_records}"
+        )
+    return path
+
+
 def load_qld_ecq_eds_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -1841,6 +2058,38 @@ def load_qld_ecq_eds_from_pipeline_manifest(
     if include_influence_events:
         summary["influence_events"] = load_influence_events(conn)
     return summary
+
+
+def load_nsw_electoral_from_pipeline_manifest(conn, manifest_path: Path) -> dict[str, Any]:
+    path = nsw_aggregate_context_path_from_pipeline_manifest(manifest_path)
+    return {
+        "pipeline_manifest_path": str(manifest_path),
+        "artifact_paths": {"aggregate_contexts": str(path)},
+        "nsw_aggregate_context_observations": load_nsw_aggregate_context_observations(
+            conn,
+            jsonl_path=path,
+        ),
+    }
+
+
+def load_state_local_from_pipeline_manifest(
+    conn,
+    manifest_path: Path,
+    *,
+    include_influence_events: bool = True,
+) -> dict[str, Any]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    parameters = manifest.get("parameters")
+    source_family = parameters.get("source_family") if isinstance(parameters, dict) else None
+    if source_family == "qld_ecq_eds":
+        return load_qld_ecq_eds_from_pipeline_manifest(
+            conn,
+            manifest_path,
+            include_influence_events=include_influence_events,
+        )
+    if source_family == NSW_SOURCE_DATASET:
+        return load_nsw_electoral_from_pipeline_manifest(conn, manifest_path)
+    raise ValueError(f"Unsupported state/local manifest source_family: {source_family!r}")
 
 
 def _latest_qld_contexts_jsonl() -> Path:
@@ -6395,6 +6644,7 @@ def load_processed_artifacts(
     include_roster: bool = True,
     include_money_flows: bool = True,
     include_qld_ecq: bool = True,
+    include_nsw_aggregates: bool = True,
     include_house_interests: bool = True,
     include_senate_interests: bool = True,
     include_electorate_boundaries: bool = True,
@@ -6428,6 +6678,10 @@ def load_processed_artifacts(
                 summary["qld_ecq_eds_money_flows"] = load_qld_ecq_eds_money_flows(conn)
                 summary["qld_ecq_eds_participants"] = load_qld_ecq_eds_participants(conn)
                 summary["qld_ecq_eds_contexts"] = load_qld_ecq_eds_contexts(conn)
+            if include_nsw_aggregates:
+                summary["nsw_aggregate_context_observations"] = (
+                    load_nsw_aggregate_context_observations(conn)
+                )
         if include_house_interests:
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:

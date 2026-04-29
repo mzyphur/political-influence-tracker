@@ -58,10 +58,12 @@ http://127.0.0.1:8008/docs
   for frontend graph views. Party graph money edges use reviewed
   `party_entity_link` rows only; `include_candidates=true` adds candidate
   party/entity link edges with `evidence_status="candidate_requires_review"`.
-- `GET /api/state-local/summary` - first state/local summary surface for QLD
-  ECQ EDS disclosures. It returns source-family totals, ECQ identifier-backed
-  counts, top gift donors/recipients, and top campaign-spend actors while
-  state/council maps and representative joins remain under construction.
+- `GET /api/state-local/summary` - first state/local summary surface. It
+  returns QLD ECQ source-family totals, ECQ identifier-backed counts, top gift
+  donors/recipients, and top campaign-spend actors. It also returns NSW
+  donor-location aggregate context from the official 2023 State Election
+  heatmap when loaded. State/council maps and representative joins remain under
+  construction.
 - `GET /api/state-local/records` - paginated QLD ECQ source-row feed for the
   state/local summary panel. It accepts `level=state|council|local`,
   `flow_kind=qld_gift|qld_electoral_expenditure`, `limit`, and an opaque
@@ -208,13 +210,14 @@ classifications.
 ## State/Local Summary
 
 `/api/state-local/summary` is the first public API surface for non-federal data.
-It currently supports the Queensland ECQ Electronic Disclosure System source
-family.
+It currently supports Queensland ECQ Electronic Disclosure System money-flow
+rows and NSW Electoral Commission aggregate donor-location context.
 
 Useful parameters:
 
 - `level=state|council|local`; `council` and `local` both select ECQ local
-  government rows. Omit `level` to aggregate all loaded QLD state/local rows.
+  government rows. NSW aggregate context is state-level only. Omit `level` to
+  aggregate all loaded state/local rows.
 - `limit=1..25` controls each top-actor list.
 
 The response includes:
@@ -242,6 +245,11 @@ The response includes:
 - `recent_records`: a compact current-row feed with source/recipient names,
   reported amount, ECQ event/local-electorate context where matched, source-row
   reference, source-document URL, and row-side ECQ identifier signals.
+- `aggregate_context_totals` and `top_aggregate_donor_locations`: NSW
+  aggregate donor-location rows from the official static 2023 State Election
+  heatmap. These rows are not donor-recipient money-flow records and must not
+  be attributed to any representative, candidate, councillor, or party without
+  separate supporting evidence.
 
 `/api/state-local/records` returns the concrete current ECQ rows behind that
 summary with cursor pagination. Each row includes the normalized source and

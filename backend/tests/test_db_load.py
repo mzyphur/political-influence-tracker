@@ -23,6 +23,7 @@ from au_politics_money.db.load import (
     normalize_electorate_name,
     normalize_name,
     normalize_representative_return_name,
+    nsw_aggregate_context_path_from_pipeline_manifest,
     parse_aec_money_flow_date,
     parse_date,
     parse_datetime,
@@ -522,6 +523,52 @@ def test_qld_pipeline_manifest_rejects_failed_steps(tmp_path) -> None:
 
     with pytest.raises(ValueError, match="did not succeed"):
         qld_ecq_eds_paths_from_pipeline_manifest(manifest_path)
+
+
+def test_nsw_pipeline_manifest_selects_aggregate_context_artifact(tmp_path) -> None:
+    jsonl_path = tmp_path / "nsw-aggregates.jsonl"
+    jsonl_path.write_text(json.dumps({"source_id": "nsw_2023_state_election_donation_heatmap"}) + "\n", encoding="utf-8")
+    summary_path = tmp_path / "nsw-aggregates.summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "normalizer_name": "nsw_pre_election_donor_location_heatmap_normalizer",
+                "source_dataset": "nsw_electoral_disclosures",
+                "source_id": "nsw_2023_state_election_donation_heatmap",
+                "jsonl_path": str(jsonl_path),
+                "jsonl_sha256": hashlib.sha256(jsonl_path.read_bytes()).hexdigest(),
+                "total_count": 1,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "state_local_nsw_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "nsw_electoral_disclosures",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_nsw_pre_election_donor_location_heatmap",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": hashlib.sha256(summary_path.read_bytes()).hexdigest(),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert nsw_aggregate_context_path_from_pipeline_manifest(manifest_path) == jsonl_path
 
 
 def test_display_geometry_repair_buffer_validates_range() -> None:

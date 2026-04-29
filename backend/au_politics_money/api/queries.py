@@ -2106,12 +2106,93 @@ def get_state_local_summary(
             db_level=db_level,
             limit=limit,
         )
+        aggregate_context_totals: list[dict[str, Any]] = []
+        top_aggregate_donor_locations: list[dict[str, Any]] = []
+        if _table_exists(conn, "aggregate_context_observation"):
+            aggregate_context_totals = _fetch_dicts(
+                conn,
+                f"""
+                SELECT
+                    jurisdiction.name AS jurisdiction_name,
+                    jurisdiction.level AS jurisdiction_level,
+                    jurisdiction.code AS jurisdiction_code,
+                    aggregate_context_observation.source_dataset,
+                    aggregate_context_observation.context_type,
+                    count(*) AS aggregate_context_count,
+                    sum(aggregate_context_observation.record_count) AS source_record_count,
+                    sum(aggregate_context_observation.amount) FILTER (
+                        WHERE aggregate_context_observation.amount_status = 'reported'
+                    ) AS reported_amount_total,
+                    min(aggregate_context_observation.reporting_period_start)
+                        AS reporting_period_start,
+                    max(aggregate_context_observation.reporting_period_end)
+                        AS reporting_period_end,
+                    count(DISTINCT aggregate_context_observation.source_document_id)
+                        AS source_document_count,
+                    max(source_document.fetched_at) AS latest_source_fetched_at
+                FROM aggregate_context_observation
+                JOIN jurisdiction
+                  ON jurisdiction.id = aggregate_context_observation.jurisdiction_id
+                LEFT JOIN source_document
+                  ON source_document.id = aggregate_context_observation.source_document_id
+                WHERE aggregate_context_observation.source_dataset = 'nsw_electoral_disclosures'
+                  AND aggregate_context_observation.is_current IS TRUE
+                  {level_filter}
+                GROUP BY
+                    jurisdiction.name,
+                    jurisdiction.level,
+                    jurisdiction.code,
+                    aggregate_context_observation.source_dataset,
+                    aggregate_context_observation.context_type
+                ORDER BY jurisdiction.name, aggregate_context_observation.context_type
+                """,
+                params,
+            )
+            top_aggregate_donor_locations = _fetch_dicts(
+                conn,
+                f"""
+                SELECT
+                    aggregate_context_observation.id,
+                    jurisdiction.name AS jurisdiction_name,
+                    jurisdiction.level AS jurisdiction_level,
+                    jurisdiction.code AS jurisdiction_code,
+                    aggregate_context_observation.source_dataset,
+                    aggregate_context_observation.context_type,
+                    aggregate_context_observation.geography_type,
+                    aggregate_context_observation.geography_name,
+                    aggregate_context_observation.amount AS reported_amount_total,
+                    aggregate_context_observation.record_count AS source_record_count,
+                    aggregate_context_observation.reporting_period_start,
+                    aggregate_context_observation.reporting_period_end,
+                    aggregate_context_observation.attribution_scope,
+                    aggregate_context_observation.caveat,
+                    source_document.id AS source_document_id,
+                    source_document.source_name AS source_document_name,
+                    source_document.url AS source_url,
+                    source_document.final_url AS source_final_url,
+                    source_document.sha256 AS source_document_sha256,
+                    source_document.fetched_at AS source_document_fetched_at
+                FROM aggregate_context_observation
+                JOIN jurisdiction
+                  ON jurisdiction.id = aggregate_context_observation.jurisdiction_id
+                LEFT JOIN source_document
+                  ON source_document.id = aggregate_context_observation.source_document_id
+                WHERE aggregate_context_observation.source_dataset = 'nsw_electoral_disclosures'
+                  AND aggregate_context_observation.is_current IS TRUE
+                  {level_filter}
+                ORDER BY aggregate_context_observation.amount DESC NULLS LAST,
+                    aggregate_context_observation.record_count DESC NULLS LAST,
+                    aggregate_context_observation.geography_name
+                LIMIT %s
+                """,
+                (*params, limit),
+            )
 
     return _jsonable(
         {
             "status": "ok",
-            "source_family": "qld_ecq_eds",
-            "jurisdiction": "Queensland",
+            "source_family": "state_local_disclosures",
+            "jurisdiction": "Loaded state/local coverage",
             "requested_level": level or "all",
             "db_level": db_level or "all",
             "totals_by_level": totals_rows,
@@ -2127,6 +2208,14 @@ def get_state_local_summary(
             "top_events": top_events,
             "top_local_electorates": top_local_electorates,
             "recent_records": recent_records,
+            "aggregate_context_totals": aggregate_context_totals,
+            "top_aggregate_donor_locations": top_aggregate_donor_locations,
+            "aggregate_context_caveat": (
+                "NSW aggregate context rows are official donor-location totals from a "
+                "static NSW Electoral Commission heatmap. They are not donor-recipient "
+                "money-flow rows and must not be attributed to a representative, "
+                "candidate, councillor, or party unless another source supports that link."
+            ),
             "caveat": (
                 "Queensland ECQ EDS rows are state/local disclosure records. "
                 "Gift and donation rows are source-backed money records; electoral "

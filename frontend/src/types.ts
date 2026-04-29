@@ -160,6 +160,44 @@ export type StateLocalSummaryTotalRow = {
   local_electorate_context_backed_count: number;
 };
 
+export type StateLocalAggregateTotalRow = {
+  jurisdiction_name: string;
+  jurisdiction_level: string;
+  jurisdiction_code: string;
+  source_dataset: string;
+  context_type: string;
+  aggregate_context_count: number;
+  source_record_count: number | null;
+  reported_amount_total: number | null;
+  reporting_period_start: string | null;
+  reporting_period_end: string | null;
+  source_document_count: number;
+  latest_source_fetched_at: string | null;
+};
+
+export type StateLocalAggregateLocationRow = {
+  id: number;
+  jurisdiction_name: string;
+  jurisdiction_level: string;
+  jurisdiction_code: string;
+  source_dataset: string;
+  context_type: string;
+  geography_type: string | null;
+  geography_name: string | null;
+  reported_amount_total: number | null;
+  source_record_count: number | null;
+  reporting_period_start: string | null;
+  reporting_period_end: string | null;
+  attribution_scope: string | null;
+  caveat: string | null;
+  source_document_id: number | null;
+  source_document_name: string | null;
+  source_url: string | null;
+  source_final_url: string | null;
+  source_document_sha256: string | null;
+  source_document_fetched_at: string | null;
+};
+
 export type StateLocalSummaryRecord = {
   id: number;
   jurisdiction_name: string;
@@ -233,6 +271,9 @@ export type StateLocalSummaryResponse = {
   top_events: StateLocalSummaryContextRow[];
   top_local_electorates: StateLocalSummaryContextRow[];
   recent_records: StateLocalSummaryRecord[];
+  aggregate_context_totals: StateLocalAggregateTotalRow[];
+  top_aggregate_donor_locations: StateLocalAggregateLocationRow[];
+  aggregate_context_caveat: string;
   caveat: string;
 };
 

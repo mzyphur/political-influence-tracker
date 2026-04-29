@@ -260,6 +260,49 @@ def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_pa
     assert "qld_ecq_eds_api_local_electorates" in calls["context_lookup_metadata_paths"]
 
 
+def test_state_local_nsw_pipeline_records_aggregate_context_steps(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr("au_politics_money.pipeline._git_commit", lambda: "ghi789")
+    monkeypatch.setattr("au_politics_money.pipeline._dependency_versions", lambda: {})
+
+    def fake_write_manifest(manifest):
+        calls["manifest"] = manifest
+        return "manifest.json"
+
+    def fake_fetch_source(source):
+        return f"fetch:{source.source_id}"
+
+    def fake_normalize_nsw_heatmap(*, metadata_path):
+        calls["heatmap_metadata_path"] = str(metadata_path)
+        return "nsw-heatmap-summary"
+
+    monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
+    monkeypatch.setattr("au_politics_money.pipeline.fetch_source", fake_fetch_source)
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_nsw_pre_election_donor_location_heatmap",
+        fake_normalize_nsw_heatmap,
+    )
+
+    assert run_state_local_pipeline(jurisdiction="nsw", smoke=True) == "manifest.json"
+
+    manifest = calls["manifest"]
+    assert manifest.pipeline_name == "state_local"
+    assert manifest.git_commit == "ghi789"
+    assert manifest.parameters["jurisdiction"] == "nsw"
+    assert manifest.parameters["source_family"] == "nsw_electoral_disclosures"
+    assert manifest.parameters["loads_database"] is False
+    assert "aggregate context" in manifest.parameters["claim_boundary"]
+    assert [step.name for step in manifest.steps] == [
+        "fetch_nsw_electoral_disclosure_sources",
+        "normalize_nsw_pre_election_donor_location_heatmap",
+    ]
+    fetched_sources = set(manifest.steps[0].output["metadata_paths"].values())
+    assert "fetch:nsw_2023_state_election_pre_election_donations" in fetched_sources
+    assert "fetch:nsw_2023_state_election_donation_heatmap" in fetched_sources
+    assert calls["heatmap_metadata_path"] == "fetch:nsw_2023_state_election_donation_heatmap"
+
+
 def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:
     with pytest.raises(ValueError, match="Unsupported state/local jurisdiction"):
-        run_state_local_pipeline(jurisdiction="nsw")
+        run_state_local_pipeline(jurisdiction="wa")

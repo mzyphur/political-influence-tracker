@@ -109,6 +109,18 @@ exactly one existing QLD entity has the same normalized name. Candidate/elector
 name-only matches remain `needs_review` until event, electorate, or role context
 supports the identity. Duplicate lookup names and ambiguous matches also remain
 `needs_review`; the original free-text money-flow evidence is not overwritten.
+
+The first NSW adapter is intentionally narrower. It archives the official NSW
+Electoral Commission 2023 State Election pre-election donation page and static
+heatmap, then normalizes the embedded district table into
+`data/processed/nsw_pre_election_donor_location_aggregates/`. Current normalized
+coverage is 94 donor-location aggregate rows, 5,077 disclosed donations, and
+$6,477,605.56 in reported amounts for the 1 Oct 2022 to 25 Mar 2023
+pre-election period. These rows are stored as `aggregate_context_observation`
+records, not `money_flow` records, because the heatmap does not identify the
+recipient, donor entity, candidate, party, or MP for each aggregate row. The
+public UI and API must label this family as aggregate donor-location context,
+not representative receipt or donor-recipient flow.
 Donors are ECQ-identifier-backed only when they also appear in an accepted ECQ
 participant lookup record.
 
@@ -180,10 +192,12 @@ followed by `load-postgres` so the serving database is updated from the newest
 reproducible artifacts. `--include-vote-divisions` should be added only when a
 They Vote For You API key is configured.
 
-Federal-only scheduled loads use `load-postgres --skip-qld-ecq` unless the QLD
-ECQ fetch/normalize steps also ran. QLD state/local public summaries filter to
-current `money_flow` rows, but the schedule should still avoid refreshing a
-state/local source family from stale processed artifacts.
+Federal-only scheduled loads use `load-postgres --skip-qld-ecq
+--skip-nsw-aggregates` unless the relevant state/local fetch/normalize steps
+also ran. QLD state/local public summaries filter to current `money_flow` rows,
+and NSW aggregate summaries filter to current `aggregate_context_observation`
+rows, but the schedule should still avoid refreshing a state/local source
+family from stale processed artifacts.
 
 Routine update jobs should run the serving-database QA gate after loading:
 

@@ -51,6 +51,8 @@ import type {
   RepresentativeProfile,
   SearchResponse,
   SearchResult,
+  StateLocalAggregateLocationRow,
+  StateLocalAggregateTotalRow,
   StateLocalSummaryContextRow,
   StateLocalSummaryEntityRow,
   StateLocalSummaryRecord,
@@ -1049,6 +1051,11 @@ function StateLocalSummaryPanel({
         ECQ gift/donation rows are money records. Expenditure rows are campaign activity
         incurred by an actor, not money personally received by an MP, councillor, or candidate.
       </p>
+      <StateLocalAggregateContext
+        totals={summary.aggregate_context_totals}
+        rows={summary.top_aggregate_donor_locations}
+        caveat={summary.aggregate_context_caveat}
+      />
       <StateLocalRecentRecords
         rows={mergedRecentRows}
         totalCount={recordPage.totalCount}
@@ -1092,6 +1099,61 @@ function StateLocalSummaryPanel({
         </p>
       </details>
     </div>
+  );
+}
+
+function StateLocalAggregateContext({
+  totals,
+  rows,
+  caveat
+}: {
+  totals: StateLocalAggregateTotalRow[];
+  rows: StateLocalAggregateLocationRow[];
+  caveat: string;
+}) {
+  if (totals.length === 0 && rows.length === 0) return null;
+  const aggregateAmount = totals.reduce(
+    (sum, row) => sum + numberValue(row.reported_amount_total),
+    0
+  );
+  const aggregateRecordCount = totals.reduce(
+    (sum, row) => sum + numberValue(row.source_record_count),
+    0
+  );
+  const firstTotal = totals[0];
+  const period =
+    firstTotal?.reporting_period_start && firstTotal.reporting_period_end
+      ? `${formatCompactDate(firstTotal.reporting_period_start)}-${formatCompactDate(
+          firstTotal.reporting_period_end
+        )}`
+      : "Period not disclosed";
+
+  return (
+    <section className="state-summary-list state-local-aggregate-context">
+      <div className="state-summary-list-heading">
+        <h3>NSW donor-location aggregate context</h3>
+        <span>{period}</span>
+      </div>
+      <div className="state-summary-money-row">
+        <span>Aggregate rows</span>
+        <strong>{totals.reduce((sum, row) => sum + numberValue(row.aggregate_context_count), 0)}</strong>
+        <span>Underlying donations</span>
+        <strong>{aggregateRecordCount.toLocaleString("en-AU")}</strong>
+        <span>Reported amount</span>
+        <strong>{formatMoney(aggregateAmount)}</strong>
+      </div>
+      <p className="state-local-inline-caveat">{caveat}</p>
+      {rows.slice(0, 5).map((row) => (
+        <div className="state-summary-row" key={row.id}>
+          <strong>{row.geography_name ?? "Unknown donor location"}</strong>
+          <span>
+            {formatMoney(row.reported_amount_total)} ·{" "}
+            {numberValue(row.source_record_count).toLocaleString("en-AU")} disclosed donations
+          </span>
+          <span>Aggregate donor-location context, not a recipient or representative attribution.</span>
+        </div>
+      ))}
+    </section>
   );
 }
 
@@ -1269,6 +1331,15 @@ function formatCompactDateTime(value: string | null): string {
   return new Intl.DateTimeFormat("en-AU", {
     dateStyle: "medium",
     timeStyle: "short"
+  }).format(parsed);
+}
+
+function formatCompactDate(value: string | null): string {
+  if (!value) return "not available";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return new Intl.DateTimeFormat("en-AU", {
+    dateStyle: "medium"
   }).format(parsed);
 }
 
