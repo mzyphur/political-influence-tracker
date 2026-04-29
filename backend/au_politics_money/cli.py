@@ -500,6 +500,7 @@ def fetch_abn_lookup_web_command(
 
 def run_pipeline_command(
     smoke: bool,
+    refresh_existing_sources: bool,
     skip_house_pdfs: bool,
     skip_pdf_text: bool,
     include_votes: bool,
@@ -508,6 +509,7 @@ def run_pipeline_command(
 ) -> int:
     manifest_path = run_federal_foundation_pipeline(
         smoke=smoke,
+        refresh_existing_sources=refresh_existing_sources,
         skip_house_pdfs=skip_house_pdfs,
         skip_pdf_text=skip_pdf_text,
         include_votes=include_votes,
@@ -522,6 +524,7 @@ def load_postgres_command(
     apply_schema_first: bool,
     skip_roster: bool,
     skip_money_flows: bool,
+    skip_qld_ecq: bool,
     skip_house_interests: bool,
     skip_senate_interests: bool,
     skip_electorate_boundaries: bool,
@@ -540,6 +543,7 @@ def load_postgres_command(
         apply_schema_first=apply_schema_first,
         include_roster=not skip_roster,
         include_money_flows=not skip_money_flows,
+        include_qld_ecq=not skip_qld_ecq,
         include_house_interests=not skip_house_interests,
         include_senate_interests=not skip_senate_interests,
         include_electorate_boundaries=not skip_electorate_boundaries,
@@ -890,6 +894,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     pipeline_parser = subparsers.add_parser("run-federal-foundation-pipeline")
     pipeline_parser.add_argument("--smoke", action="store_true")
+    pipeline_parser.add_argument(
+        "--refresh-existing-sources",
+        action="store_true",
+        help=(
+            "Refetch sources that usually reuse a valid raw snapshot. Scheduled "
+            "update runs should enable this so changed official records produce "
+            "new hashes and downstream current/withdrawn flags."
+        ),
+    )
     pipeline_parser.add_argument("--skip-house-pdfs", action="store_true")
     pipeline_parser.add_argument("--skip-pdf-text", action="store_true")
     pipeline_parser.add_argument("--include-votes", action="store_true")
@@ -900,6 +913,14 @@ def build_parser() -> argparse.ArgumentParser:
     load_parser.add_argument("--apply-schema", action="store_true")
     load_parser.add_argument("--skip-roster", action="store_true")
     load_parser.add_argument("--skip-money-flows", action="store_true")
+    load_parser.add_argument(
+        "--skip-qld-ecq",
+        action="store_true",
+        help=(
+            "Skip Queensland ECQ state/local artifacts during this load. Federal-only "
+            "scheduled runs should use this unless the QLD fetch/normalize steps ran."
+        ),
+    )
     load_parser.add_argument("--skip-house-interests", action="store_true")
     load_parser.add_argument("--skip-senate-interests", action="store_true")
     load_parser.add_argument("--skip-electorate-boundaries", action="store_true")
@@ -1062,6 +1083,7 @@ def main() -> int:
     if args.command == "run-federal-foundation-pipeline":
         return run_pipeline_command(
             args.smoke,
+            args.refresh_existing_sources,
             args.skip_house_pdfs,
             args.skip_pdf_text,
             args.include_votes,
@@ -1073,6 +1095,7 @@ def main() -> int:
             args.apply_schema,
             args.skip_roster,
             args.skip_money_flows,
+            args.skip_qld_ecq,
             args.skip_house_interests,
             args.skip_senate_interests,
             args.skip_electorate_boundaries,

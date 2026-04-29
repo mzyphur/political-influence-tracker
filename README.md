@@ -159,10 +159,12 @@ The main federal workflow is now a single auditable command:
 
 ```bash
 cd backend
-.venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline
+.venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline --refresh-existing-sources
 ```
 
 It writes a run manifest under `data/audit/pipeline_runs/`.
+Scheduled federal runs use this refresh mode so update-sensitive cached sources
+are fetched again and source checksum changes become new auditable snapshots.
 
 The pipeline currently archives and normalizes:
 

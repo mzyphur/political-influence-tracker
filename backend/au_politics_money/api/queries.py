@@ -1254,6 +1254,7 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             JOIN jurisdiction
               ON jurisdiction.id = money_flow.jurisdiction_id
             WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+              AND money_flow.is_current IS TRUE
             GROUP BY jurisdiction.name, jurisdiction.level, jurisdiction.code
             ORDER BY jurisdiction.level, jurisdiction.name
             """,
@@ -1485,6 +1486,7 @@ def _qld_summary_rows(
               AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
         ) identifier_counts ON TRUE
         WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+          AND money_flow.is_current IS TRUE
           AND money_flow.metadata->>'flow_kind' = %s
           {level_filter}
         GROUP BY entity.id, COALESCE(entity.canonical_name, money_flow.{raw_name_column})
@@ -1555,6 +1557,7 @@ def _qld_context_summary_rows(
         JOIN jurisdiction
           ON jurisdiction.id = money_flow.jurisdiction_id
         WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+          AND money_flow.is_current IS TRUE
           AND money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'status' = 'matched'
           {level_filter}
         GROUP BY
@@ -1649,6 +1652,7 @@ def get_state_local_summary(
             JOIN jurisdiction
               ON jurisdiction.id = money_flow.jurisdiction_id
             WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+              AND money_flow.is_current IS TRUE
               {level_filter}
             GROUP BY jurisdiction.name, jurisdiction.level, jurisdiction.code
             ORDER BY jurisdiction.level, jurisdiction.name

@@ -32,7 +32,8 @@ Production-style full run:
 ```bash
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
 .venv/bin/dotenv -f .env run -- \
-  .venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline --include-votes
+  .venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline \
+    --refresh-existing-sources --include-votes
 ```
 
 Development smoke run:
@@ -110,8 +111,10 @@ cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Dr
 
 Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command
-also loads QLD ECQ EDS rows and participant identifiers when money-flow loading
-is enabled.
+also loads QLD ECQ EDS rows and participant identifiers by default, but
+federal-only scheduled runs use `load-postgres --skip-qld-ecq` so stale QLD
+artifacts are not promoted when the QLD fetch/normalize steps did not run.
+Public QLD API summaries read only `money_flow.is_current = true` rows.
 
 ECQ gift/donation rows are money records. ECQ expenditure rows are
 campaign-support records with event type `state_local_electoral_expenditure`;
@@ -160,7 +163,12 @@ Run it from cron, systemd, launchd, or a CI runner.
 The script loads `backend/.env` and includes optional vote ingestion only when
 `THEY_VOTE_FOR_YOU_API_KEY` or `TVFY_API_KEY` is present. When neither key is
 set, the weekly run writes a `weekly_federal_votes_<timestamp>.skipped.log`
-file and still refreshes the rest of the federal database.
+file and still refreshes the rest of the federal database. The federal pipeline
+runs with `--refresh-existing-sources`, so update-sensitive cached sources such
+as AEC postcode lookups, current AEC boundaries, and official APH
+decision-record documents are fetched again instead of being silently reused.
+The weekly federal load also uses `--skip-qld-ecq`; QLD state/local rows should
+be refreshed by the QLD-specific commands above.
 After loading, the script runs `qa-serving-database`. That QA gate fails the
 weekly run before the database is treated as releasable if core serving
 invariants break, including missing House boundaries, active events pointing at
@@ -168,6 +176,10 @@ non-current source rows, obvious House form/OCR boilerplate in public events,
 official APH vote-count mismatches, or unexpected unmatched official APH votes.
 The default unmatched-vote tolerance is 25 rows, currently above the 11 known
 unmatched official APH roster-vote rows in the local baseline.
+
+New backend virtual environments created by the weekly runner and CI install
+with `backend/requirements.lock` as a constraints file. Update that file
+intentionally when dependency upgrades are part of the work.
 
 Example cron entry for a server using UTC, running Sundays at 18:00 UTC
 which is Monday morning in eastern Australia depending on daylight saving:

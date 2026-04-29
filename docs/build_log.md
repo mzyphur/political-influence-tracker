@@ -94,6 +94,26 @@ Completed:
   metrics now use a 2-by-2 grid so labels such as "Electorates" do not collide,
   and representative profiles now expose compact sector, vote-topic, and
   reviewed source-policy overlap signals with an explicit non-causation caveat.
+- Added scheduled-source refresh hardening. `run-federal-foundation-pipeline`
+  now supports `--refresh-existing-sources`, the weekly runner enables it, and
+  cached AEC postcode, AEC boundary, and official APH decision-record document
+  sources are refetched on scheduled runs rather than silently reused.
+- Added backend dependency constraints with `backend/requirements.lock` and
+  made CI/new weekly virtualenv installs use it as the reproducible install
+  baseline.
+- Hardened QLD state/local public summaries so they only read current
+  `money_flow` rows, and made the federal weekly load use `--skip-qld-ecq` so
+  stale QLD processed artifacts are not promoted unless the QLD refresh steps
+  ran.
+- Bound House PDF text extraction to the latest APH House interests
+  discovered-link manifest. Cached PDFs absent from the current APH index are
+  ignored during extraction, allowing prior House register rows to remain
+  non-current instead of being republished.
+- Softened public network language in the app from "influence graph" toward
+  "evidence network", renamed "Non-rejected records" to "Published records",
+  added visible non-causation caveats, and expanded the methodology page with
+  a plain-English "what this can show / cannot prove / how to read arrows"
+  summary.
 - Added `docs/theory_of_influence.md` as the standing theory/methodology layer
   connecting engineering decisions to mechanisms of influence, democratic
   transparency, operating hypotheses, allowed claims, non-claims, and the

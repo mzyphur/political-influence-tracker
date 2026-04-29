@@ -1538,6 +1538,7 @@ def _qld_ecq_eds_entity_ids_by_normalized_name(conn, normalized_name: str) -> li
                   SELECT 1
                   FROM money_flow
                   WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+                    AND money_flow.is_current IS TRUE
                     AND (
                         money_flow.source_entity_id = entity.id
                         OR money_flow.recipient_entity_id = entity.id
@@ -1573,6 +1574,7 @@ def _qld_identifier_coverage_counts(conn) -> dict[str, int]:
                 ) AS recipient_identifier_backed_rows
             FROM money_flow
             WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+              AND money_flow.is_current IS TRUE
             """
         )
         row = cur.fetchone()
@@ -1924,6 +1926,7 @@ def load_qld_ecq_eds_contexts(conn, jsonl_path: Path | None = None) -> dict[str,
             SELECT id, metadata
             FROM money_flow
             WHERE metadata->>'source_dataset' = 'qld_ecq_eds'
+              AND is_current IS TRUE
             ORDER BY id
             """
         )
@@ -5380,6 +5383,7 @@ def load_processed_artifacts(
     apply_schema_first: bool = False,
     include_roster: bool = True,
     include_money_flows: bool = True,
+    include_qld_ecq: bool = True,
     include_house_interests: bool = True,
     include_senate_interests: bool = True,
     include_electorate_boundaries: bool = True,
@@ -5409,9 +5413,10 @@ def load_processed_artifacts(
             summary["money_flows"] = load_aec_money_flows(conn)
             summary["election_money_flows"] = load_aec_election_money_flows(conn)
             summary["public_funding_money_flows"] = load_aec_public_funding_money_flows(conn)
-            summary["qld_ecq_eds_money_flows"] = load_qld_ecq_eds_money_flows(conn)
-            summary["qld_ecq_eds_participants"] = load_qld_ecq_eds_participants(conn)
-            summary["qld_ecq_eds_contexts"] = load_qld_ecq_eds_contexts(conn)
+            if include_qld_ecq:
+                summary["qld_ecq_eds_money_flows"] = load_qld_ecq_eds_money_flows(conn)
+                summary["qld_ecq_eds_participants"] = load_qld_ecq_eds_participants(conn)
+                summary["qld_ecq_eds_contexts"] = load_qld_ecq_eds_contexts(conn)
         if include_house_interests:
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:

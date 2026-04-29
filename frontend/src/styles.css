@@ -1039,6 +1039,14 @@ a:focus-visible {
   font-size: 12px;
 }
 
+.rep-row small {
+  color: rgba(67, 82, 90, 0.86);
+  font-size: 10.5px;
+  font-weight: 800;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
 .contact-popover {
   display: grid;
   gap: 10px;
@@ -1494,6 +1502,14 @@ a:focus-visible {
   margin: 0;
   color: var(--ink-muted);
   font-size: 12px;
+}
+
+.influence-graph-header .graph-interpretation-note {
+  max-width: 560px;
+  margin-top: 4px;
+  color: #51636b;
+  font-size: 11.5px;
+  line-height: 1.35;
 }
 
 .candidate-toggle {

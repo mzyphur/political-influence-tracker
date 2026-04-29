@@ -37,8 +37,8 @@ export function EntityProfilePanel({
             <button
               className="icon-button"
               type="button"
-              aria-label={`Open influence graph for ${profile.entity.canonical_name}`}
-              title="Open source-backed influence graph"
+              aria-label={`Open evidence network for ${profile.entity.canonical_name}`}
+              title="Open source-backed evidence network"
               onClick={() => onOpenGraph(profile.entity.id, profile.entity.canonical_name)}
             >
               <Network size={15} aria-hidden="true" />

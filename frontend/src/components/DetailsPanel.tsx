@@ -171,14 +171,23 @@ export function DetailsPanel({
                       <div>
                         <strong>{representative.display_name}</strong>
                         <span>{representative.party_name || "No party recorded"}</span>
+                        <small>
+                          {representative.chamber}
+                          {representative.state_or_territory
+                            ? ` · ${representative.state_or_territory}`
+                            : ""}
+                          {representative.term_start
+                            ? ` · term from ${representative.term_start}`
+                            : ""}
+                        </small>
                       </div>
                       <ArrowRight size={16} aria-hidden="true" />
                     </button>
                     <button
                       className="graph-open-button"
                       type="button"
-                      aria-label={`Open influence graph for ${representative.display_name}`}
-                      title="Open source-backed influence graph"
+                      aria-label={`Open evidence network for ${representative.display_name}`}
+                      title="Open source-backed evidence network"
                       onClick={() =>
                         onOpenRepresentativeGraph(
                           representative.person_id,
@@ -206,11 +215,15 @@ export function DetailsPanel({
       </section>
 
       <section className="panel-section">
-        <h3>Representative-Linked Context</h3>
+        <h3>Representative-Linked Disclosures</h3>
+        <p className="scope-caption">
+          Published rows are source-backed records that have not been rejected by review.
+          Counts are descriptive and do not imply wrongdoing.
+        </p>
         <div className="fact-grid">
           <Fact
             icon={<CheckCircle2 size={17} />}
-            label="Non-rejected records"
+            label="Published records"
             value={properties.current_representative_lifetime_influence_event_count.toLocaleString("en-AU")}
             tooltip="Backend filter: influence_event rows linked to the current representative where review_status is not rejected. This is a disclosed-record count, not a wrongdoing claim."
           />

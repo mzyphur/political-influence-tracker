@@ -9,20 +9,79 @@ import pdfplumber
 import pytesseract
 
 from au_politics_money.config import PROCESSED_DIR, RAW_DIR
+from au_politics_money.ingest.discovered_sources import child_source_id
+from au_politics_money.ingest.discovery import latest_discovered_links_path, read_discovered_links
 
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def latest_metadata_by_source_prefix(prefix: str, raw_dir: Path = RAW_DIR) -> list[Path]:
+def _parent_source_id_from_prefix(prefix: str) -> str | None:
+    if "__" not in prefix:
+        return None
+    parent_source_id = prefix.split("__", maxsplit=1)[0].strip()
+    return parent_source_id or None
+
+
+def latest_discovered_source_ids_for_prefix(
+    prefix: str,
+    *,
+    processed_dir: Path = PROCESSED_DIR,
+) -> tuple[set[str] | None, Path | None]:
+    parent_source_id = _parent_source_id_from_prefix(prefix)
+    if parent_source_id is None:
+        return None, None
+    links_path = latest_discovered_links_path(parent_source_id, processed_dir=processed_dir)
+    if links_path is None:
+        return None, None
+    source_ids = {
+        child_source_id(parent_source_id, link)
+        for link in read_discovered_links(links_path)
+        if child_source_id(parent_source_id, link).startswith(prefix)
+    }
+    return source_ids, links_path
+
+
+def latest_metadata_by_source_prefix(
+    prefix: str,
+    raw_dir: Path = RAW_DIR,
+    processed_dir: Path = PROCESSED_DIR,
+    restrict_to_latest_discovery: bool = True,
+) -> tuple[list[Path], dict[str, object]]:
+    active_source_ids: set[str] | None = None
+    active_manifest_path: Path | None = None
+    if restrict_to_latest_discovery:
+        active_source_ids, active_manifest_path = latest_discovered_source_ids_for_prefix(
+            prefix,
+            processed_dir=processed_dir,
+        )
+
     latest: dict[str, Path] = {}
     for metadata_path in raw_dir.glob(f"{prefix}*/**/metadata.json"):
         source_dir = metadata_path.parent.parent.name
+        if active_source_ids is not None and source_dir not in active_source_ids:
+            continue
         previous = latest.get(source_dir)
         if previous is None or metadata_path.parent.name > previous.parent.name:
             latest[source_dir] = metadata_path
-    return [latest[key] for key in sorted(latest)]
+    all_source_ids = {
+        metadata_path.parent.parent.name
+        for metadata_path in raw_dir.glob(f"{prefix}*/**/metadata.json")
+    }
+    inactive_filtered_count = (
+        len(all_source_ids - active_source_ids)
+        if active_source_ids is not None
+        else 0
+    )
+    return [latest[key] for key in sorted(latest)], {
+        "active_discovered_manifest_path": str(active_manifest_path) if active_manifest_path else "",
+        "active_discovered_source_count": (
+            len(active_source_ids) if active_source_ids is not None else None
+        ),
+        "inactive_cached_source_count": inactive_filtered_count,
+        "restricted_to_latest_discovery": active_source_ids is not None,
+    }
 
 
 def _ocr_page(page: pdfplumber.page.Page, resolution: int = 150) -> str:
@@ -85,7 +144,11 @@ def extract_pdf_text_batch(
     raw_dir: Path = RAW_DIR,
     processed_dir: Path = PROCESSED_DIR,
 ) -> Path:
-    metadata_paths = latest_metadata_by_source_prefix(prefix, raw_dir=raw_dir)
+    metadata_paths, selection_metadata = latest_metadata_by_source_prefix(
+        prefix,
+        raw_dir=raw_dir,
+        processed_dir=processed_dir,
+    )
     if limit is not None:
         metadata_paths = metadata_paths[:limit]
 
@@ -119,6 +182,7 @@ def extract_pdf_text_batch(
         "page_count": page_count,
         "ocr_page_count": ocr_page_count,
         "jsonl_path": str(jsonl_path),
+        **selection_metadata,
     }
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return summary_path

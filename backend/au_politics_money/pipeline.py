@@ -251,6 +251,7 @@ def _write_manifest(manifest: PipelineManifest) -> Path:
 def run_federal_foundation_pipeline(
     *,
     smoke: bool = False,
+    refresh_existing_sources: bool = False,
     skip_house_pdfs: bool = False,
     skip_pdf_text: bool = False,
     include_votes: bool = False,
@@ -268,6 +269,7 @@ def run_federal_foundation_pipeline(
         dependency_versions=_dependency_versions(),
         parameters={
             "smoke": smoke,
+            "refresh_existing_sources": refresh_existing_sources,
             "skip_house_pdfs": skip_house_pdfs,
             "skip_pdf_text": skip_pdf_text,
             "include_votes": include_votes,
@@ -331,13 +333,19 @@ def run_federal_foundation_pipeline(
         ("normalize_aec_public_funding", normalize_aec_public_funding),
         (
             "fetch_aec_electorate_finder_postcodes",
-            lambda: fetch_aec_electorate_finder_postcodes(postcode_seed),
+            lambda: fetch_aec_electorate_finder_postcodes(
+                postcode_seed,
+                refetch=refresh_existing_sources,
+            ),
         ),
         (
             "normalize_aec_electorate_finder_postcodes",
             lambda: normalize_aec_electorate_finder_postcodes(postcode_seed),
         ),
-        ("fetch_current_aec_boundaries_zip", fetch_current_aec_boundary_zip),
+        (
+            "fetch_current_aec_boundaries_zip",
+            lambda: fetch_current_aec_boundary_zip(refetch=refresh_existing_sources),
+        ),
         ("extract_aec_federal_boundaries", extract_current_aec_boundaries),
         ("fetch_aims_australian_coastline_zip", fetch_aims_australian_coastline_zip),
         (
@@ -362,7 +370,7 @@ def run_federal_foundation_pipeline(
         (
             "fetch_aph_decision_record_documents",
             lambda: fetch_aph_decision_record_documents(
-                only_missing=True,
+                only_missing=not refresh_existing_sources,
                 limit=decision_record_document_limit,
             ),
         ),

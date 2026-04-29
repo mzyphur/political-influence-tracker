@@ -38,8 +38,8 @@ export function PartyProfilePanel({
             <button
               className="icon-button"
               type="button"
-              aria-label={`Open influence graph for ${profile.party.name}`}
-              title="Open source-backed influence graph"
+              aria-label={`Open evidence network for ${profile.party.name}`}
+              title="Open source-backed evidence network"
               onClick={() => onOpenGraph(profile.party.id, partyDisplayName(profile))}
             >
               <Network size={15} aria-hidden="true" />

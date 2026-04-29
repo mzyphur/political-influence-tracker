@@ -1097,6 +1097,22 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                     "Gift",
                     "qld_gift",
                     qld_state_id,
+                    True,
+                    {
+                        "event_name": "2026 Stafford State By-election",
+                        "flow_kind": "qld_gift",
+                        "source_dataset": "qld_ecq_eds",
+                    },
+                ),
+                (
+                    "pytest-qld-state-gift-withdrawn",
+                    "QLD Donor",
+                    "QLD Recipient",
+                    9900,
+                    "Gift",
+                    "qld_gift",
+                    qld_state_id,
+                    False,
                     {
                         "event_name": "2026 Stafford State By-election",
                         "flow_kind": "qld_gift",
@@ -1111,6 +1127,7 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                     "Electoral Expenditure",
                     "qld_electoral_expenditure",
                     qld_local_id,
+                    True,
                     {
                         "event_name": "2028 Local Government Elections",
                         "flow_kind": "qld_electoral_expenditure",
@@ -1128,6 +1145,7 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                     receipt_type,
                     flow_kind,
                     jurisdiction_id,
+                    is_current,
                     metadata,
                 ) = row
                 cur.execute(
@@ -1137,11 +1155,11 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                         recipient_entity_id, recipient_raw_name, amount,
                         receipt_type, disclosure_category, jurisdiction_id,
                         source_document_id, source_row_ref, original_text,
-                        confidence, metadata
+                        confidence, is_current, metadata
                     )
                     VALUES (
                         %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        'resolved', %s
+                        'resolved', %s, %s
                     )
                     """,
                     (
@@ -1157,6 +1175,7 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                         source_document_id,
                         external_key,
                         "{}",
+                        is_current,
                         Jsonb(metadata),
                     ),
                 )
@@ -1266,6 +1285,7 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert state_summary["top_gift_donors"][0]["name"] == "QLD Donor"
     assert state_summary["top_gift_donors"][0]["identifier_backed"] is True
     assert state_summary["totals_by_level"][0]["gift_or_donation_reported_amount_total"] == 100
+    assert state_summary["top_gift_donors"][0]["reported_amount_total"] == 100
     assert state_summary["totals_by_level"][0]["electoral_expenditure_reported_amount_total"] == 0
     assert state_summary["totals_by_level"][0]["event_context_backed_count"] == 1
     assert state_summary["top_events"][0]["external_id"] == "100"

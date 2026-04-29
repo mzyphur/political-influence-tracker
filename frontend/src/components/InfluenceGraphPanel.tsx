@@ -52,12 +52,16 @@ export function InfluenceGraphPanel({
   if (!root || status === "idle") return null;
 
   return (
-    <section className="influence-graph-panel" aria-label="Political influence graph">
+    <section className="influence-graph-panel" aria-label="Evidence network">
       <div className="influence-graph-header">
         <div>
-          <span className="result-type">Influence graph</span>
+          <span className="result-type">Evidence network</span>
           <h2>{root.label}</h2>
           <p>{graphSubtitle(root, graph)}</p>
+          <p className="graph-interpretation-note">
+            Connections show disclosed records, reviewed links, or labelled estimates. They do not
+            prove causation or improper conduct.
+          </p>
         </div>
         <div className="graph-header-actions">
           {canToggleCandidates && (
@@ -70,7 +74,7 @@ export function InfluenceGraphPanel({
               <span>Review candidates</span>
             </label>
           )}
-          <button className="icon-button" type="button" aria-label="Close influence graph" onClick={onClose}>
+          <button className="icon-button" type="button" aria-label="Close evidence network" onClick={onClose}>
             <X size={15} aria-hidden="true" />
           </button>
         </div>
@@ -79,14 +83,14 @@ export function InfluenceGraphPanel({
       {status === "loading" && (
         <p className="muted inline-loading">
           <Loader2 size={14} className="spin" aria-hidden="true" />
-          Loading source-backed graph
+          Loading source-backed network
         </p>
       )}
 
       {status === "error" && (
         <div className="graph-error" role="alert">
           <AlertCircle size={16} aria-hidden="true" />
-          <span>{error || "Could not load influence graph."}</span>
+          <span>{error || "Could not load evidence network."}</span>
         </div>
       )}
 
@@ -95,11 +99,11 @@ export function InfluenceGraphPanel({
           <div className="graph-summary-row" aria-label="Graph summary">
             <span>
               <Network size={15} aria-hidden="true" />
-              {graph.node_count.toLocaleString("en-AU")} nodes
+              {graph.node_count.toLocaleString("en-AU")} actors
             </span>
             <span>
               <CheckCircle2 size={15} aria-hidden="true" />
-              {reviewedEdgeCount(graph).toLocaleString("en-AU")} reviewed/context edges
+              {reviewedEdgeCount(graph).toLocaleString("en-AU")} reviewed/context connections
             </span>
             <span>
               <CircleDashed size={15} aria-hidden="true" />
@@ -113,7 +117,7 @@ export function InfluenceGraphPanel({
                 className="influence-graph-svg"
                 viewBox={`0 0 ${width} ${height}`}
                 role="img"
-                aria-label="Network graph of disclosed political influence relationships"
+                aria-label="Network diagram of disclosed records, reviewed links, and context estimates"
               >
                 <defs>
                   <marker
@@ -142,7 +146,7 @@ export function InfluenceGraphPanel({
                         className="graph-edge-hit"
                         role="button"
                         tabIndex={0}
-                        aria-label={`Inspect relationship: ${edgeLabel(edge, graph.nodes)}`}
+                        aria-label={`Inspect connection: ${edgeLabel(edge, graph.nodes)}`}
                         onMouseEnter={() => setSelectedEdgeId(edge.id)}
                         onFocus={() => setSelectedEdgeId(edge.id)}
                         onClick={() => setSelectedEdgeId(edge.id)}
@@ -189,14 +193,14 @@ export function InfluenceGraphPanel({
               </svg>
               <div className="graph-legend" aria-label="Graph legend">
                 <span><i data-kind="money" /> Public disclosure flow</span>
-                <span><i data-kind="reviewed" /> Reviewed party link</span>
-                <span><i data-kind="context" /> Modelled/context path</span>
+                <span><i data-kind="reviewed" /> Reviewed party connection</span>
+                <span><i data-kind="context" /> Modelled/context pathway</span>
                 <span><i data-kind="candidate" /> Candidate, needs review</span>
               </div>
             </div>
 
             <div className="graph-inspector">
-              <h3>Selected relationship</h3>
+              <h3>Selected connection</h3>
               {selectedEdge ? (
                 <GraphEdgeCard edge={selectedEdge} />
               ) : (
@@ -204,7 +208,7 @@ export function InfluenceGraphPanel({
               )}
               {selectedNode && (
                 <div className="graph-node-card">
-                  <small>Selected node</small>
+                  <small>Selected actor</small>
                   <strong>{selectedNode.label}</strong>
                   <span>{selectedNode.type.replaceAll("_", " ")}</span>
                 </div>
@@ -212,7 +216,7 @@ export function InfluenceGraphPanel({
             </div>
           </div>
 
-          <div className="graph-edge-list" aria-label="Top graph relationships">
+          <div className="graph-edge-list" aria-label="Top network connections">
             {graph.edges.slice(0, 8).map((edge) => (
               <button
                 key={edge.id}
@@ -352,8 +356,8 @@ function candidateEdgeCount(graph: InfluenceGraph) {
 
 function graphSubtitle(root: GraphRoot, graph: InfluenceGraph | null) {
   const scope = root.kind === "person" ? "representative" : root.kind;
-  if (!graph) return `Loading ${scope} relationships`;
-  return `${graph.edge_count.toLocaleString("en-AU")} source-backed, reviewed, and modelled context relationships around this ${scope}`;
+  if (!graph) return `Loading ${scope} connections`;
+  return `${graph.edge_count.toLocaleString("en-AU")} source-backed, reviewed, and modelled context connections around this ${scope}`;
 }
 
 function truncateLabel(label: string, maxLength: number) {
@@ -364,7 +368,7 @@ function truncateLabel(label: string, maxLength: number) {
 function nodeTooltip(node: InfluenceGraphNode) {
   return [
     node.label,
-    `Node type: ${node.type.replaceAll("_", " ")}`,
+    `Actor type: ${node.type.replaceAll("_", " ")}`,
     node.entity_type ? `Entity type: ${node.entity_type}` : null
   ]
     .filter(Boolean)

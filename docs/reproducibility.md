@@ -148,11 +148,22 @@ or marked rejected if another claim-evidence table still references them. This
 preserves auditability and manual-review history while preventing corrected or
 withdrawn source records from staying in public totals.
 
+House PDF text extraction is also bound to the latest APH House interests
+discovered-link manifest. Cached PDF snapshots whose source IDs are absent from
+the current APH index are ignored by the text-extraction stage, so they cannot
+be re-parsed and reloaded as current House register rows after APH withdraws or
+renames a PDF.
+
 When `--apply-schema` is used, the loader applies the baseline schema and then
 all additive migrations. Routine weekly runs should use `migrate-postgres`
 followed by `load-postgres` so the serving database is updated from the newest
 reproducible artifacts. `--include-vote-divisions` should be added only when a
 They Vote For You API key is configured.
+
+Federal-only scheduled loads use `load-postgres --skip-qld-ecq` unless the QLD
+ECQ fetch/normalize steps also ran. QLD state/local public summaries filter to
+current `money_flow` rows, but the schedule should still avoid refreshing a
+state/local source family from stale processed artifacts.
 
 Routine update jobs should run the serving-database QA gate after loading:
 
@@ -361,6 +372,9 @@ Recommended initial schedule:
 
 - Weekly full run.
 - Weekly PostgreSQL migration and reload after the full run.
+- Use `run-federal-foundation-pipeline --refresh-existing-sources` for scheduled
+  federal updates so cached but update-sensitive sources are fetched again and
+  checksum changes are captured.
 - Daily lightweight source-index check.
 - Manual review queue after each run.
 - Manual review decisions stored separately from machine-produced records.
@@ -378,8 +392,11 @@ Recommended initial schedule:
   sector-policy link replay.
 - Alert on source checksum changes, parser failures, large count shifts, or new
   unparsed source formats.
-- For official APH decision records, weekly runs should refetch current
-  representation URLs with `--only-missing` for routine operation, and full
-  refetches should be scheduled periodically to detect changed hashes. The
-  database links source-document snapshots by checksum so changed public bodies
-  are added as new evidence rather than overwriting prior raw evidence.
+- For official APH decision records, scheduled federal runs refetch current
+  representation URLs through `--refresh-existing-sources`; smoke/development
+  runs may use cache-friendly `only_missing` behavior. The database links
+  source-document snapshots by checksum so changed public bodies are added as
+  new evidence rather than overwriting prior raw evidence.
+- Backend dependency versions used by CI and new weekly-runner virtual
+  environments are constrained by `backend/requirements.lock`. Treat updates to
+  that file as intentional reproducibility changes.

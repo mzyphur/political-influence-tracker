@@ -125,15 +125,15 @@
       h1 {
         max-width: 780px;
         margin-bottom: 16px;
-        font-size: clamp(32px, 4.8vw, 56px);
-        line-height: 1.02;
+        font-size: clamp(28px, 3.6vw, 42px);
+        line-height: 1.08;
         letter-spacing: 0;
       }
 
       .lede {
         max-width: 720px;
         color: #33484f;
-        font-size: clamp(18px, 2.1vw, 25px);
+        font-size: clamp(16px, 1.7vw, 20px);
         line-height: 1.35;
       }
 
@@ -143,6 +143,31 @@
         color: var(--muted);
         font-size: 15px;
         line-height: 1.55;
+      }
+
+      .plain-summary {
+        display: grid;
+        gap: 10px;
+        margin: 22px 0 0;
+      }
+
+      .plain-summary div {
+        border: 1px solid rgba(22, 115, 124, 0.16);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.68);
+        padding: 12px 13px;
+      }
+
+      .plain-summary strong {
+        display: block;
+        margin-bottom: 3px;
+      }
+
+      .plain-summary p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+        line-height: 1.42;
       }
 
       .hero-diagram {
@@ -442,7 +467,7 @@
           <a href="/">Explorer</a>
           <a href="#read-network">How to read it</a>
           <a href="#mechanisms">Mechanisms</a>
-          <a href="#network">Network model</a>
+          <a href="#network">Pathways</a>
           <a href="#claims">Claim discipline</a>
         </div>
       </nav>
@@ -461,11 +486,25 @@
             public record supports, distinguish direct evidence from inferred
             exposure, and keep missing or legally aggregated data visible.
           </p>
+          <div class="plain-summary" aria-label="Plain English summary">
+            <div>
+              <strong>What this can show</strong>
+              <p>Who disclosed money, gifts, hospitality, interests, campaign support, or access, and which public source backs the record.</p>
+            </div>
+            <div>
+              <strong>What it cannot prove by itself</strong>
+              <p>A disclosure record does not automatically prove bribery, personal receipt, causation, or improper conduct.</p>
+            </div>
+            <div>
+              <strong>How to read the arrows</strong>
+              <p>Arrows mean a recorded connection or labelled estimate, not a claim that one actor controlled another.</p>
+            </div>
+          </div>
         </div>
 
-        <div class="panel hero-diagram" aria-label="Influence network overview diagram">
+        <div class="panel hero-diagram" aria-label="Evidence network overview diagram">
           <svg class="network-svg" viewBox="0 0 780 540" role="img" aria-labelledby="network-title network-desc">
-            <title id="network-title">Influence paths from sources to representatives</title>
+            <title id="network-title">Evidence pathways from sources to representatives</title>
             <desc id="network-desc">
               Diagram showing direct, party-mediated, access, and policy behaviour paths.
             </desc>
@@ -479,7 +518,7 @@
             </defs>
 
             <rect x="20" y="18" width="740" height="502" rx="24" fill="#fbfcf8" stroke="#d8e1de"></rect>
-            <text x="54" y="64" fill="#14242b" font-size="25" font-weight="850">Typed influence network</text>
+            <text x="54" y="64" fill="#14242b" font-size="25" font-weight="850">Evidence network</text>
             <text x="54" y="92" fill="#5a6a70" font-size="15">Every connection stores evidence type, confidence, source, and claim limits.</text>
 
             <g stroke="#31535b" stroke-width="3.2" stroke-linecap="round" marker-end="url(#arrow)" fill="none">
@@ -592,7 +631,7 @@
             <div class="term-card">
               <span>Connection</span>
               <strong>Network term: edge</strong>
-              A source-backed relationship such as a donation, gift, office role,
+              A source-backed record or relationship such as a donation, gift, office role,
               lobbying registration, party support link, or reviewed entity match.
             </div>
             <div class="term-card">
@@ -675,15 +714,15 @@
         </article>
 
         <article class="panel" id="network">
-          <h2>Network Logic</h2>
+          <h2>Pathway Logic</h2>
           <p>
-            The network model makes indirect pathways visible while preserving evidence
+            The pathway model makes indirect connections visible while preserving evidence
             boundaries. For example, Commonwealth Bank to ALP to an MP can be shown
             as a party-mediated exposure pathway only when the records support each
             connection.
           </p>
           <svg class="flow-diagram" viewBox="0 0 700 360" role="img" aria-labelledby="flow-title flow-desc">
-            <title id="flow-title">Direct and indirect influence paths</title>
+            <title id="flow-title">Direct and indirect disclosure pathways</title>
             <desc id="flow-desc">A diagram separating direct, party-mediated, and modelled paths.</desc>
             <defs>
               <marker id="small-arrow" markerWidth="10" markerHeight="10" refX="8.5" refY="5" orient="auto">

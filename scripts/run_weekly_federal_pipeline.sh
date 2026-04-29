@@ -13,11 +13,11 @@ cd "${BACKEND_DIR}"
 
 if [[ ! -x ".venv/bin/python" ]]; then
   python3 -m venv .venv
-  .venv/bin/python -m pip install -e '.[dev]'
+  .venv/bin/python -m pip install -c requirements.lock -e '.[dev]'
 fi
 
-PIPELINE_ARGS=(run-federal-foundation-pipeline)
-LOAD_ARGS=(load-postgres)
+PIPELINE_ARGS=(run-federal-foundation-pipeline --refresh-existing-sources)
+LOAD_ARGS=(load-postgres --skip-qld-ecq)
 if .venv/bin/dotenv -f .env run -- \
   bash -c 'test -n "${THEY_VOTE_FOR_YOU_API_KEY:-${TVFY_API_KEY:-}}"'; then
   PIPELINE_ARGS+=(--include-votes)
