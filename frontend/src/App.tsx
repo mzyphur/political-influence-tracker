@@ -119,42 +119,65 @@ const emptyStateLocalRecordPage = (): StateLocalRecordPage => ({
 const stateLocalFlowFilterOptions: Array<{
   value: StateLocalFlowFilter;
   label: string;
+  jurisdictions?: string[];
 }> = [
   { value: "all", label: "All" },
-  { value: "qld_gift", label: "QLD gifts" },
-  { value: "wa_political_contribution", label: "WA contributions" },
-  { value: "tas_reportable_donation", label: "TAS donations" },
-  { value: "tas_reportable_loan", label: "TAS loans" },
-  { value: "act_gift_of_money", label: "ACT money gifts" },
-  { value: "act_gift_in_kind", label: "ACT in-kind gifts" },
-  { value: "act_annual_gift_of_money", label: "ACT annual money gifts" },
-  { value: "act_annual_gift_in_kind", label: "ACT annual in-kind gifts" },
-  { value: "act_annual_free_facilities_use", label: "ACT free facilities" },
-  { value: "act_annual_receipt", label: "ACT annual receipts" },
-  { value: "nt_annual_gift", label: "NT gifts" },
-  { value: "nt_annual_receipt", label: "NT receipts" },
-  { value: "nt_donor_return_donation", label: "NT donor returns" },
-  { value: "nt_annual_debt", label: "NT debts" },
-  { value: "sa_candidate_campaign_donations_return_summary", label: "SA candidate returns" },
-  { value: "sa_political_party_return_summary", label: "SA party returns" },
-  { value: "sa_donor_return_summary", label: "SA donor returns" },
-  { value: "sa_associated_entity_return_summary", label: "SA associated entities" },
-  { value: "sa_special_large_gift_return_summary", label: "SA large gifts" },
-  { value: "sa_capped_expenditure_return_summary", label: "SA capped spend" },
+  { value: "qld_gift", label: "QLD gifts", jurisdictions: ["QLD"] },
+  { value: "wa_political_contribution", label: "WA contributions", jurisdictions: ["WA"] },
+  { value: "tas_reportable_donation", label: "TAS donations", jurisdictions: ["TAS"] },
+  { value: "tas_reportable_loan", label: "TAS loans", jurisdictions: ["TAS"] },
+  { value: "act_gift_of_money", label: "ACT money gifts", jurisdictions: ["ACT"] },
+  { value: "act_gift_in_kind", label: "ACT in-kind gifts", jurisdictions: ["ACT"] },
+  { value: "act_annual_gift_of_money", label: "ACT annual money gifts", jurisdictions: ["ACT"] },
+  { value: "act_annual_gift_in_kind", label: "ACT annual in-kind gifts", jurisdictions: ["ACT"] },
+  { value: "act_annual_free_facilities_use", label: "ACT free facilities", jurisdictions: ["ACT"] },
+  { value: "act_annual_receipt", label: "ACT annual receipts", jurisdictions: ["ACT"] },
+  { value: "nt_annual_gift", label: "NT gifts", jurisdictions: ["NT"] },
+  { value: "nt_annual_receipt", label: "NT receipts", jurisdictions: ["NT"] },
+  { value: "nt_donor_return_donation", label: "NT donor returns", jurisdictions: ["NT"] },
+  { value: "nt_annual_debt", label: "NT debts", jurisdictions: ["NT"] },
+  {
+    value: "sa_candidate_campaign_donations_return_summary",
+    label: "SA candidate returns",
+    jurisdictions: ["SA"]
+  },
+  { value: "sa_political_party_return_summary", label: "SA party returns", jurisdictions: ["SA"] },
+  { value: "sa_donor_return_summary", label: "SA donor returns", jurisdictions: ["SA"] },
+  {
+    value: "sa_associated_entity_return_summary",
+    label: "SA associated entities",
+    jurisdictions: ["SA"]
+  },
+  { value: "sa_special_large_gift_return_summary", label: "SA large gifts", jurisdictions: ["SA"] },
+  { value: "sa_capped_expenditure_return_summary", label: "SA capped spend", jurisdictions: ["SA"] },
   {
     value: "sa_third_party_capped_expenditure_return_summary",
-    label: "SA third-party spend"
+    label: "SA third-party spend",
+    jurisdictions: ["SA"]
   },
-  { value: "sa_third_party_return_summary", label: "SA third parties" },
-  { value: "sa_prescribed_expenditure_return_summary", label: "SA prescribed spend" },
+  { value: "sa_third_party_return_summary", label: "SA third parties", jurisdictions: ["SA"] },
+  {
+    value: "sa_prescribed_expenditure_return_summary",
+    label: "SA prescribed spend",
+    jurisdictions: ["SA"]
+  },
   {
     value: "sa_annual_political_expenditure_return_summary",
-    label: "SA annual political spend"
+    label: "SA annual political spend",
+    jurisdictions: ["SA"]
   },
-  { value: "qld_electoral_expenditure", label: "QLD spend" },
-  { value: "vic_public_funding_payment", label: "VIC public funding" },
-  { value: "vic_administrative_funding_entitlement", label: "VIC admin funding" },
-  { value: "vic_policy_development_funding_payment", label: "VIC policy funding" }
+  { value: "qld_electoral_expenditure", label: "QLD spend", jurisdictions: ["QLD"] },
+  { value: "vic_public_funding_payment", label: "VIC public funding", jurisdictions: ["VIC"] },
+  {
+    value: "vic_administrative_funding_entitlement",
+    label: "VIC admin funding",
+    jurisdictions: ["VIC"]
+  },
+  {
+    value: "vic_policy_development_funding_payment",
+    label: "VIC policy funding",
+    jurisdictions: ["VIC"]
+  }
 ];
 
 const levelLabels: Record<DataLevel, string> = {
@@ -918,14 +941,32 @@ function StateLocalSummaryPanel({
   const levelName = level === "council" ? "local/council" : level;
   const activeJurisdictionCode = jurisdictionCode === "All" ? undefined : jurisdictionCode;
   const jurisdictionLabel = activeJurisdictionCode ?? "all jurisdictions";
+  const visibleFlowFilterOptions = useMemo(
+    () =>
+      stateLocalFlowFilterOptions.filter(
+        (option) =>
+          option.value === "all" ||
+          !activeJurisdictionCode ||
+          !option.jurisdictions ||
+          option.jurisdictions.includes(activeJurisdictionCode)
+      ),
+    [activeJurisdictionCode]
+  );
   const [recordFlowFilter, setRecordFlowFilter] =
     useState<StateLocalFlowFilter>("all");
   const [recordPage, setRecordPage] = useState<StateLocalRecordPage>(
     emptyStateLocalRecordPage
   );
   const recordFetchRef = useRef<AbortController | null>(null);
-  const activeFlowKind = recordFlowFilter === "all" ? undefined : recordFlowFilter;
-  const summaryRecentRows = recordFlowFilter === "all" ? summary?.recent_records ?? [] : [];
+  const effectiveRecordFlowFilter = visibleFlowFilterOptions.some(
+    (option) => option.value === recordFlowFilter
+  )
+    ? recordFlowFilter
+    : "all";
+  const activeFlowKind =
+    effectiveRecordFlowFilter === "all" ? undefined : effectiveRecordFlowFilter;
+  const summaryRecentRows =
+    effectiveRecordFlowFilter === "all" ? summary?.recent_records ?? [] : [];
   const mergedRecentRows = useMemo(
     () => mergeStateLocalRecords(summaryRecentRows, recordPage.records),
     [recordPage.records, summaryRecentRows]
@@ -940,10 +981,16 @@ function StateLocalSummaryPanel({
     Boolean(nextRecordCursor);
 
   useEffect(() => {
+    if (!visibleFlowFilterOptions.some((option) => option.value === recordFlowFilter)) {
+      setRecordFlowFilter("all");
+    }
+  }, [recordFlowFilter, visibleFlowFilterOptions]);
+
+  useEffect(() => {
     recordFetchRef.current?.abort();
     setRecordPage(emptyStateLocalRecordPage());
     if (
-      recordFlowFilter === "all" ||
+      effectiveRecordFlowFilter === "all" ||
       status !== "ready" ||
       !summary ||
       summary.totals_by_level.length === 0
@@ -986,6 +1033,7 @@ function StateLocalSummaryPanel({
   }, [
     activeFlowKind,
     activeJurisdictionCode,
+    effectiveRecordFlowFilter,
     level,
     recordFlowFilter,
     status,
@@ -1177,7 +1225,8 @@ function StateLocalSummaryPanel({
             totalCount={recordPage.totalCount}
             status={recordPage.status}
             error={recordPage.error}
-            flowFilter={recordFlowFilter}
+            flowFilter={effectiveRecordFlowFilter}
+            flowFilterOptions={visibleFlowFilterOptions}
             canLoadMore={canLoadMoreRecords}
             onFlowFilterChange={setRecordFlowFilter}
             onLoadMore={loadMoreRecords}
@@ -1296,6 +1345,7 @@ function StateLocalRecentRecords({
   status,
   error,
   flowFilter,
+  flowFilterOptions,
   canLoadMore,
   onFlowFilterChange,
   onLoadMore
@@ -1305,6 +1355,10 @@ function StateLocalRecentRecords({
   status: LoadState;
   error: string;
   flowFilter: StateLocalFlowFilter;
+  flowFilterOptions: Array<{
+    value: StateLocalFlowFilter;
+    label: string;
+  }>;
   canLoadMore: boolean;
   onFlowFilterChange: (filter: StateLocalFlowFilter) => void;
   onLoadMore: () => void;
@@ -1314,7 +1368,7 @@ function StateLocalRecentRecords({
       <div className="state-summary-list-heading">
         <h3>Recent source rows</h3>
         <div className="state-summary-filter-tabs" aria-label="State/local row type filter">
-          {stateLocalFlowFilterOptions.map((option) => (
+          {flowFilterOptions.map((option) => (
             <button
               type="button"
               className={option.value === flowFilter ? "active" : ""}

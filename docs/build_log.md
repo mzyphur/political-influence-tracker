@@ -18,6 +18,11 @@ Completed:
   artifact into a database load. The frontend declaration label now counts only
   URL-backed declaration documents, so statuses such as `failed_to_lodge` do
   not inflate the archived-document denominator.
+- Made the state/local recent-row filter jurisdiction-aware. When users choose
+  TAS, ACT, WA, NT, SA, VIC, or QLD, the row-type chips now show only flow
+  families that can exist in that jurisdiction, while `All` still exposes the
+  cross-jurisdiction list. This avoids inviting users into empty combinations
+  such as TAS plus QLD expenditure.
 - Tightened the representative evidence-card display so the public pane no
   longer repeats invariant workflow labels (`official_record_parsed`,
   `needs_review`, default not-disclosed amount status, or numeric register
