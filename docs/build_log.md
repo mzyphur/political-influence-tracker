@@ -208,6 +208,10 @@ Completed:
   disclosure entity now open the existing entity profile and influence graph
   surfaces from State or Council mode, while source-only free-text rows remain
   displayed as unresolved source names.
+- Increased the representative-profile evidence payloads exposed by the API.
+  The UI remains compact by default, but selected representatives can now reveal
+  more direct person-linked records and more campaign/party-channelled support
+  rows without implying that campaign-support rows are personal receipts.
 
 Verification:
 

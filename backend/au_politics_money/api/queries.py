@@ -2145,7 +2145,7 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
                 influence_event.event_date DESC NULLS LAST,
                 influence_event.date_reported DESC NULLS LAST,
                 influence_event.id DESC
-            LIMIT 50
+            LIMIT 200
             """,
             (person_id,),
         )
@@ -2216,7 +2216,7 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
                 influence_event.event_date DESC NULLS LAST,
                 influence_event.date_reported DESC NULLS LAST,
                 influence_event.id DESC
-            LIMIT 25
+            LIMIT 100
             """,
             (person_id,),
         )
