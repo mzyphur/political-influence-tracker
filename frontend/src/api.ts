@@ -100,7 +100,8 @@ export async function fetchStateLocalRecords(options: {
     | "sa_third_party_return_summary"
     | "vic_administrative_funding_entitlement"
     | "vic_policy_development_funding_payment"
-    | "vic_public_funding_payment";
+    | "vic_public_funding_payment"
+    | "wa_political_contribution";
   cursor?: string;
   limit?: number;
   signal?: AbortSignal;

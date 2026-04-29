@@ -162,15 +162,29 @@ Notes:
 Official source:
 https://www.elections.wa.gov.au/returns-and-reports
 
+Current adapter status: `run-state-local-pipeline --jurisdiction wa` archives
+the WAEC Online Disclosure System public dashboard and fetches the published
+political contribution entity-grid JSON. It normalizes
+donor-to-political-entity contribution rows into
+`data/processed/waec_political_contribution_money_flows/`.
+
 Priority data families:
 
 - annual returns and election returns;
 - gifts, income, expenditure, and electoral reimbursements;
-- Online Disclosure System entries where accessible;
+- Online Disclosure System entries where accessible (political contributions
+  are implemented first);
 - local-government disclosure duties where records are obtainable.
 
 Notes:
 
+- WAEC political contribution rows expose donor, political entity, contribution
+  type, amount, financial year, public donor postcode, status, version, and
+  disclosure-received date. The disclosure-received date is not necessarily the
+  contribution transaction date.
+- Original-version rows are counted as source-row observations. Amendment or
+  other versioned rows are preserved but excluded from reported totals until
+  amendment lineage and deduplication rules are validated.
 - WAEC states that local-government candidates and donors have disclosure duties,
   but also directs queries to local government CEOs. That means council coverage
   may require a hybrid adapter: state-level index plus council-by-council record

@@ -14,6 +14,8 @@ SOURCE_IDS=(
   sa_ecsa_funding_disclosure
   sa_ecsa_funding2024_return_records
   waec_returns_reports
+  waec_ods_public_dashboard
+  waec_ods_political_contributions
   tas_tec_disclosure_funding
   nt_ntec_annual_returns
   act_elections_funding_disclosure

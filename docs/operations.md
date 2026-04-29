@@ -129,7 +129,8 @@ also loads QLD ECQ EDS rows and participant identifiers by default, but
 federal-only scheduled runs use `load-postgres --skip-qld-ecq
 --skip-nsw-aggregates --skip-act-gift-returns
 --skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
---skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register` so stale state/local artifacts are not
+--skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register
+--skip-waec-political-contributions` so stale state/local artifacts are not
 promoted when the state/local fetch/normalize steps did not run. Public
 state/local API summaries read only current rows.
 
@@ -263,6 +264,34 @@ election-day or calendar-period context dates; the normalized rows retain
 implementation run, the VEC public-donation portal redirected to the VEC
 maintenance page, so Victoria private-donation parsing remains pending.
 
+Western Australia is wired as a WAEC Online Disclosure System political
+contribution adapter:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction wa)
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli migrate-postgres
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+```
+
+The WA runner archives the official WAEC public dashboard, its anti-forgery
+token response, and the public Power Pages entity-grid JSON pages for published
+political contributions. The normalized rows are written under
+`data/processed/waec_political_contribution_money_flows/` and loaded as Western
+Australian state disclosure rows. Rows are donor-to-political-entity
+contribution disclosures, not personal receipt by an MP, senator, candidate, or
+councillor. WAEC exposes a disclosure-received date in the parsed grid; that is
+stored as `date_reported` with a date caveat, while the contribution
+transaction date remains blank unless a later source field supports it.
+Original-version rows are counted as source-row observations. Amendment or
+other versioned rows are preserved with their source amount in metadata but are
+excluded from reported amount totals until amendment lineage and deduplication
+rules are validated. Smoke runs fetch one grid page and produce incomplete
+artifacts; the manifest loader rejects incomplete WAEC summaries so a partial
+smoke artifact cannot be promoted as current coverage.
+
 ECQ gift/donation rows are money records. ECQ expenditure rows are
 campaign-support records with event type `state_local_electoral_expenditure`;
 they are campaign activity, not personal receipt by a representative.
@@ -317,8 +346,9 @@ decision-record documents are fetched again instead of being silently reused.
 The weekly federal load also uses
 `--skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns
 --skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
---skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register`; QLD, NSW,
-ACT, NT, SA, and VIC state/local rows should be refreshed by the
+--skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register
+--skip-waec-political-contributions`; QLD, NSW, ACT, NT, SA, VIC, and WA
+state/local rows should be refreshed by the
 jurisdiction-specific commands above.
 After loading, the script runs `qa-serving-database`. That QA gate fails the
 weekly run before the database is treated as releasable if core serving

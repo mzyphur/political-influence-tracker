@@ -83,7 +83,8 @@ type StateLocalFlowFilter =
   | "sa_third_party_return_summary"
   | "vic_administrative_funding_entitlement"
   | "vic_policy_development_funding_payment"
-  | "vic_public_funding_payment";
+  | "vic_public_funding_payment"
+  | "wa_political_contribution";
 type GraphRoot = {
   kind: "person" | "party" | "entity";
   id: number | string;
@@ -115,6 +116,7 @@ const stateLocalFlowFilterOptions: Array<{
 }> = [
   { value: "all", label: "All" },
   { value: "qld_gift", label: "QLD gifts" },
+  { value: "wa_political_contribution", label: "WA contributions" },
   { value: "act_gift_of_money", label: "ACT money gifts" },
   { value: "act_gift_in_kind", label: "ACT in-kind gifts" },
   { value: "nt_annual_gift", label: "NT gifts" },
@@ -1133,7 +1135,9 @@ function StateLocalSummaryPanel({
             incurred by an actor, not money personally received by an MP, councillor, or
             candidate. SA ECSA rows are return-level summaries and official report
             links, not detailed transaction rows. VEC funding rows are public money
-            context, not private donations or personal income.
+            context, not private donations or personal income. WAEC rows are
+            donor-to-political-entity contribution disclosures; their displayed date is when WAEC
+            received the disclosure, not necessarily the contribution date.
           </p>
         </>
       ) : null}
@@ -1155,12 +1159,12 @@ function StateLocalSummaryPanel({
             onLoadMore={loadMoreRecords}
           />
           <StateLocalRankList
-            title="Top gift and gift-in-kind donors"
+            title="Top gift and contribution donors"
             rows={summary.top_gift_donors}
             onOpenEntityProfile={onOpenEntityProfile}
           />
           <StateLocalRankList
-            title="Top gift and gift-in-kind recipients"
+            title="Top gift and contribution recipients"
             rows={summary.top_gift_recipients}
             onOpenEntityProfile={onOpenEntityProfile}
           />
@@ -1409,6 +1413,7 @@ function saReturnLabel(row: StateLocalSummaryRecord): string {
 function stateLocalRecordKind(row: StateLocalSummaryRecord): string {
   if (isSaEcsaReturnSummary(row)) return saReturnLabel(row);
   if (row.flow_kind === "qld_electoral_expenditure") return "Campaign spend incurred";
+  if (row.flow_kind === "wa_political_contribution") return "WA political contribution";
   if (row.flow_kind === "act_gift_in_kind") return "Gift-in-kind value";
   if (row.flow_kind === "act_gift_of_money") return "Gift of money";
   if (row.flow_kind === "nt_annual_gift") return "Annual gift over threshold";
@@ -1433,6 +1438,9 @@ function stateLocalRecordHeadline(row: StateLocalSummaryRecord): string {
   }
   if (row.flow_kind === "qld_electoral_expenditure") {
     return `${source} incurred electoral expenditure`;
+  }
+  if (row.flow_kind === "wa_political_contribution") {
+    return `${source} disclosed contribution to ${row.recipient_name || "political entity not identified"}`;
   }
   if (row.flow_kind === "act_gift_in_kind") {
     return `${source} provided a gift-in-kind to ${row.recipient_name || "recipient not identified"}`;
@@ -1490,6 +1498,9 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
       : null,
     row.flow_kind === "qld_electoral_expenditure"
       ? "Interpretation: expenditure incurred, not money received by the named actor."
+      : null,
+    row.flow_kind === "wa_political_contribution"
+      ? "Interpretation: WAEC political contribution row from a donor to a political entity. The row is not a personal receipt by an MP or senator, and the date is the disclosure-received date."
       : null,
     row.flow_kind === "nt_annual_gift"
       ? "Interpretation: NTEC annual gift received over the threshold; per-row gift date is not published in the source table."

@@ -33,6 +33,7 @@ STATE_LOCAL_MONEY_SOURCE_DATASETS = (
     "qld_ecq_eds",
     "sa_ecsa_funding_returns",
     "vic_vec_funding_register",
+    "waec_political_contributions",
 )
 SA_ECSA_RETURN_SUMMARY_FLOW_KINDS = (
     "sa_annual_political_expenditure_return_summary",
@@ -59,17 +60,20 @@ STATE_LOCAL_RECORD_FLOW_KINDS = {
     "vic_administrative_funding_entitlement",
     "vic_policy_development_funding_payment",
     "vic_public_funding_payment",
+    "wa_political_contribution",
 }
 STATE_LOCAL_GIFT_FLOW_KINDS = (
     "act_gift_in_kind",
     "act_gift_of_money",
     "nt_annual_gift",
     "qld_gift",
+    "wa_political_contribution",
 )
 STATE_LOCAL_MONEY_GIFT_FLOW_KINDS = (
     "act_gift_of_money",
     "nt_annual_gift",
     "qld_gift",
+    "wa_political_contribution",
 )
 STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS = (
     "vic_administrative_funding_entitlement",
@@ -1698,7 +1702,10 @@ def _qld_summary_rows(
             entity.id AS entity_id,
             COALESCE(entity.canonical_name, money_flow.{raw_name_column}) AS name,
             count(*) AS event_count,
-            sum(money_flow.amount) AS reported_amount_total,
+            sum(money_flow.amount) FILTER (
+                WHERE COALESCE(money_flow.metadata->>'public_amount_counting_role', '')
+                    <> 'versioned_observation_pending_dedupe'
+            ) AS reported_amount_total,
             COALESCE(max(identifier_counts.identifier_count), 0) AS identifier_count,
             bool_or(COALESCE(identifier_counts.identifier_count, 0) > 0)
                 AS identifier_backed
@@ -1717,7 +1724,13 @@ def _qld_summary_rows(
           AND money_flow.metadata->>'flow_kind' = ANY(%s)
           {level_filter}
         GROUP BY entity.id, COALESCE(entity.canonical_name, money_flow.{raw_name_column})
-        ORDER BY sum(money_flow.amount) DESC NULLS LAST, count(*) DESC, name
+        ORDER BY
+            sum(money_flow.amount) FILTER (
+                WHERE COALESCE(money_flow.metadata->>'public_amount_counting_role', '')
+                    <> 'versioned_observation_pending_dedupe'
+            ) DESC NULLS LAST,
+            count(*) DESC,
+            name
         LIMIT %s
         """,
         params,
@@ -1842,6 +1855,7 @@ def _qld_recent_money_flow_rows(
             money_flow.date_received,
             money_flow.date_reported,
             money_flow.source_row_ref,
+            money_flow.metadata->'original'->>'report_url' AS report_url,
             CASE
                 WHEN money_flow.metadata->>'source_dataset'
                      IN (
@@ -1860,7 +1874,10 @@ def _qld_recent_money_flow_rows(
                 AS description_of_goods_or_services,
             money_flow.metadata->>'purpose_of_expenditure' AS purpose_of_expenditure,
             money_flow.metadata->>'public_amount_counting_role' AS public_amount_counting_role,
+            money_flow.metadata->>'date_caveat' AS date_caveat,
+            money_flow.metadata->>'caveat' AS record_caveat,
             money_flow.metadata->'campaign_support_attribution' AS campaign_support_attribution,
+            money_flow.metadata->'public_funding_context' AS public_funding_context,
             EXISTS (
                 SELECT 1
                 FROM entity_identifier
@@ -2092,8 +2109,10 @@ def get_state_local_records(
                 "gift-return or Commonwealth records until cross-source deduplication "
                 "exists; SA ECSA current funding portal rows are return-level index "
                 "summaries and official report links, not detailed transaction rows "
-                "or personal receipts; Queensland expenditure is campaign-support context, not "
-                "personal receipt; VEC funding-register "
+                "or personal receipts; WAEC political contribution rows are "
+                "donor-to-political-entity disclosures and use the disclosure-received "
+                "date, not necessarily a contribution transaction date; Queensland "
+                "expenditure is campaign-support context, not personal receipt; VEC funding-register "
                 "rows are public "
                 "funding/admin/policy context, not private donations or personal "
                 "income, and some VEC dates are election-day or calendar-period "
@@ -2150,6 +2169,10 @@ def get_state_local_summary(
                     ELSE sum(money_flow.amount) FILTER (
                         WHERE money_flow.amount IS NOT NULL
                           AND money_flow.metadata->>'flow_kind' = ANY(%s)
+                          AND COALESCE(
+                              money_flow.metadata->>'public_amount_counting_role',
+                              ''
+                          ) <> 'versioned_observation_pending_dedupe'
                     )
                 END AS gift_or_donation_reported_amount_total,
                 CASE
@@ -2422,7 +2445,9 @@ def get_state_local_summary(
                 "receipts, debts, and donor-return donations are source-row context "
                 "that remains excluded from consolidated totals until cross-source "
                 "deduplication exists; ACT gift-in-kind rows are reported non-cash "
-                "values; Queensland electoral expenditure rows are campaign-support "
+                "values; WAEC political contribution rows are source-backed "
+                "donor-to-political-entity disclosures with disclosure-received dates "
+                "rather than transaction dates; Queensland electoral expenditure rows are campaign-support "
                 "context and not personal receipt; VEC funding-register rows are public "
                 "funding/admin/policy-funding context, not private donations or personal "
                 "income, and VEC says affected material is under review after Hopper & "

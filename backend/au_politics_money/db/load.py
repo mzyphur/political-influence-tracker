@@ -87,6 +87,11 @@ from au_politics_money.ingest.vic_vec import (
     SOURCE_DATASET as VIC_VEC_SOURCE_DATASET,
     VIC_VEC_PUBLIC_FUNDING_FLOW_KINDS,
 )
+from au_politics_money.ingest.waec import (
+    CONTRIBUTIONS_SOURCE_ID as WAEC_CONTRIBUTIONS_SOURCE_ID,
+    PARSER_NAME as WAEC_CONTRIBUTIONS_PARSER_NAME,
+    SOURCE_DATASET as WAEC_SOURCE_DATASET,
+)
 
 STATE_CODES = {
     "Australian Capital Territory": "ACT",
@@ -1953,6 +1958,108 @@ def load_sa_ecsa_return_summary_money_flows(
     )
 
 
+def _waec_jsonl_path_from_complete_summary(
+    summary_path: Path,
+    *,
+    expected_summary_sha256: str = "",
+) -> Path:
+    actual_summary_sha256 = _sha256_path(summary_path)
+    if expected_summary_sha256 and actual_summary_sha256 != expected_summary_sha256:
+        raise ValueError(
+            f"Summary hash mismatch for {summary_path}: "
+            f"manifest={expected_summary_sha256} actual={actual_summary_sha256}"
+        )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("source_dataset") != WAEC_SOURCE_DATASET:
+        raise ValueError(
+            f"Unexpected WAEC source_dataset in {summary_path}: "
+            f"{summary.get('source_dataset')!r}"
+        )
+    if summary.get("source_id") != WAEC_CONTRIBUTIONS_SOURCE_ID:
+        raise ValueError(
+            f"Unexpected WAEC source_id in {summary_path}: {summary.get('source_id')!r}"
+        )
+    total_count = int(summary.get("total_count") or 0)
+    if not summary.get("complete_page_coverage"):
+        raise ValueError(f"WAEC contribution summary is not complete: {summary_path}")
+    counts = summary.get("source_counts")
+    if counts != {WAEC_CONTRIBUTIONS_SOURCE_ID: total_count}:
+        raise ValueError(
+            f"WAEC contribution source_counts do not match total_count in {summary_path}"
+        )
+    source_metadata_path = Path(str(summary.get("source_metadata_path") or ""))
+    source_body_path = Path(str(summary.get("source_body_path") or ""))
+    expected_source_metadata_sha256 = str(summary.get("source_metadata_sha256") or "")
+    expected_source_body_sha256 = str(summary.get("source_body_sha256") or "")
+    if not expected_source_metadata_sha256:
+        raise ValueError(f"WAEC summary is missing source_metadata_sha256: {summary_path}")
+    if not expected_source_body_sha256:
+        raise ValueError(f"WAEC summary is missing source_body_sha256: {summary_path}")
+    actual_source_metadata_sha256 = _sha256_path(source_metadata_path)
+    if actual_source_metadata_sha256 != expected_source_metadata_sha256:
+        raise ValueError(
+            f"WAEC source metadata hash mismatch for {source_metadata_path}: "
+            f"summary={expected_source_metadata_sha256} actual={actual_source_metadata_sha256}"
+        )
+    actual_source_body_sha256 = _sha256_path(source_body_path)
+    if actual_source_body_sha256 != expected_source_body_sha256:
+        raise ValueError(
+            f"WAEC source body hash mismatch for {source_body_path}: "
+            f"summary={expected_source_body_sha256} actual={actual_source_body_sha256}"
+        )
+    source_metadata = json.loads(source_metadata_path.read_text(encoding="utf-8"))
+    source = source_metadata.get("source")
+    source_id = source.get("source_id") if isinstance(source, dict) else None
+    if source_id != WAEC_CONTRIBUTIONS_SOURCE_ID:
+        raise ValueError(
+            f"Unexpected WAEC source metadata source_id in {source_metadata_path}: "
+            f"{source_id!r}"
+        )
+    metadata_body_sha256 = str(source_metadata.get("sha256") or "")
+    if metadata_body_sha256 and metadata_body_sha256 != expected_source_body_sha256:
+        raise ValueError(
+            f"WAEC metadata/body hash mismatch for {source_metadata_path}: "
+            f"metadata={metadata_body_sha256} summary={expected_source_body_sha256}"
+        )
+    return _jsonl_path_from_summary(
+        summary_path,
+        WAEC_CONTRIBUTIONS_PARSER_NAME,
+        expected_summary_sha256=expected_summary_sha256,
+        expected_source_keys={WAEC_CONTRIBUTIONS_SOURCE_ID},
+        source_count_field="source_counts",
+    )
+
+
+def _latest_complete_waec_political_contribution_jsonl() -> Path:
+    directory = PROCESSED_DIR / "waec_political_contribution_money_flows"
+    candidates = sorted(directory.glob("*.summary.json"), reverse=True)
+    if not candidates:
+        raise FileNotFoundError(f"No WAEC political contribution summary files in {directory}")
+    for summary_path in candidates:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        if summary.get("complete_page_coverage") and int(summary.get("total_count") or 0) > 0:
+            return _waec_jsonl_path_from_complete_summary(summary_path)
+    raise FileNotFoundError(f"No complete WAEC political contribution summaries in {directory}")
+
+
+def load_waec_political_contribution_money_flows(
+    conn,
+    jsonl_path: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        path = jsonl_path or _latest_complete_waec_political_contribution_jsonl()
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_waec_political_contribution_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(
+        conn,
+        path,
+        default_source_dataset=WAEC_SOURCE_DATASET,
+    )
+
+
 def _validate_nsw_aggregate_source_hashes(record: dict[str, Any]) -> None:
     metadata_path_value = str(record.get("source_metadata_path") or "")
     body_path_value = str(record.get("source_body_path") or "")
@@ -2745,6 +2852,29 @@ def sa_ecsa_return_summary_path_from_pipeline_manifest(manifest_path: Path) -> P
     )
 
 
+def waec_political_contribution_path_from_pipeline_manifest(manifest_path: Path) -> Path:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("pipeline_name") != "state_local":
+        raise ValueError("Expected a state_local pipeline manifest")
+    parameters = manifest.get("parameters")
+    if (
+        not isinstance(parameters, dict)
+        or parameters.get("source_family") != WAEC_SOURCE_DATASET
+    ):
+        raise ValueError("Expected a WAEC contribution state/local manifest")
+    if parameters.get("loads_database") is not False:
+        raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+
+    summary_path, summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_waec_political_contributions",
+    )
+    return _waec_jsonl_path_from_complete_summary(
+        summary_path,
+        expected_summary_sha256=summary_sha256,
+    )
+
+
 def load_qld_ecq_eds_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2874,6 +3004,28 @@ def load_sa_ecsa_from_pipeline_manifest(
     return summary
 
 
+def load_waec_from_pipeline_manifest(
+    conn,
+    manifest_path: Path,
+    *,
+    include_influence_events: bool = True,
+) -> dict[str, Any]:
+    path = waec_political_contribution_path_from_pipeline_manifest(manifest_path)
+    summary: dict[str, Any] = {
+        "pipeline_manifest_path": str(manifest_path),
+        "artifact_paths": {"money_flows": str(path)},
+        "waec_political_contribution_money_flows": (
+            load_waec_political_contribution_money_flows(
+                conn,
+                jsonl_path=path,
+            )
+        ),
+    }
+    if include_influence_events:
+        summary["influence_events"] = load_influence_events(conn)
+    return summary
+
+
 def load_state_local_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2911,6 +3063,12 @@ def load_state_local_from_pipeline_manifest(
         )
     if source_family == VIC_VEC_SOURCE_DATASET:
         return load_vic_vec_from_pipeline_manifest(
+            conn,
+            manifest_path,
+            include_influence_events=include_influence_events,
+        )
+    if source_family == WAEC_SOURCE_DATASET:
+        return load_waec_from_pipeline_manifest(
             conn,
             manifest_path,
             include_influence_events=include_influence_events,
@@ -4902,6 +5060,9 @@ def load_influence_events(conn) -> dict[str, Any]:
         jurisdictional_cross_disclosure_observation = (
             public_amount_counting_role == "jurisdictional_cross_disclosure_observation"
         )
+        versioned_observation_pending_dedupe = (
+            public_amount_counting_role == "versioned_observation_pending_dedupe"
+        )
         campaign_expenditure = event_type == "campaign_expenditure"
         flags = missing_money_flags(
             source_raw_name=source_raw_name or "",
@@ -4913,6 +5074,8 @@ def load_influence_events(conn) -> dict[str, Any]:
             flags.append("duplicate_disclosure_observation_not_counted_in_reported_total")
         if jurisdictional_cross_disclosure_observation:
             flags.append("jurisdictional_cross_disclosure_not_counted_in_reported_total")
+        if versioned_observation_pending_dedupe:
+            flags.append("versioned_observation_not_counted_pending_dedupe")
         if campaign_support_record:
             flags.append("campaign_support_not_personal_receipt")
             if amount is not None:
@@ -4986,7 +5149,11 @@ def load_influence_events(conn) -> dict[str, Any]:
             )
         extraction_method = base_metadata.get("normalizer_name") or "aec_annual_money_flow_normalizer"
         disclosure_system = base_metadata.get("disclosure_system") or "aec_financial_disclosure"
-        if duplicate_observation or jurisdictional_cross_disclosure_observation:
+        if (
+            duplicate_observation
+            or jurisdictional_cross_disclosure_observation
+            or versioned_observation_pending_dedupe
+        ):
             amount_status = "not_applicable"
         elif event_type in {
             "candidate_or_senate_group_nil_return",
@@ -7527,6 +7694,7 @@ def load_processed_artifacts(
     include_nt_ntec_annual_gifts: bool = True,
     include_sa_ecsa_return_summaries: bool = True,
     include_vic_vec_funding_register: bool = True,
+    include_waec_political_contributions: bool = True,
     include_house_interests: bool = True,
     include_senate_interests: bool = True,
     include_electorate_boundaries: bool = True,
@@ -7577,6 +7745,10 @@ def load_processed_artifacts(
             if include_vic_vec_funding_register:
                 summary["vic_vec_funding_register_money_flows"] = (
                     load_vic_vec_funding_register_money_flows(conn)
+                )
+            if include_waec_political_contributions:
+                summary["waec_political_contribution_money_flows"] = (
+                    load_waec_political_contribution_money_flows(conn)
                 )
         if include_nsw_aggregates:
             summary["nsw_aggregate_context_observations"] = (

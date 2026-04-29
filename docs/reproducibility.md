@@ -43,7 +43,8 @@ The active state/local adapters are deliberately separate from the federal
 foundation command while the state/council framework is being generalized.
 Queensland ECQ EDS, NSW aggregate donor-location context, ACT gift returns,
 Northern Territory NTEC annual returns/annual gift returns, South Australia
-ECSA return-record summaries, and the Victoria VEC funding register now have
+ECSA return-record summaries, the Victoria VEC funding register, and WAEC
+Online Disclosure System political contributions now have
 manifest-producing runners:
 
 ```bash
@@ -62,6 +63,9 @@ MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --
 
 MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction vic)
 .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction wa)
+.venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 ```
 
 `run-state-local-pipeline` performs acquisition and normalization only. It does
@@ -72,7 +76,10 @@ rows, and SA return-level summaries are source-backed state/local disclosure
 records. SA rows are return-level portal index summaries rather than detailed
 transactions or personal receipt. VEC funding rows are public-funding/admin/
 policy context, not private donations, gifts, personal income, or automatic
-claims about personal receipt by an MP, senator, state MP, or councillor.
+claims about personal receipt by an MP, senator, state MP, or councillor. WAEC
+political contribution rows are donor-to-political-entity disclosure rows; the
+parsed date is WAEC's disclosure-received date, and non-original versions are
+preserved but excluded from reported totals pending amendment deduplication.
 Loading remains explicit through
 `load-state-local-pipeline-manifest` or a source-specific loader. The runner
 passes the exact fetched page, export, lookup, or document metadata paths into
@@ -281,8 +288,9 @@ They Vote For You API key is configured.
 Federal-only scheduled loads use `load-postgres --skip-qld-ecq
 --skip-nsw-aggregates --skip-act-gift-returns
 --skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
---skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register` unless the
-relevant state/local fetch/normalize steps also ran. QLD, ACT, NT, SA, and VIC
+--skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register
+--skip-waec-political-contributions` unless the
+relevant state/local fetch/normalize steps also ran. QLD, ACT, NT, SA, VIC, and WA
 state/local public summaries filter to current `money_flow` rows, and NSW
 aggregate summaries filter to current `aggregate_context_observation` rows, but
 the schedule should still avoid refreshing a state/local source family from

@@ -4,6 +4,22 @@
 
 Completed:
 
+- Added `run-state-local-pipeline --jurisdiction wa` for the first Western
+  Australia WAEC state-level adapter. It archives the official Online
+  Disclosure System public dashboard, token response, and Power Pages
+  entity-grid JSON pages for published political contributions, then normalizes
+  donor-to-political-entity contribution rows into
+  `data/processed/waec_political_contribution_money_flows/`. The 2026-04-29
+  implementation run extracted 6,661 rows with $13,318,292.66 in counted
+  original-version source-row value; WAEC's grid `ItemCount` appears capped at
+  5,000 while `MoreRecords` continues to page beyond that cap, so the normalizer
+  validates completeness against summed per-page record counts and records the
+  source cap caveat in the summary. The loader rejects incomplete smoke
+  artifacts, validates manifest/summary/source/body/JSONL hashes, and keeps WAEC
+  rows visible in the state/local summary and record API. WAEC grid dates are
+  treated as disclosure-received dates, not contribution transaction dates, and
+  non-original version rows are preserved but excluded from reported amount
+  totals until amendment deduplication is validated.
 - Added `run-state-local-pipeline --jurisdiction sa` for the first South
   Australia ECSA state-level adapter. It archives the official disclosure
   landing page, fetches the current ECSA return-record portal by partitioning

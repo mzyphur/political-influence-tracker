@@ -133,7 +133,7 @@ def state_local_records(
                 "sa_prescribed_expenditure_return_summary|"
                 "sa_special_large_gift_return_summary|"
                 "sa_third_party_capped_expenditure_return_summary|"
-                "sa_third_party_return_summary)$"
+                "sa_third_party_return_summary|wa_political_contribution)$"
             )
         ),
     ] = None,

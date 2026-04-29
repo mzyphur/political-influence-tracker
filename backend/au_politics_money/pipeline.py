@@ -105,6 +105,11 @@ from au_politics_money.ingest.vic_vec import (
     fetch_vic_vec_funding_register_documents,
     normalize_vic_vec_funding_registers,
 )
+from au_politics_money.ingest.waec import (
+    SOURCE_DATASET as WAEC_SOURCE_DATASET,
+    fetch_waec_political_contribution_pages,
+    normalize_waec_political_contributions,
+)
 
 DEPENDENCY_DISTRIBUTIONS = (
     "beautifulsoup4",
@@ -553,10 +558,12 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         "south australia",
         "vic",
         "victoria",
+        "wa",
+        "western australia",
     }:
         raise ValueError(
             "Unsupported state/local jurisdiction. Currently supported: "
-            "act, qld, nsw, nt, sa, vic."
+            "act, qld, nsw, nt, sa, vic, wa."
         )
     if normalized_jurisdiction in {"act", "australian capital territory"}:
         return _run_act_state_local_pipeline(smoke=smoke)
@@ -568,6 +575,8 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         return _run_sa_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"vic", "victoria"}:
         return _run_vic_state_local_pipeline(smoke=smoke)
+    if normalized_jurisdiction in {"wa", "western australia"}:
+        return _run_wa_state_local_pipeline(smoke=smoke)
 
     started = utc_now()
     page_source_ids = {spec.page_source_id for spec in QLD_ECQ_EDS_EXPORTS}
@@ -997,6 +1006,73 @@ def _run_sa_state_local_pipeline(*, smoke: bool = False) -> Path:
             "normalize_sa_ecsa_return_index",
             lambda: normalize_sa_ecsa_return_index(
                 metadata_path=sa_artifacts["return_index_metadata_path"],
+            ),
+        ),
+    ]
+
+    try:
+        for name, func in steps:
+            manifest.steps.append(_run_step(name, func))
+        manifest.status = "succeeded"
+    except PipelineStepError as exc:
+        manifest.steps.append(exc.result)
+        manifest.status = "failed"
+    finally:
+        finished = utc_now()
+        manifest.finished_at = finished.isoformat()
+        manifest.duration_seconds = (finished - started).total_seconds()
+
+    manifest_path = _write_manifest(manifest)
+    if manifest.status == "failed":
+        raise RuntimeError(f"Pipeline failed. Manifest: {manifest_path}")
+    return manifest_path
+
+
+def _run_wa_state_local_pipeline(*, smoke: bool = False) -> Path:
+    started = utc_now()
+    wa_artifacts: dict[str, Path] = {}
+
+    def fetch_wa_sources() -> dict[str, Any]:
+        metadata_path = fetch_waec_political_contribution_pages(
+            max_pages=1 if smoke else None,
+        )
+        wa_artifacts["political_contribution_metadata_path"] = Path(metadata_path)
+        return {
+            "source_count": 1,
+            "metadata_paths": {
+                "waec_ods_political_contributions": str(metadata_path),
+            },
+            "smoke_max_pages": 1 if smoke else None,
+        }
+
+    manifest = PipelineManifest(
+        pipeline_name="state_local",
+        run_id=f"state_local_wa_{timestamp(started)}",
+        status="running",
+        started_at=started.isoformat(),
+        git_commit=_git_commit(),
+        dependency_versions=_dependency_versions(),
+        parameters={
+            "jurisdiction": "wa",
+            "source_family": WAEC_SOURCE_DATASET,
+            "smoke": smoke,
+            "loads_database": False,
+            "claim_boundary": (
+                "Fetch and normalize Western Australian Electoral Commission "
+                "Online Disclosure System published political contribution rows. "
+                "Rows are source-backed donor-to-political-entity contribution "
+                "records at WAEC's disclosure level; they are not personal receipt "
+                "by a representative, evidence of wrongdoing, or causal claims."
+            ),
+        },
+    )
+
+    steps: list[tuple[str, Callable[[], Any]]] = [
+        ("fetch_waec_political_contribution_pages", fetch_wa_sources),
+        (
+            "normalize_waec_political_contributions",
+            lambda: normalize_waec_political_contributions(
+                metadata_path=wa_artifacts["political_contribution_metadata_path"],
             ),
         ),
     ]

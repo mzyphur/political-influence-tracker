@@ -38,6 +38,7 @@ from au_politics_money.db.load import (
     sa_ecsa_return_summary_path_from_pipeline_manifest,
     senate_api_name_to_canonical,
     vic_vec_funding_register_path_from_pipeline_manifest,
+    waec_political_contribution_path_from_pipeline_manifest,
 )
 
 
@@ -1108,6 +1109,122 @@ def test_sa_pipeline_manifest_selects_return_summary_artifact(tmp_path) -> None:
     source_body_path.write_text("tampered\n", encoding="utf-8")
     with pytest.raises(ValueError, match="source body hash mismatch"):
         sa_ecsa_return_summary_path_from_pipeline_manifest(manifest_path)
+
+
+def test_waec_pipeline_manifest_selects_complete_contribution_artifact(tmp_path) -> None:
+    def sha256_path(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    jsonl_path = tmp_path / "waec-contributions.jsonl"
+    jsonl_path.write_text(
+        json.dumps({"source_id": "waec_ods_political_contributions"}) + "\n",
+        encoding="utf-8",
+    )
+    source_body_path = tmp_path / "waec-body.json"
+    source_body_path.write_text(
+        json.dumps(
+            {
+                "source_id": "waec_ods_political_contributions",
+                "complete_page_coverage": True,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    source_metadata_path = tmp_path / "waec-metadata.json"
+    source_metadata_path.write_text(
+        json.dumps(
+            {
+                "source": {"source_id": "waec_ods_political_contributions"},
+                "body_path": str(source_body_path),
+                "sha256": sha256_path(source_body_path),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary_data = {
+        "normalizer_name": "waec_ods_political_contribution_grid_normalizer",
+        "source_dataset": "waec_political_contributions",
+        "source_id": "waec_ods_political_contributions",
+        "jsonl_path": str(jsonl_path),
+        "jsonl_sha256": sha256_path(jsonl_path),
+        "source_metadata_path": str(source_metadata_path),
+        "source_metadata_sha256": sha256_path(source_metadata_path),
+        "source_body_path": str(source_body_path),
+        "source_body_sha256": sha256_path(source_body_path),
+        "complete_page_coverage": True,
+        "source_counts": {"waec_ods_political_contributions": 1},
+        "total_count": 1,
+    }
+    summary_path = tmp_path / "waec-contributions.summary.json"
+    summary_path.write_text(
+        json.dumps(summary_data, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "state_local_wa_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "waec_political_contributions",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_waec_political_contributions",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": sha256_path(summary_path),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert waec_political_contribution_path_from_pipeline_manifest(manifest_path) == jsonl_path
+
+    incomplete_summary_path = tmp_path / "waec-contributions-incomplete.summary.json"
+    incomplete_summary_path.write_text(
+        json.dumps({**summary_data, "complete_page_coverage": False}, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    incomplete_manifest_path = tmp_path / "state_local_wa_incomplete_manifest.json"
+    incomplete_manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "waec_political_contributions",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_waec_political_contributions",
+                        "status": "succeeded",
+                        "output": str(incomplete_summary_path),
+                        "output_sha256": sha256_path(incomplete_summary_path),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="not complete"):
+        waec_political_contribution_path_from_pipeline_manifest(incomplete_manifest_path)
+
+    source_metadata_path.write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="source metadata hash mismatch"):
+        waec_political_contribution_path_from_pipeline_manifest(manifest_path)
 
 
 def test_display_geometry_repair_buffer_validates_range() -> None:

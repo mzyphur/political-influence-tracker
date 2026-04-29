@@ -736,6 +736,41 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="waec_ods_public_dashboard",
+        name="WAEC Online Disclosure System Public Dashboard",
+        jurisdiction="Western Australia",
+        level="state",
+        source_type="state_financial_disclosure_portal",
+        url="https://disclosures.elections.wa.gov.au/public-dashboard/",
+        expected_format="html_plus_power_pages_entity_grid_json",
+        update_frequency="ongoing",
+        priority="high",
+        notes=(
+            "Official WAEC Online Disclosure System dashboard. The first adapter "
+            "archives this page and its public entity-grid configuration before "
+            "fetching published political contribution rows."
+        ),
+    ),
+    SourceRecord(
+        source_id="waec_ods_political_contributions",
+        name="WAEC ODS Published Political Contributions",
+        jurisdiction="Western Australia",
+        level="state",
+        source_type="state_financial_disclosure_json_grid",
+        url="https://disclosures.elections.wa.gov.au/public-dashboard/",
+        expected_format="power_pages_entity_grid_json",
+        update_frequency="ongoing",
+        priority="high",
+        notes=(
+            "Official WAEC public dashboard grid for published political "
+            "contributions. Rows include donor, political entity, contribution "
+            "type, amount, financial year, public donor postcode, status, version, "
+            "and disclosure-received date. Contribution rows are source-backed "
+            "money records, but not personal receipt by a representative; amendment "
+            "or other versioned rows are preserved separately pending deduplication."
+        ),
+    ),
+    SourceRecord(
         source_id="tas_tec_disclosure_funding",
         name="Tasmanian Electoral Commission Disclosure and Funding",
         jurisdiction="Tasmania",

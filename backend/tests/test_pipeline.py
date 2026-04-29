@@ -513,6 +513,54 @@ def test_state_local_sa_pipeline_records_return_index_steps(monkeypatch) -> None
     }
 
 
+def test_state_local_wa_pipeline_records_contribution_steps(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr("au_politics_money.pipeline._git_commit", lambda: "wa123")
+    monkeypatch.setattr("au_politics_money.pipeline._dependency_versions", lambda: {})
+
+    def fake_write_manifest(manifest):
+        calls["manifest"] = manifest
+        return "manifest.json"
+
+    def fake_fetch_wa(*, max_pages=None):
+        calls["max_pages"] = max_pages
+        return "waec-contribution-metadata"
+
+    def fake_normalize_wa(*, metadata_path):
+        calls["metadata_path"] = str(metadata_path)
+        return "waec-contribution-summary"
+
+    monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_waec_political_contribution_pages",
+        fake_fetch_wa,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_waec_political_contributions",
+        fake_normalize_wa,
+    )
+
+    assert run_state_local_pipeline(jurisdiction="wa", smoke=True) == "manifest.json"
+
+    manifest = calls["manifest"]
+    assert manifest.pipeline_name == "state_local"
+    assert manifest.git_commit == "wa123"
+    assert manifest.parameters["jurisdiction"] == "wa"
+    assert manifest.parameters["source_family"] == "waec_political_contributions"
+    assert manifest.parameters["loads_database"] is False
+    assert "donor-to-political-entity" in manifest.parameters["claim_boundary"]
+    assert [step.name for step in manifest.steps] == [
+        "fetch_waec_political_contribution_pages",
+        "normalize_waec_political_contributions",
+    ]
+    assert calls["max_pages"] == 1
+    assert calls["metadata_path"] == "waec-contribution-metadata"
+    assert manifest.steps[0].output["metadata_paths"] == {
+        "waec_ods_political_contributions": "waec-contribution-metadata"
+    }
+
+
 def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:
     with pytest.raises(ValueError, match="Unsupported state/local jurisdiction"):
-        run_state_local_pipeline(jurisdiction="wa")
+        run_state_local_pipeline(jurisdiction="tas")

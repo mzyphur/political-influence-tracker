@@ -557,6 +557,7 @@ def load_postgres_command(
     skip_nt_ntec_annual_gifts: bool,
     skip_sa_ecsa_return_summaries: bool,
     skip_vic_vec_funding_register: bool,
+    skip_waec_political_contributions: bool,
     skip_house_interests: bool,
     skip_senate_interests: bool,
     skip_electorate_boundaries: bool,
@@ -582,6 +583,7 @@ def load_postgres_command(
         include_nt_ntec_annual_gifts=not skip_nt_ntec_annual_gifts,
         include_sa_ecsa_return_summaries=not skip_sa_ecsa_return_summaries,
         include_vic_vec_funding_register=not skip_vic_vec_funding_register,
+        include_waec_political_contributions=not skip_waec_political_contributions,
         include_house_interests=not skip_house_interests,
         include_senate_interests=not skip_senate_interests,
         include_electorate_boundaries=not skip_electorate_boundaries,
@@ -1136,9 +1138,12 @@ def build_parser() -> argparse.ArgumentParser:
     state_local_pipeline_parser = subparsers.add_parser("run-state-local-pipeline")
     state_local_pipeline_parser.add_argument(
         "--jurisdiction",
-        choices=("act", "qld", "nsw", "nt", "sa", "vic"),
+        choices=("act", "qld", "nsw", "nt", "sa", "vic", "wa"),
         default="qld",
-        help="State/local adapter to run. Currently supported: act, qld, nsw, nt, sa, vic.",
+        help=(
+            "State/local adapter to run. Currently supported: act, qld, nsw, "
+            "nt, sa, vic, wa."
+        ),
     )
     state_local_pipeline_parser.add_argument(
         "--smoke",
@@ -1209,6 +1214,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Skip VEC funding-register artifacts during this load. These rows are "
             "Victorian public funding context, not private donations."
+        ),
+    )
+    load_parser.add_argument(
+        "--skip-waec-political-contributions",
+        action="store_true",
+        help=(
+            "Skip WAEC Online Disclosure System political contribution artifacts "
+            "during this load. These rows are WA donor-to-political-entity "
+            "contribution records, not representative-level receipt."
         ),
     )
     load_parser.add_argument("--skip-house-interests", action="store_true")
@@ -1419,6 +1433,7 @@ def main() -> int:
             args.skip_nt_ntec_annual_gifts,
             args.skip_sa_ecsa_return_summaries,
             args.skip_vic_vec_funding_register,
+            args.skip_waec_political_contributions,
             args.skip_house_interests,
             args.skip_senate_interests,
             args.skip_electorate_boundaries,

@@ -26,6 +26,7 @@ LOAD_ARGS=(
   --skip-nt-ntec-annual-gifts
   --skip-sa-ecsa-return-summaries
   --skip-vic-vec-funding-register
+  --skip-waec-political-contributions
 )
 if .venv/bin/dotenv -f .env run -- \
   bash -c 'test -n "${THEY_VOTE_FOR_YOU_API_KEY:-${TVFY_API_KEY:-}}"'; then

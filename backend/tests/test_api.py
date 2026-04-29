@@ -189,17 +189,17 @@ def test_state_local_records_endpoint_delegates_to_query_layer(monkeypatch) -> N
         "/api/state-local/records",
         params={
             "level": "council",
-            "flow_kind": "qld_electoral_expenditure",
+            "flow_kind": "wa_political_contribution",
             "cursor": "abc123",
             "limit": "9",
         },
     )
 
     assert response.status_code == 200
-    assert response.json()["flow_kind"] == "qld_electoral_expenditure"
+    assert response.json()["flow_kind"] == "wa_political_contribution"
     assert captured == {
         "level": "council",
-        "flow_kind": "qld_electoral_expenditure",
+        "flow_kind": "wa_political_contribution",
         "cursor": "abc123",
         "limit": 9,
         "database_url": None,

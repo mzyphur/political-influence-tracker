@@ -1829,6 +1829,113 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert invalid_cursor_response.status_code == 400
 
 
+def test_waec_contribution_rows_are_served_with_date_and_version_caveats(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO source_document (
+                    source_id, source_name, source_type, jurisdiction, url, fetched_at,
+                    http_status, content_type, sha256, storage_path, metadata
+                )
+                VALUES (
+                    'waec_ods_political_contributions',
+                    'WAEC ODS Published Political Contributions',
+                    'state_financial_disclosure_json_grid',
+                    'Western Australia',
+                    'https://disclosures.elections.wa.gov.au/public-dashboard/',
+                    now(), 200, 'application/json', 'pytest-waec-sha256',
+                    '/tmp/waec.json', '{}'::jsonb
+                )
+                RETURNING id
+                """
+            )
+            source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO jurisdiction (name, level, code)
+                VALUES ('Western Australia', 'state', 'WA')
+                RETURNING id
+                """
+            )
+            wa_state_id = cur.fetchone()[0]
+            for external_key, amount, role, version in (
+                ("pytest-waec-original", 1000, "single_observation", "Original"),
+                (
+                    "pytest-waec-amendment",
+                    999,
+                    "versioned_observation_pending_dedupe",
+                    "Amendment",
+                ),
+            ):
+                cur.execute(
+                    """
+                    INSERT INTO money_flow (
+                        external_key, source_raw_name, recipient_raw_name, amount,
+                        date_reported, financial_year, receipt_type,
+                        disclosure_category, jurisdiction_id, source_document_id,
+                        source_row_ref, original_text, confidence, is_current, metadata
+                    )
+                    VALUES (
+                        %s, 'WA Donor Pty Ltd', 'WA Party', %s, DATE '2026-04-27',
+                        '2025-2026', 'Gift', 'wa_political_contribution',
+                        %s, %s, %s, '{"amount":"$1,000"}', 'unresolved', TRUE, %s
+                    )
+                    """,
+                    (
+                        external_key,
+                        amount,
+                        wa_state_id,
+                        source_document_id,
+                        external_key,
+                        Jsonb(
+                            {
+                                "date_caveat": (
+                                    "WAEC publishes a disclosure-received date for this row."
+                                ),
+                                "flow_kind": "wa_political_contribution",
+                                "public_amount_counting_role": role,
+                                "source_dataset": "waec_political_contributions",
+                                "transaction_kind": "political_contribution",
+                                "version": version,
+                            }
+                        ),
+                    ),
+                )
+        conn.commit()
+
+    client = TestClient(app)
+    summary_response = client.get(
+        "/api/state-local/summary",
+        params={"level": "state", "limit": "5"},
+    )
+    assert summary_response.status_code == 200
+    summary = summary_response.json()
+    assert summary["totals_by_level"][0]["jurisdiction_code"] == "WA"
+    assert summary["totals_by_level"][0]["gift_or_donation_count"] == 2
+    assert summary["totals_by_level"][0]["gift_or_donation_reported_amount_total"] == 1000
+    assert summary["top_gift_donors"][0]["reported_amount_total"] == 1000
+
+    records_response = client.get(
+        "/api/state-local/records",
+        params={"level": "state", "flow_kind": "wa_political_contribution", "limit": "5"},
+    )
+    assert records_response.status_code == 200
+    records = records_response.json()
+    assert records["total_count"] == 2
+    assert records["records"][0]["source_dataset"] == "waec_political_contributions"
+    assert records["records"][0]["flow_kind"] == "wa_political_contribution"
+    assert records["records"][0]["date_received"] is None
+    assert records["records"][0]["date_reported"] == "2026-04-27"
+    assert "disclosure-received date" in records["records"][0]["date_caveat"]
+    assert {row["public_amount_counting_role"] for row in records["records"]} == {
+        "single_observation",
+        "versioned_observation_pending_dedupe",
+    }
+
+
 def test_withdrawn_source_rows_do_not_remain_public_events(
     integration_db: IntegrationDatabase,
 ) -> None:
