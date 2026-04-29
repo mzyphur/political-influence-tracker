@@ -4193,6 +4193,20 @@ def test_party_profile_aggregates_reviewed_party_entity_money(
     assert payload["top_sources"][0]["source_label"] == "Example Donor Pty Ltd"
     assert payload["recent_events"][0]["review_status"] == "not_required"
 
+    representative_response = client.get(f"/api/representatives/{integration_db.person_id}")
+    assert representative_response.status_code == 200
+    representative_payload = representative_response.json()
+    party_exposure = representative_payload["party_exposure_summary"][0]
+    assert party_exposure["party_name"] == "Example Party"
+    assert party_exposure["event_count"] == 2
+    assert party_exposure["party_context_reported_amount_total"] == 5000.0
+    assert party_exposure["modelled_amount_total"] == 1250.0
+    assert party_exposure["allocation_method"] == "equal_current_representative_share"
+    assert party_exposure["allocation_denominator"] == 4
+    assert party_exposure["input_source_document_count"] == 1
+    assert "not a disclosed personal receipt" in party_exposure["claim_scope"]
+    assert "not disclosed personal receipts" in representative_payload["party_exposure_caveat"]
+
     person_graph_response = client.get(
         "/api/graph/influence",
         params={"person_id": integration_db.person_id, "limit": "1"},

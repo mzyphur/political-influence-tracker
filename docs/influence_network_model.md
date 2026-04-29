@@ -180,6 +180,10 @@ Current API graph scaffold:
 - Campaign support appears in a separate campaign/context section.
 - Party/entity-level money appears in party/entity and network panels.
 - Modelled allocation appears only after the user can see the method and caveat.
+- Representative profiles may show a compact `party_exposure_summary` derived
+  from the same reviewed party/entity links and equal-share model, but it must
+  remain visually separate from direct money and campaign support and must retain
+  the "not a disclosed personal receipt" caveat.
 - Direct, campaign, party/entity, and modelled totals are not summed into a
   single "money received" number.
 - Network paths can show indirect relationships, but each edge must expose its

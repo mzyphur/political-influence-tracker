@@ -23,6 +23,12 @@ Completed:
   now expose named-provider counts, missing-data counts, and pending-review
   counts, and the frontend wording says missing values are not recorded in the
   normalized data rather than assuming the public source never published them.
+- Added representative-level party-mediated money context. Profiles now expose
+  reviewed party/entity money totals and a labelled equal-current-representative
+  exposure estimate when the source-backed party/entity links support the path.
+  The details pane shows this separately from direct money and campaign support,
+  with explicit wording that the estimate is analytical context and not money
+  received by the representative.
 - Added click-level QLD council disclosure context without turning the council
   boundary into a recipient. `GET /api/electorates/{id}` now returns a
   `qld_ecq_local_disclosure_context` object for QLD council features when ECQ

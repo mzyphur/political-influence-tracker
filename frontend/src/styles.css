@@ -1274,6 +1274,16 @@ a:focus-visible {
   padding-top: 11px;
 }
 
+.party-exposure-panel {
+  border-top: 1px solid rgba(111, 101, 214, 0.2);
+  padding-top: 11px;
+}
+
+.party-exposure-panel .signal-row {
+  border-color: rgba(111, 101, 214, 0.18);
+  background: rgba(246, 245, 255, 0.78);
+}
+
 .benefit-highlights-panel {
   border-top: 1px solid rgba(240, 109, 53, 0.2);
   padding-top: 11px;

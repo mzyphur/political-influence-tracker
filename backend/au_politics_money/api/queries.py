@@ -3462,6 +3462,10 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             """,
             (person_id,),
         )
+        party_exposure_summary = _representative_party_exposure_summary(
+            conn,
+            person_id=person_id,
+        )
     return _jsonable(
         {
             "person": {
@@ -3488,6 +3492,12 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
                 "connected to a candidate, Senate group, party branch, third party, or media "
                 "advertiser. They are not treated as money personally received by the "
                 "representative unless a source explicitly supports that narrower claim."
+            ),
+            "party_exposure_summary": party_exposure_summary,
+            "party_exposure_caveat": (
+                "Party-mediated exposure summaries use reviewed party/entity links and "
+                "current office-term party membership. Equal-share amounts are analytical "
+                "context estimates only and are not disclosed personal receipts."
             ),
             "influence_by_sector": influence,
             "vote_topics": votes,
@@ -4542,6 +4552,114 @@ def _party_reviewed_money_summary(conn, *, party_id: int) -> dict[str, Any]:
             for source_document_id in row["input_source_document_ids"] or []
         )
     return summary
+
+
+def _representative_party_exposure_summary(
+    conn,
+    *,
+    person_id: int,
+    limit: int = 5,
+) -> list[dict[str, Any]]:
+    party_rows = _fetch_dicts(
+        conn,
+        """
+        SELECT DISTINCT ON (party.id)
+            party.id,
+            party.name,
+            party.short_name,
+            office_term.chamber,
+            electorate.name AS electorate_name,
+            COALESCE(
+                NULLIF(electorate.state_or_territory, ''),
+                NULLIF(office_term.metadata->>'state', '')
+            ) AS state_or_territory,
+            office_term.term_start,
+            COALESCE(current_counts.current_representative_count, 0)
+                AS current_representative_count
+        FROM office_term
+        JOIN party ON party.id = office_term.party_id
+        LEFT JOIN electorate ON electorate.id = office_term.electorate_id
+        LEFT JOIN (
+            SELECT party_id, count(DISTINCT person_id) AS current_representative_count
+            FROM office_term
+            WHERE term_end IS NULL
+              AND party_id IS NOT NULL
+            GROUP BY party_id
+        ) current_counts ON current_counts.party_id = party.id
+        WHERE office_term.person_id = %s
+          AND office_term.term_end IS NULL
+          AND office_term.party_id IS NOT NULL
+        ORDER BY party.id, office_term.term_start DESC NULLS LAST
+        LIMIT %s
+        """,
+        (person_id, limit),
+    )
+    summaries: list[dict[str, Any]] = []
+    for party in party_rows:
+        party_money = _party_reviewed_money_summary(conn, party_id=int(party["id"]))
+        if not party_money["event_count"]:
+            continue
+        representative_count = int(party["current_representative_count"] or 0)
+        party_total = party_money["reported_amount_total"]
+        modelled_amount = (
+            party_total / representative_count
+            if party_total is not None and representative_count > 0
+            else None
+        )
+        summaries.append(
+            {
+                "party_id": party["id"],
+                "party_name": party["name"],
+                "party_short_name": party["short_name"],
+                "chamber": party["chamber"],
+                "state_or_territory": party["state_or_territory"],
+                "electorate_name": party["electorate_name"],
+                "term_start": party["term_start"],
+                "event_count": party_money["event_count"],
+                "reported_amount_event_count": party_money["reported_amount_event_count"],
+                "party_context_reported_amount_total": party_total,
+                "modelled_amount_total": modelled_amount,
+                "allocation_method": (
+                    "equal_current_representative_share"
+                    if modelled_amount is not None
+                    else "no_allocation"
+                ),
+                "allocation_denominator": representative_count or None,
+                "allocation_weight": (
+                    Decimal("1") / representative_count
+                    if modelled_amount is not None and representative_count > 0
+                    else None
+                ),
+                "allocation_basis": (
+                    "reviewed_party_entity_money_total_divided_by_current_party_representatives"
+                    if modelled_amount is not None
+                    else None
+                ),
+                "model_name": (
+                    "equal_current_representative_party_exposure"
+                    if modelled_amount is not None
+                    else None
+                ),
+                "model_version": "0.1.0" if modelled_amount is not None else None,
+                "uncertainty_label": (
+                    "rough_equal_share_point_estimate"
+                    if modelled_amount is not None
+                    else None
+                ),
+                "first_event_date": party_money["first_event_date"],
+                "last_event_date": party_money["last_event_date"],
+                "input_event_count": len(party_money["input_event_ids"]),
+                "input_source_document_count": len(party_money["input_source_document_ids"]),
+                "claim_scope": (
+                    "Analytical equal-share exposure to reviewed party/entity money; "
+                    "not a disclosed personal receipt."
+                    if modelled_amount is not None
+                    else "Current party relationship with reviewed party/entity money; "
+                    "no allocation estimate is available."
+                ),
+            }
+        )
+    return summaries
 
 
 def _append_person_party_exposure_context(

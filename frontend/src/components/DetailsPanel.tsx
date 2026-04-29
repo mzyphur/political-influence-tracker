@@ -91,6 +91,7 @@ export function DetailsPanel({
   const campaignSupportEvents = representativeProfile?.campaign_support_recent_events ?? [];
   const benefitHighlights = representativeProfile?.benefit_summary ?? [];
   const topBenefitProviders = representativeProfile?.benefit_provider_summary ?? [];
+  const partyExposureSummary = representativeProfile?.party_exposure_summary ?? [];
   const directPageKey = `${selectedPersonId ?? "none"}:${eventFamilyFilter}`;
   const directPageState = directEvidencePages[directPageKey] ?? emptyEvidencePageState;
   const topSectors = useMemo(
@@ -859,6 +860,35 @@ export function DetailsPanel({
 
       {representativeProfileStatus === "ready" &&
         representativeProfile &&
+        partyExposureSummary.length > 0 && (
+          <section className="panel-section party-exposure-panel">
+            <h3>Party-Mediated Money Context</h3>
+            <p className="scope-caption">
+              These records flow through reviewed party or associated-entity links.
+              Equal-share values are analytical exposure estimates only; they are
+              not disclosed money received by this representative.
+            </p>
+            <SignalBlock title="Reviewed party pathways">
+              {partyExposureSummary.map((summary) => (
+                <SignalRow
+                  key={`${summary.party_id}:${summary.chamber}:${summary.electorate_name}`}
+                  label={summary.party_short_name || summary.party_name}
+                  value={
+                    summary.modelled_amount_total !== null &&
+                    summary.modelled_amount_total !== undefined
+                      ? formatMoney(summary.modelled_amount_total)
+                      : "No estimate"
+                  }
+                  detail={partyExposureDetail(summary)}
+                />
+              ))}
+            </SignalBlock>
+            <p className="event-count-note">{representativeProfile.party_exposure_caveat}</p>
+          </section>
+        )}
+
+      {representativeProfileStatus === "ready" &&
+        representativeProfile &&
         (topSectors.length > 0 ||
           topVoteTopics.length > 0 ||
           reviewedPolicyContexts.length > 0) && (
@@ -1234,6 +1264,31 @@ function benefitProviderDetail(provider: {
       ? `${provider.missing_data_event_count.toLocaleString("en-AU")} with missing fields`
       : "",
     voteDateSpan(provider.first_event_date, provider.last_event_date)
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function partyExposureDetail(summary: {
+  party_name: string;
+  event_count: number;
+  party_context_reported_amount_total: number | null;
+  allocation_method: string;
+  allocation_denominator: number | null;
+  input_source_document_count: number;
+  first_event_date: string | null;
+  last_event_date: string | null;
+  claim_scope: string;
+}) {
+  return [
+    `${summary.event_count.toLocaleString("en-AU")} reviewed party/entity money records`,
+    `${formatMoney(summary.party_context_reported_amount_total)} party context total`,
+    summary.allocation_denominator
+      ? `equal share across ${summary.allocation_denominator.toLocaleString("en-AU")} current party representatives`
+      : summary.allocation_method.replaceAll("_", " "),
+    `${summary.input_source_document_count.toLocaleString("en-AU")} source documents`,
+    voteDateSpan(summary.first_event_date, summary.last_event_date),
+    summary.claim_scope
   ]
     .filter(Boolean)
     .join(" · ");

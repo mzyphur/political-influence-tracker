@@ -382,6 +382,32 @@ export type RepresentativeCampaignSupportSummary = {
   last_event_date: string | null;
 };
 
+export type RepresentativePartyExposureSummary = {
+  party_id: number;
+  party_name: string;
+  party_short_name: string | null;
+  chamber: string | null;
+  state_or_territory: string | null;
+  electorate_name: string | null;
+  term_start: string | null;
+  event_count: number;
+  reported_amount_event_count: number;
+  party_context_reported_amount_total: number | null;
+  modelled_amount_total: number | null;
+  allocation_method: string;
+  allocation_denominator: number | null;
+  allocation_weight: number | null;
+  allocation_basis: string | null;
+  model_name: string | null;
+  model_version: string | null;
+  uncertainty_label: string | null;
+  first_event_date: string | null;
+  last_event_date: string | null;
+  input_event_count: number;
+  input_source_document_count: number;
+  claim_scope: string;
+};
+
 export type RepresentativeBenefitSummary = {
   event_type: string;
   event_subtype: string;
@@ -511,6 +537,8 @@ export type RepresentativeProfile = {
   campaign_support_summary: RepresentativeCampaignSupportSummary[];
   campaign_support_recent_events: RepresentativeEvent[];
   campaign_support_caveat: string;
+  party_exposure_summary: RepresentativePartyExposureSummary[];
+  party_exposure_caveat: string;
   influence_by_sector: RepresentativeInfluenceSectorSummary[];
   vote_topics: RepresentativeVoteTopicSummary[];
   source_effect_context: RepresentativeSourceEffectContext[];

@@ -357,6 +357,13 @@ mistake a parser-derived provider or missing dollar value for a settled factual
 claim. Missing values mean no dollar amount is recorded in the normalized data;
 they are not zeros.
 
+Representative profiles also include `party_exposure_summary` when reviewed
+party/entity links connect the representative's current party to disclosed money
+records. These rows expose the aggregate party/entity money total and, when
+possible, an `equal_current_representative_share` modelled exposure value. This
+is an analytical context estimate, not a disclosed personal receipt; consumers
+must not add it to direct representative money totals.
+
 `/api/representatives/{person_id}/evidence` pages through the same event shape
 for selected representatives. It uses stable cursor pagination over
 `event_date`, `date_reported`, and event id so load-more interactions do not
