@@ -55,6 +55,8 @@ def _link_type(url: str, title: str) -> str:
         return "js"
     if path.endswith(".csv") or "csv" in title_lower:
         return "csv"
+    if path.endswith((".xls", ".xlsx")) or "excel" in title_lower:
+        return "xlsx"
     if path.endswith(".pdf") or "pdf" in title_lower:
         return "pdf"
     if path.endswith(".zip") or "/download/all" in path:
@@ -65,7 +67,9 @@ def _link_type(url: str, title: str) -> str:
 
 
 def _should_keep_link(source_id: str, url: str, title: str) -> bool:
-    path = urlparse(url).path.lower()
+    parsed = urlparse(url)
+    netloc = parsed.netloc.lower()
+    path = parsed.path.lower()
     title_lower = title.lower()
 
     if source_id == "aec_transparency_downloads":
@@ -86,14 +90,58 @@ def _should_keep_link(source_id: str, url: str, title: str) -> bool:
         return path.endswith(".zip") or "zip" in title_lower
 
     if source_id == "aph_house_votes_and_proceedings":
-        if "parlinfo.aph.gov.au" in urlparse(url).netloc.lower():
+        if "parlinfo.aph.gov.au" in netloc:
             return "chamber/votes" in url.lower()
         return False
 
     if source_id == "aph_senate_journals":
-        if "parlinfo.aph.gov.au" in urlparse(url).netloc.lower():
+        if "parlinfo.aph.gov.au" in netloc:
             return "chamber/journals" in url.lower()
         return False
+
+    if source_id == "nsw_electoral_disclosures":
+        if netloc == "efadisclosures.elections.nsw.gov.au":
+            return True
+        return (
+            netloc.endswith("elections.nsw.gov.au")
+            and (
+                path.startswith("/funding-and-disclosure/disclosures")
+                or path.startswith("/electoral-funding/disclosures")
+                or path.startswith("/electoral-funding/public-register-and-lists")
+            )
+        )
+
+    if source_id == "vic_vec_disclosures":
+        if netloc == "disclosures.vec.vic.gov.au":
+            return True
+        if netloc == "lgi.vic.gov.au":
+            return any(
+                term in f"{path} {title_lower}"
+                for term in ("election", "donation", "campaign", "council")
+            )
+        return (
+            netloc.endswith("vec.vic.gov.au")
+            and (
+                path.startswith("/candidates-and-parties/political-donations")
+                or path.startswith("/candidates-and-parties/funding")
+                or path.startswith("/candidates-and-parties/annual-returns")
+            )
+        )
+
+    if source_id == "qld_ecq_disclosures":
+        if netloc in {"disclosures.ecq.qld.gov.au", "helpcentre.disclosures.ecq.qld.gov.au"}:
+            return True
+        if netloc == "legislation.qld.gov.au":
+            return "electoral" in f"{url.lower()} {title_lower}"
+        return (
+            netloc.endswith("ecq.qld.gov.au")
+            and (
+                path.startswith("/donations-and-expenditure-disclosure")
+                or path.startswith("/election-participants/state-election-participants")
+                or path.startswith("/election-participants/local-election-participants")
+                or path.startswith("/election-participants/handbooks,-fact-sheets-and-forms")
+            )
+        )
 
     return False
 

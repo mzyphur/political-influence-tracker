@@ -39,6 +39,9 @@ Last updated: 2026-04-29
 These seed records are now in `backend/au_politics_money/ingest/sources.py`.
 The detailed sequencing and theory rationale are in
 `docs/state_council_expansion_plan.md`.
+The first three high-priority seed pages also support reproducible
+`discover-links` runs, which write filtered official parser-target inventories
+under `data/processed/discovered_links/`.
 
 | Source ID | Jurisdiction | Source | URL | Notes |
 | --- | --- | --- | --- | --- |

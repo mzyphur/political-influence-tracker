@@ -76,6 +76,12 @@ Completed:
   Australia, Western Australia, Tasmania, Northern Territory, and the ACT under
   ignored `data/raw/<source_id>/<timestamp>/metadata.json` directories; stderr
   logs were empty.
+- Extended reproducible link discovery to the first subnational targets. Running
+  `discover-links` on the archived seed pages produced parser-target inventories
+  for NSW (23 official disclosure/register links), Victoria (26 VEC disclosure,
+  funding, annual-return, and portal links), and Queensland (22 ECQ state/local
+  disclosure, EDS, register, and participant links). The generated manifests are
+  under ignored `data/processed/discovered_links/<source_id>/20260429T003319Z.json`.
 
 Verification:
 
@@ -96,6 +102,8 @@ Verification:
   extraction, and value extraction.
 - Live local API smoke checks confirmed `labor` and `liberal` search results now
   prioritize active parliamentary party records.
+- Focused source-registry/discovery tests passed after adding NSW/Victoria/Queensland
+  subnational link-retention coverage.
 
 ## 2026-04-28
 

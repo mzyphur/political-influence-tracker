@@ -112,6 +112,87 @@ def test_discover_aph_contact_csv_and_pdf_links() -> None:
     assert len(links) == 2
 
 
+def test_discover_nsw_disclosure_links() -> None:
+    source = get_source("nsw_electoral_disclosures")
+    html = """
+    <html>
+      <body>
+        <a href="https://efadisclosures.elections.nsw.gov.au/">Search and view disclosures</a>
+        <a href="/funding-and-disclosure/disclosures/pre-election-period-donation-disclosure/2023-nsw-state-election-donations">
+          View donations by district
+        </a>
+        <a href="/electoral-funding/public-register-and-lists/register-of-third-party-lobbyists">
+          Register of third-party lobbyists
+        </a>
+        <a href="/media-centre/news">General news</a>
+      </body>
+    </html>
+    """
+    links = discover_links_from_html(source, html)
+
+    assert {link.title for link in links} == {
+        "Search and view disclosures",
+        "View donations by district",
+        "Register of third-party lobbyists",
+    }
+    assert all("news" not in link.url for link in links)
+
+
+def test_discover_vic_disclosure_links() -> None:
+    source = get_source("vic_vec_disclosures")
+    html = """
+    <html>
+      <body>
+        <a href="https://disclosures.vec.vic.gov.au/public-donations/">VEC Disclosures</a>
+        <a href="/candidates-and-parties/funding/funding-register">Funding register</a>
+        <a href="/candidates-and-parties/annual-returns/associated-entities">
+          Associated entities annual returns
+        </a>
+        <a href="https://lgi.vic.gov.au/council-election-campaign-donation-returns">
+          Council election campaign donation returns
+        </a>
+        <a href="/about-us">About us</a>
+      </body>
+    </html>
+    """
+    links = discover_links_from_html(source, html)
+
+    assert {link.url for link in links} == {
+        "https://disclosures.vec.vic.gov.au/public-donations/",
+        "https://www.vec.vic.gov.au/candidates-and-parties/funding/funding-register",
+        "https://www.vec.vic.gov.au/candidates-and-parties/annual-returns/associated-entities",
+        "https://lgi.vic.gov.au/council-election-campaign-donation-returns",
+    }
+
+
+def test_discover_qld_disclosure_links() -> None:
+    source = get_source("qld_ecq_disclosures")
+    html = """
+    <html>
+      <body>
+        <a href="https://disclosures.ecq.qld.gov.au/">Electronic Disclosure System</a>
+        <a href="/donations-and-expenditure-disclosure/disclosure-of-political-donations-and-electoral-expenditure/published-disclosure-returns">
+          Published disclosure returns
+        </a>
+        <a href="/election-participants/local-election-participants">Local election participants</a>
+        <a href="https://legislation.qld.gov.au/view/html/inforce/current/act-1992-028">
+          Electoral Act 1992
+        </a>
+        <a href="/contact-us">Contact us</a>
+      </body>
+    </html>
+    """
+    links = discover_links_from_html(source, html)
+
+    assert {link.title for link in links} == {
+        "Electronic Disclosure System",
+        "Published disclosure returns",
+        "Local election participants",
+        "Electoral Act 1992",
+    }
+    assert all("contact-us" not in link.url for link in links)
+
+
 def test_discovered_source_ids_are_stable() -> None:
     parent = get_source("aph_contacts_csv")
     link = DiscoveredLink(

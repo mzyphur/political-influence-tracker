@@ -222,6 +222,73 @@ Notes:
 8. Extend the frontend level selector so State and Council switch from "planned"
    to "active" only after each adapter has source-backed records and caveats.
 
+## First Discovery Results
+
+The first reproducible source-discovery run was generated on 2026-04-29 from
+archived raw seed pages using:
+
+```bash
+au-politics-money discover-links nsw_electoral_disclosures
+au-politics-money discover-links vic_vec_disclosures
+au-politics-money discover-links qld_ecq_disclosures
+```
+
+Generated manifests are archived under ignored
+`data/processed/discovered_links/<source_id>/20260429T003319Z.json`.
+
+### NSW Discovery Targets
+
+The NSW discovery manifest retained 23 official links. The strongest parser
+targets are:
+
+- `efadisclosures.elections.nsw.gov.au`, the public disclosure search portal;
+- disclosure explanation and lodgement pages covering pre-election, half-yearly,
+  annual expenditure, and major political donor disclosures;
+- public registers for candidates, groups, third-party campaigners, parties,
+  senior office holders, associated entities, lobbyists, non-prohibited donors,
+  and public notifications;
+- a district-level state-election donation page for the 2023 NSW State election.
+
+Next adapter task: inspect the EFA disclosure portal for stable request
+parameters or export endpoints, then normalize state/local donation and
+expenditure rows into `influence_event` with jurisdiction-specific thresholds,
+redaction status, and record-retention caveats.
+
+### Victoria Discovery Targets
+
+The Victoria discovery manifest retained 26 links. The strongest parser targets
+are:
+
+- `disclosures.vec.vic.gov.au` donation disclosure and public-donation portals;
+- VEC funding pages for registered parties, independent members/candidates,
+  state campaign accounts, and funding registers;
+- annual-return pages for registered parties, associated entities, nominated
+  entities, independents/groups, and third-party campaigners;
+- glossary anchors for gifts, electoral expenditure, and political expenditure.
+
+Next adapter task: inspect the VEC disclosure portal for export/API behaviour
+and implement a state-level parser first. Victorian council donations require a
+separate local-government adapter because the VEC page points council donation
+returns away from the state disclosure surface.
+
+### Queensland Discovery Targets
+
+The Queensland discovery manifest retained 22 links. The strongest parser
+targets are:
+
+- `disclosures.ecq.qld.gov.au`, the Electronic Disclosure System;
+- published disclosure returns for political donations and electoral
+  expenditure;
+- caps/funding-rate, compliance, register, and notice pages;
+- local-government participant pages for candidates, groups, parties, third
+  parties/donors, broadcasters, and publishers;
+- state-government participant pages and official EDS help material.
+
+Next adapter task: inspect the EDS portal and published-disclosure-return pages
+for stable query/export behaviour. Queensland should be the first council-level
+implementation candidate because the ECQ disclosure system explicitly covers
+both state and local government electoral finance disclosures.
+
 ## Data Model Requirements
 
 The current schema should be extended conservatively rather than forked:
@@ -253,4 +320,3 @@ Disallowed claims without additional evidence:
 - that a party-level state return was personally received by a candidate;
 - that missing local-government records mean no influence exists;
 - that redacted source details can be inferred from context alone.
-
