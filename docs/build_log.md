@@ -71,6 +71,11 @@ Completed:
   acquisition smoke script for those official subnational source records. The
   script archives raw source bodies and metadata under `data/raw/` and logs
   command output under `data/audit/logs/`.
+- Ran the subnational source smoke fetch once successfully at
+  `20260429T002623Z`. Metadata was archived for NSW, Victoria, Queensland, South
+  Australia, Western Australia, Tasmania, Northern Territory, and the ACT under
+  ignored `data/raw/<source_id>/<timestamp>/metadata.json` directories; stderr
+  logs were empty.
 
 Verification:
 
