@@ -217,6 +217,10 @@ Completed:
   campaign-support records are separate API groups, pagination uses the same
   date/id ordering as the profile feed, and the frontend now loads further rows
   on demand without collapsing campaign support into personal receipt.
+- Added concrete QLD State/Council recent-record rows to
+  `/api/state-local/summary` and the summary panel. Users can now inspect
+  source/recipient names, reported amounts, ECQ event/local-electorate context,
+  row references, and source links even before state/local map drilldown exists.
 
 Verification:
 

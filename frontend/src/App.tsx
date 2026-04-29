@@ -52,6 +52,7 @@ import type {
   SearchResult,
   StateLocalSummaryContextRow,
   StateLocalSummaryEntityRow,
+  StateLocalSummaryRecord,
   StateLocalSummaryResponse
 } from "./types";
 
@@ -900,6 +901,7 @@ function StateLocalSummaryPanel({
         <span>Campaign spend total</span>
         <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
       </div>
+      <StateLocalRecentRecords rows={summary.recent_records} />
       <StateLocalRankList
         title="Top gift donors"
         rows={summary.top_gift_donors}
@@ -932,6 +934,58 @@ function StateLocalSummaryPanel({
           a gift, donation, or campaign expenditure row to a candidate, councillor, or MP.
         </p>
       </details>
+    </div>
+  );
+}
+
+function StateLocalRecentRecords({ rows }: { rows: StateLocalSummaryRecord[] }) {
+  return (
+    <div className="state-summary-list state-summary-recent-list">
+      <h3>Recent source rows</h3>
+      {rows.length === 0 ? (
+        <p className="muted">No current QLD ECQ rows returned for this slice.</p>
+      ) : (
+        rows.slice(0, 5).map((row) => {
+          const sourceHref = safeSourceHref(row.source_final_url || row.source_url);
+          const kind =
+            row.flow_kind === "qld_electoral_expenditure"
+              ? "Campaign spend row"
+              : "Gift/donation row";
+          const context = [
+            row.event_name,
+            row.local_electorate_name,
+            row.date_received || row.date_reported || row.financial_year
+          ].filter(Boolean);
+          const idSignals = [
+            row.source_identifier_backed ? "source ECQ ID" : "",
+            row.recipient_identifier_backed ? "recipient ECQ ID" : ""
+          ].filter(Boolean);
+          return (
+            <div className="state-summary-row state-summary-record-row" key={row.id}>
+              <strong>
+                {row.source_name || "Source not identified"} to{" "}
+                {row.recipient_name || "recipient not identified"}
+              </strong>
+              <span>
+                {kind} · {formatMoney(row.amount)} · {row.jurisdiction_level}
+              </span>
+              {context.length > 0 && <span>{context.join(" · ")}</span>}
+              <span>
+                {[row.source_row_ref, ...idSignals].filter(Boolean).join(" · ") ||
+                  "Source row ref not recorded"}
+                {sourceHref ? (
+                  <>
+                    {" · "}
+                    <a href={sourceHref} target="_blank" rel="noreferrer">
+                      source
+                    </a>
+                  </>
+                ) : null}
+              </span>
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
@@ -1193,6 +1247,16 @@ function displayLandMaskTooltip(mask: DisplayLandMask | undefined): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function safeSourceHref(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 export default App;

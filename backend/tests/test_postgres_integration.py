@@ -1375,6 +1375,11 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert state_summary["totals_by_level"][0]["event_context_backed_count"] == 1
     assert state_summary["top_events"][0]["external_id"] == "100"
     assert state_summary["top_events"][0]["name"] == "2026 Stafford State By-election"
+    assert state_summary["recent_records"][0]["flow_kind"] == "qld_gift"
+    assert state_summary["recent_records"][0]["source_name"] == "QLD Donor"
+    assert state_summary["recent_records"][0]["recipient_name"] == "QLD Recipient"
+    assert state_summary["recent_records"][0]["source_identifier_backed"] is True
+    assert state_summary["recent_records"][0]["event_name"] == "2026 Stafford State By-election"
 
     council_summary_response = client.get(
         "/api/state-local/summary",
@@ -1393,6 +1398,8 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert council_summary["top_expenditure_actors"][0]["name"] == "QLD Donor"
     assert council_summary["top_events"][0]["external_id"] == "636"
     assert council_summary["top_local_electorates"][0]["name"] == "Whitsunday Regional"
+    assert council_summary["recent_records"][0]["flow_kind"] == "qld_electoral_expenditure"
+    assert council_summary["recent_records"][0]["local_electorate_name"] == "Whitsunday Regional"
     assert (
         council_summary["top_local_electorates"][0]["gift_or_donation_reported_amount_total"]
         == 0

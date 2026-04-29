@@ -138,6 +138,7 @@ def test_state_local_summary_endpoint_delegates_to_query_layer(monkeypatch) -> N
             "top_expenditure_actors": [],
             "top_events": [],
             "top_local_electorates": [],
+            "recent_records": [],
             "caveat": "fixture",
         }
 

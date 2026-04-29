@@ -1649,6 +1649,85 @@ def _qld_context_summary_rows(
     )
 
 
+def _qld_recent_money_flow_rows(
+    conn,
+    *,
+    db_level: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    level_filter = "AND jurisdiction.level = %s" if db_level else ""
+    params: tuple[Any, ...] = (db_level, limit) if db_level else (limit,)
+    return _fetch_dicts(
+        conn,
+        f"""
+        SELECT
+            money_flow.id,
+            jurisdiction.name AS jurisdiction_name,
+            jurisdiction.level AS jurisdiction_level,
+            jurisdiction.code AS jurisdiction_code,
+            money_flow.metadata->>'flow_kind' AS flow_kind,
+            money_flow.receipt_type,
+            money_flow.disclosure_category,
+            money_flow.source_entity_id,
+            COALESCE(source_entity.canonical_name, money_flow.source_raw_name)
+                AS source_name,
+            money_flow.recipient_entity_id,
+            COALESCE(recipient_entity.canonical_name, money_flow.recipient_raw_name)
+                AS recipient_name,
+            money_flow.amount,
+            money_flow.currency,
+            money_flow.financial_year,
+            money_flow.date_received,
+            money_flow.date_reported,
+            money_flow.source_row_ref,
+            money_flow.confidence,
+            EXISTS (
+                SELECT 1
+                FROM entity_identifier
+                WHERE entity_identifier.entity_id = money_flow.source_entity_id
+                  AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
+            ) AS source_identifier_backed,
+            EXISTS (
+                SELECT 1
+                FROM entity_identifier
+                WHERE entity_identifier.entity_id = money_flow.recipient_entity_id
+                  AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
+            ) AS recipient_identifier_backed,
+            money_flow.metadata->'qld_ecq_context'->'event'->>'external_id'
+                AS event_external_id,
+            money_flow.metadata->'qld_ecq_context'->'event'->>'name'
+                AS event_name,
+            money_flow.metadata->'qld_ecq_context'->'event'->>'polling_date'
+                AS event_polling_date,
+            money_flow.metadata->'qld_ecq_context'->'local_electorate'->>'external_id'
+                AS local_electorate_external_id,
+            money_flow.metadata->'qld_ecq_context'->'local_electorate'->>'name'
+                AS local_electorate_name,
+            source_document.source_id,
+            source_document.source_name AS source_document_name,
+            source_document.url AS source_url,
+            source_document.final_url AS source_final_url
+        FROM money_flow
+        JOIN jurisdiction
+          ON jurisdiction.id = money_flow.jurisdiction_id
+        JOIN source_document
+          ON source_document.id = money_flow.source_document_id
+        LEFT JOIN entity source_entity
+          ON source_entity.id = money_flow.source_entity_id
+        LEFT JOIN entity recipient_entity
+          ON recipient_entity.id = money_flow.recipient_entity_id
+        WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+          AND money_flow.is_current IS TRUE
+          {level_filter}
+        ORDER BY
+            COALESCE(money_flow.date_received, money_flow.date_reported) DESC NULLS LAST,
+            money_flow.id DESC
+        LIMIT %s
+        """,
+        params,
+    )
+
+
 def get_state_local_summary(
     *,
     level: str | None = None,
@@ -1762,6 +1841,11 @@ def get_state_local_summary(
             db_level=db_level,
             limit=limit,
         )
+        recent_records = _qld_recent_money_flow_rows(
+            conn,
+            db_level=db_level,
+            limit=limit,
+        )
 
     return _jsonable(
         {
@@ -1776,6 +1860,7 @@ def get_state_local_summary(
             "top_expenditure_actors": top_expenditure_actors,
             "top_events": top_events,
             "top_local_electorates": top_local_electorates,
+            "recent_records": recent_records,
             "caveat": (
                 "Queensland ECQ EDS rows are state/local disclosure records. "
                 "Gift and donation rows are source-backed money records; electoral "

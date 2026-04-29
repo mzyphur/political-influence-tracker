@@ -159,6 +159,38 @@ export type StateLocalSummaryTotalRow = {
   local_electorate_context_backed_count: number;
 };
 
+export type StateLocalSummaryRecord = {
+  id: number;
+  jurisdiction_name: string;
+  jurisdiction_level: string;
+  jurisdiction_code: string;
+  flow_kind: string | null;
+  receipt_type: string | null;
+  disclosure_category: string | null;
+  source_entity_id: number | null;
+  source_name: string | null;
+  recipient_entity_id: number | null;
+  recipient_name: string | null;
+  amount: number | null;
+  currency: string;
+  financial_year: string | null;
+  date_received: string | null;
+  date_reported: string | null;
+  source_row_ref: string | null;
+  confidence: string | null;
+  source_identifier_backed: boolean | null;
+  recipient_identifier_backed: boolean | null;
+  event_external_id: string | null;
+  event_name: string | null;
+  event_polling_date: string | null;
+  local_electorate_external_id: string | null;
+  local_electorate_name: string | null;
+  source_id: string;
+  source_document_name: string;
+  source_url: string | null;
+  source_final_url: string | null;
+};
+
 export type StateLocalSummaryResponse = {
   status: string;
   source_family: string;
@@ -171,6 +203,7 @@ export type StateLocalSummaryResponse = {
   top_expenditure_actors: StateLocalSummaryEntityRow[];
   top_events: StateLocalSummaryContextRow[];
   top_local_electorates: StateLocalSummaryContextRow[];
+  recent_records: StateLocalSummaryRecord[];
   caveat: string;
 };
 

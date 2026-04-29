@@ -228,6 +228,9 @@ The response includes:
   ECQ political-event and local-electorate lookup APIs. Event dates describe the
   election event, not the gift/donation/expenditure transaction date; local
   electorate labels are context labels, not candidate/councillor attribution.
+- `recent_records`: a compact current-row feed with source/recipient names,
+  reported amount, ECQ event/local-electorate context where matched, source-row
+  reference, source-document URL, and row-side ECQ identifier signals.
 
 ECQ identifiers are attached only when the archived public lookup APIs provide
 an evidence-backed participant ID and the loader can make an exact unique match
