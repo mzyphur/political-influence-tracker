@@ -160,6 +160,12 @@ COUNCIL_MAP_CAVEAT = (
     "not attributed to councillors, candidates, councils, state MPs, or federal MPs "
     "unless a source-backed or reviewed link supports that narrower claim."
 )
+COUNCIL_CONTEXT_CAVEAT = (
+    "Counts are QLD ECQ EDS disclosure rows whose matched local-electorate context "
+    "names this council area, a child ward/division label, or a cautious current/legacy "
+    "council-name alias. They are local disclosure context, not claims that a council, "
+    "councillor, candidate, or MP personally received money."
+)
 
 CONTACT_CAVEAT = (
     "Contact details are public APH roster/contact-list records. Email is returned only "
@@ -5120,6 +5126,374 @@ def get_influence_graph(
     )
 
 
+def _qld_council_disclosure_context(
+    conn,
+    *,
+    electorate_name: str,
+    chamber: str | None,
+    state_or_territory: str | None,
+) -> dict[str, Any] | None:
+    if (chamber or "").lower() != "council" or (state_or_territory or "").upper() != "QLD":
+        return None
+
+    context_rows = _fetch_dicts(
+        conn,
+        """
+        WITH target AS (
+            SELECT btrim(
+                regexp_replace(
+                    regexp_replace(lower(%s), '[^a-z0-9]+', ' ', 'g'),
+                    '[[:space:]]+',
+                    ' ',
+                    'g'
+                )
+            ) AS council_name_norm,
+            btrim(
+                regexp_replace(
+                    btrim(
+                        regexp_replace(
+                            regexp_replace(lower(%s), '[^a-z0-9]+', ' ', 'g'),
+                            '[[:space:]]+',
+                            ' ',
+                            'g'
+                        )
+                    ),
+                    ' (city|regional|region|shire|town)$',
+                    ''
+                )
+            ) AS council_base_norm
+        ),
+        context_rows AS (
+            SELECT
+                money_flow.*,
+                money_flow.metadata->'qld_ecq_context'->'local_electorate'->>'external_id'
+                    AS local_electorate_external_id,
+                money_flow.metadata->'qld_ecq_context'->'local_electorate'->>'name'
+                    AS local_electorate_name,
+                money_flow.metadata->'qld_ecq_context'->'event'->>'external_id'
+                    AS event_external_id,
+                money_flow.metadata->'qld_ecq_context'->'event'->>'name'
+                    AS event_name,
+                btrim(
+                    regexp_replace(
+                        regexp_replace(
+                            lower(
+                                money_flow.metadata->'qld_ecq_context'
+                                    ->'local_electorate'->>'name'
+                            ),
+                            '[^a-z0-9]+',
+                            ' ',
+                            'g'
+                        ),
+                        '[[:space:]]+',
+                        ' ',
+                        'g'
+                    )
+                ) AS local_electorate_name_norm
+            FROM money_flow
+            JOIN jurisdiction
+              ON jurisdiction.id = money_flow.jurisdiction_id
+            WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+              AND money_flow.is_current IS TRUE
+              AND jurisdiction.code = 'QLD-LOCAL'
+              AND money_flow.metadata->'qld_ecq_context'
+                    ->'local_electorate'->>'status' = 'matched'
+        ),
+        matched_rows AS MATERIALIZED (
+            SELECT
+                context_rows.*,
+                CASE
+                    WHEN context_rows.local_electorate_name_norm = target.council_name_norm
+                    THEN 'exact_area'
+                    WHEN context_rows.local_electorate_name_norm ~ (
+                        '^' || target.council_name_norm || ' division [0-9]+$'
+                    )
+                    THEN 'child_area'
+                    WHEN context_rows.local_electorate_name_norm
+                         LIKE target.council_name_norm || ' %%'
+                         AND context_rows.local_electorate_name_norm !~ (
+                             '^' || target.council_name_norm || ' division '
+                         )
+                    THEN 'child_area'
+                    WHEN target.council_base_norm <> ''
+                         AND context_rows.local_electorate_name_norm ~ (
+                             '^' || target.council_base_norm
+                             || ' (city|regional|region|shire|town)$'
+                         )
+                    THEN 'alias_area'
+                    WHEN target.council_base_norm <> ''
+                         AND context_rows.local_electorate_name_norm ~ (
+                             '^' || target.council_base_norm
+                             || ' (city|regional|region|shire|town) division [0-9]+$'
+                         )
+                    THEN 'alias_child_area'
+                    WHEN target.council_base_norm <> ''
+                         AND context_rows.local_electorate_name_norm ~ (
+                             '^' || target.council_base_norm
+                             || ' (city|regional|region|shire|town) '
+                         )
+                         AND context_rows.local_electorate_name_norm !~ (
+                             '^' || target.council_base_norm
+                             || ' (city|regional|region|shire|town) division '
+                         )
+                    THEN 'alias_child_area'
+                    ELSE 'unmatched'
+                END AS match_scope
+            FROM context_rows
+            CROSS JOIN target
+            WHERE context_rows.local_electorate_name_norm = target.council_name_norm
+               OR context_rows.local_electorate_name_norm ~ (
+                    '^' || target.council_name_norm || ' division [0-9]+$'
+                )
+               OR (
+                    context_rows.local_electorate_name_norm
+                        LIKE target.council_name_norm || ' %%'
+                    AND context_rows.local_electorate_name_norm !~ (
+                        '^' || target.council_name_norm || ' division '
+                    )
+                )
+               OR (
+                    target.council_base_norm <> ''
+                    AND context_rows.local_electorate_name_norm ~ (
+                        '^' || target.council_base_norm
+                        || ' (city|regional|region|shire|town)$'
+                    )
+                )
+               OR (
+                    target.council_base_norm <> ''
+                    AND context_rows.local_electorate_name_norm ~ (
+                        '^' || target.council_base_norm
+                        || ' (city|regional|region|shire|town) division [0-9]+$'
+                    )
+                )
+               OR (
+                    target.council_base_norm <> ''
+                    AND context_rows.local_electorate_name_norm ~ (
+                        '^' || target.council_base_norm
+                        || ' (city|regional|region|shire|town) '
+                    )
+                    AND context_rows.local_electorate_name_norm !~ (
+                        '^' || target.council_base_norm
+                        || ' (city|regional|region|shire|town) division '
+                    )
+                )
+        ),
+        summary AS (
+            SELECT
+                count(*) AS money_flow_count,
+                count(DISTINCT COALESCE(
+                    local_electorate_external_id,
+                    local_electorate_name
+                )) AS matched_local_electorate_count,
+                count(*) FILTER (
+                    WHERE metadata->>'flow_kind' = ANY(%s)
+                ) AS gift_or_donation_count,
+                count(*) FILTER (
+                    WHERE metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                ) AS electoral_expenditure_count,
+                count(*) FILTER (WHERE match_scope = 'exact_area') AS exact_area_count,
+                count(*) FILTER (WHERE match_scope = 'alias_area') AS alias_area_count,
+                count(*) FILTER (
+                    WHERE match_scope IN ('child_area', 'alias_child_area')
+                ) AS child_area_count,
+                sum(amount) FILTER (
+                    WHERE amount IS NOT NULL
+                      AND COALESCE(
+                          metadata->>'public_amount_counting_role',
+                          ''
+                      ) <> 'versioned_observation_pending_dedupe'
+                ) AS reported_amount_total,
+                sum(amount) FILTER (
+                    WHERE metadata->>'flow_kind' = ANY(%s)
+                      AND amount IS NOT NULL
+                      AND COALESCE(
+                          metadata->>'public_amount_counting_role',
+                          ''
+                      ) <> 'versioned_observation_pending_dedupe'
+                ) AS gift_or_donation_reported_amount_total,
+                sum(amount) FILTER (
+                    WHERE metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                      AND amount IS NOT NULL
+                      AND COALESCE(
+                          metadata->>'public_amount_counting_role',
+                          ''
+                      ) <> 'versioned_observation_pending_dedupe'
+                ) AS electoral_expenditure_reported_amount_total,
+                min(COALESCE(date_received, date_reported)) AS first_record_date,
+                max(COALESCE(date_received, date_reported)) AS last_record_date
+            FROM matched_rows
+        ),
+        label_rows AS (
+            SELECT
+                local_electorate_external_id,
+                local_electorate_name,
+                match_scope,
+                count(*) AS money_flow_count,
+                count(*) FILTER (
+                    WHERE metadata->>'flow_kind' = ANY(%s)
+                ) AS gift_or_donation_count,
+                count(*) FILTER (
+                    WHERE metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                ) AS electoral_expenditure_count,
+                sum(amount) FILTER (
+                    WHERE amount IS NOT NULL
+                      AND COALESCE(
+                          metadata->>'public_amount_counting_role',
+                          ''
+                      ) <> 'versioned_observation_pending_dedupe'
+                ) AS reported_amount_total
+            FROM matched_rows
+            GROUP BY local_electorate_external_id, local_electorate_name, match_scope
+            ORDER BY money_flow_count DESC, reported_amount_total DESC NULLS LAST,
+                local_electorate_name
+            LIMIT 8
+        ),
+        event_rows AS (
+            SELECT
+                event_external_id,
+                event_name,
+                count(*) AS money_flow_count,
+                sum(amount) FILTER (
+                    WHERE amount IS NOT NULL
+                      AND COALESCE(
+                          metadata->>'public_amount_counting_role',
+                          ''
+                      ) <> 'versioned_observation_pending_dedupe'
+                ) AS reported_amount_total
+            FROM matched_rows
+            GROUP BY event_external_id, event_name
+            ORDER BY money_flow_count DESC, reported_amount_total DESC NULLS LAST,
+                event_name
+            LIMIT 5
+        ),
+        gift_actor_rows AS (
+            SELECT
+                COALESCE(source_entity.canonical_name, matched_rows.source_raw_name)
+                    AS source_name,
+                count(*) AS money_flow_count,
+                sum(matched_rows.amount) FILTER (
+                    WHERE matched_rows.amount IS NOT NULL
+                      AND COALESCE(
+                          matched_rows.metadata->>'public_amount_counting_role',
+                          ''
+                      ) <> 'versioned_observation_pending_dedupe'
+                ) AS reported_amount_total
+            FROM matched_rows
+            LEFT JOIN entity source_entity
+              ON source_entity.id = matched_rows.source_entity_id
+            WHERE matched_rows.metadata->>'flow_kind' = ANY(%s)
+            GROUP BY COALESCE(source_entity.canonical_name, matched_rows.source_raw_name)
+            ORDER BY reported_amount_total DESC NULLS LAST, money_flow_count DESC,
+                source_name
+            LIMIT 5
+        ),
+        expenditure_actor_rows AS (
+            SELECT
+                COALESCE(source_entity.canonical_name, matched_rows.source_raw_name)
+                    AS source_name,
+                count(*) AS money_flow_count,
+                sum(matched_rows.amount) FILTER (
+                    WHERE matched_rows.amount IS NOT NULL
+                      AND COALESCE(
+                          matched_rows.metadata->>'public_amount_counting_role',
+                          ''
+                      ) <> 'versioned_observation_pending_dedupe'
+                ) AS reported_amount_total
+            FROM matched_rows
+            LEFT JOIN entity source_entity
+              ON source_entity.id = matched_rows.source_entity_id
+            WHERE matched_rows.metadata->>'flow_kind' = 'qld_electoral_expenditure'
+            GROUP BY COALESCE(source_entity.canonical_name, matched_rows.source_raw_name)
+            ORDER BY reported_amount_total DESC NULLS LAST, money_flow_count DESC,
+                source_name
+            LIMIT 5
+        )
+        SELECT
+            summary.*,
+            COALESCE(
+                (
+                    SELECT jsonb_agg(to_jsonb(label_rows))
+                    FROM label_rows
+                ),
+                '[]'::jsonb
+            ) AS matched_local_electorates,
+            COALESCE(
+                (
+                    SELECT jsonb_agg(to_jsonb(event_rows))
+                    FROM event_rows
+                ),
+                '[]'::jsonb
+            ) AS top_events,
+            COALESCE(
+                (
+                    SELECT jsonb_agg(to_jsonb(gift_actor_rows))
+                    FROM gift_actor_rows
+                ),
+                '[]'::jsonb
+            ) AS top_gift_donors,
+            COALESCE(
+                (
+                    SELECT jsonb_agg(to_jsonb(expenditure_actor_rows))
+                    FROM expenditure_actor_rows
+                ),
+                '[]'::jsonb
+            ) AS top_expenditure_actors
+        FROM summary
+        """,
+        (
+            electorate_name,
+            electorate_name,
+            list(STATE_LOCAL_GIFT_FLOW_KINDS),
+            list(STATE_LOCAL_GIFT_FLOW_KINDS),
+            list(STATE_LOCAL_GIFT_FLOW_KINDS),
+            list(STATE_LOCAL_GIFT_FLOW_KINDS),
+        ),
+    )
+    summary = context_rows[0] if context_rows else {}
+    money_flow_count = int(summary.get("money_flow_count") or 0)
+    if money_flow_count == 0:
+        return _jsonable(
+            {
+                "available": False,
+                "match_basis": "ecq_local_electorate_label_to_council_boundary_name",
+                "not_council_or_councillor_receipt": True,
+                "money_flow_count": 0,
+                "caveat": COUNCIL_CONTEXT_CAVEAT,
+            }
+        )
+
+    return _jsonable(
+        {
+            "available": True,
+            "match_basis": "ecq_local_electorate_label_to_council_boundary_name",
+            "not_council_or_councillor_receipt": True,
+            "money_flow_count": money_flow_count,
+            "gift_or_donation_count": summary.get("gift_or_donation_count") or 0,
+            "electoral_expenditure_count": summary.get("electoral_expenditure_count") or 0,
+            "matched_local_electorate_count": summary.get(
+                "matched_local_electorate_count"
+            ) or 0,
+            "exact_area_count": summary.get("exact_area_count") or 0,
+            "alias_area_count": summary.get("alias_area_count") or 0,
+            "child_area_count": summary.get("child_area_count") or 0,
+            "reported_amount_total": summary.get("reported_amount_total"),
+            "gift_or_donation_reported_amount_total": summary.get(
+                "gift_or_donation_reported_amount_total"
+            ),
+            "electoral_expenditure_reported_amount_total": summary.get(
+                "electoral_expenditure_reported_amount_total"
+            ),
+            "first_record_date": summary.get("first_record_date"),
+            "last_record_date": summary.get("last_record_date"),
+            "matched_local_electorates": summary.get("matched_local_electorates") or [],
+            "top_events": summary.get("top_events") or [],
+            "top_gift_donors": summary.get("top_gift_donors") or [],
+            "top_expenditure_actors": summary.get("top_expenditure_actors") or [],
+            "caveat": COUNCIL_CONTEXT_CAVEAT,
+        }
+    )
+
+
 def get_electorate_profile(electorate_id: int, *, database_url: str | None = None) -> dict[str, Any]:
     with connect(database_url) as conn:
         electorate_rows = _fetch_dicts(
@@ -5142,6 +5516,7 @@ def get_electorate_profile(electorate_id: int, *, database_url: str | None = Non
         )
         if not electorate_rows:
             return {}
+        electorate = electorate_rows[0]
         representatives = _fetch_dicts(
             conn,
             """
@@ -5194,11 +5569,18 @@ def get_electorate_profile(electorate_id: int, *, database_url: str | None = Non
             """,
             (electorate_id,),
         )
+        qld_council_disclosure_context = _qld_council_disclosure_context(
+            conn,
+            electorate_name=electorate["name"],
+            chamber=electorate["chamber"],
+            state_or_territory=electorate["state_or_territory"],
+        )
     return _jsonable(
         {
-            "electorate": electorate_rows[0],
+            "electorate": electorate,
             "representatives": representatives,
             "current_representative_influence_summary": influence,
+            "qld_ecq_local_disclosure_context": qld_council_disclosure_context,
             "caveat": SEARCH_CAVEAT,
         }
     )

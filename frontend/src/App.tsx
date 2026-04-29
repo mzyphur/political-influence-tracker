@@ -21,6 +21,7 @@ import {
 import {
   fetchCoverage,
   fetchElectorateMap,
+  fetchElectorateProfile,
   fetchEntityProfile,
   fetchInfluenceGraph,
   fetchPartyProfile,
@@ -45,6 +46,7 @@ import type {
   CoverageResponse,
   Chamber,
   ElectorateFeature,
+  ElectorateProfile,
   EntityProfile,
   InfluenceGraph,
   LoadState,
@@ -217,6 +219,9 @@ function App() {
   const [stateLocalSummaryStatus, setStateLocalSummaryStatus] =
     useState<LoadState>("idle");
   const [stateLocalSummaryError, setStateLocalSummaryError] = useState("");
+  const [electorateProfile, setElectorateProfile] = useState<ElectorateProfile | null>(null);
+  const [electorateProfileStatus, setElectorateProfileStatus] =
+    useState<LoadState>("idle");
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
   const [contactPersonId, setContactPersonId] = useState<number | null>(null);
   const [representativeProfileRefreshKey, setRepresentativeProfileRefreshKey] = useState(0);
@@ -366,6 +371,28 @@ function App() {
     const firstRepresentative = selectedFeature?.properties.current_representatives[0];
     setSelectedPersonId(firstRepresentative?.person_id ?? null);
     setContactPersonId(null);
+  }, [selectedFeature]);
+
+  useEffect(() => {
+    if (!selectedFeature || selectedFeature.properties.chamber !== "council") {
+      setElectorateProfile(null);
+      setElectorateProfileStatus("idle");
+      return;
+    }
+    const controller = new AbortController();
+    setElectorateProfile(null);
+    setElectorateProfileStatus("loading");
+    fetchElectorateProfile(selectedFeature.properties.electorate_id, controller.signal)
+      .then((payload) => {
+        setElectorateProfile(payload);
+        setElectorateProfileStatus("ready");
+      })
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        setElectorateProfile(null);
+        setElectorateProfileStatus("error");
+      });
+    return () => controller.abort();
   }, [selectedFeature]);
 
   useEffect(() => {
@@ -916,6 +943,8 @@ function App() {
             contactPersonId={contactPersonId}
             representativeProfile={representativeProfile}
             representativeProfileStatus={representativeProfileStatus}
+            electorateProfile={electorateProfile}
+            electorateProfileStatus={electorateProfileStatus}
             onSelectRepresentative={selectRepresentativeForContact}
             onOpenRepresentativeGraph={openRepresentativeGraph}
             onOpenPartyProfile={openPartyProfile}

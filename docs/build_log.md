@@ -4,6 +4,23 @@
 
 Completed:
 
+- Added click-level QLD council disclosure context without turning the council
+  boundary into a recipient. `GET /api/electorates/{id}` now returns a
+  `qld_ecq_local_disclosure_context` object for QLD council features when ECQ
+  local-electorate labels match the selected council area, a child ward/division
+  label, or a cautious current/legacy council-name alias. The object keeps
+  gift/donation and electoral-expenditure counts/totals separate, exposes
+  matched local labels and top disclosed sources/spenders, and carries the
+  explicit caveat that the rows are local disclosure context, not claims of
+  receipt by a council, councillor, candidate, state MP, or federal MP. The
+  frontend Council details pane now fetches this endpoint on selection and
+  labels the resulting counts accordingly.
+- Further tightened public evidence cards. Expanded source-record cards now
+  replace internal workflow rows such as `Evidence status: official record
+  parsed`, `Review status: needs review`, and `How captured` with
+  public-facing `Source basis` and `What this supports` language. Default
+  non-values such as unrecorded source rows, missing disclosure thresholds, and
+  empty missing-field flags are hidden unless they add substantive information.
 - Added the first source-backed council map layer. The new QLD
   local-government boundary adapter fetches the official Queensland government
   ArcGIS/QSpatial local-government layer, normalizes 78 current council areas

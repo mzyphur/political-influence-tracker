@@ -48,8 +48,13 @@ http://127.0.0.1:8008/docs
   context, source/recipient summaries, and recent source-backed party/entity
   money rows.
 - `GET /api/electorates/{electorate_id}` - electorate profile, current
-  representatives, boundary availability, and current representative influence
-  summary.
+  representatives, boundary availability, current representative influence
+  summary, and for QLD council boundaries a caveated
+  `qld_ecq_local_disclosure_context` object. The QLD council context counts ECQ
+  rows whose matched local-electorate label names the selected council area or
+  a child ward/division label under it, including cautious current/legacy
+  council-name aliases where the base name is the same; it is place-level
+  disclosure context, not a council/councillor/candidate/MP receipt claim.
 - `GET /api/influence-context` - source-to-policy context rows from
   `person_policy_influence_context`, filterable by `person_id`, `topic_id`, and
   `public_sector`.
@@ -66,7 +71,9 @@ http://127.0.0.1:8008/docs
   donors and recipients, top campaign-spend actors, top public-funding
   recipients, and top return-summary sources/recipients. It also returns NSW donor-location
   aggregate context from the official 2023 State Election heatmap when loaded.
-  State/council maps and representative joins remain under construction.
+  QLD state and council maps are active as partial geography layers, with
+  disclosure attribution kept separate unless a narrower source-backed method
+  is available.
 - `GET /api/state-local/records` - paginated state/local source-row feed for
   the summary panel. It accepts `level=state|council|local`,
   `flow_kind=act_gift_of_money|act_gift_in_kind|nt_annual_gift|nt_annual_receipt|nt_donor_return_donation|nt_annual_debt|qld_gift|qld_electoral_expenditure|tas_reportable_donation|tas_reportable_loan|wa_political_contribution|vic_public_funding_payment|vic_administrative_funding_entitlement|vic_policy_development_funding_payment|sa_*_return_summary`,

@@ -72,6 +72,64 @@ export type ElectorateFeatureCollection = {
   caveat: string;
 };
 
+export type QldCouncilDisclosureContext = {
+  available: boolean;
+  match_basis: string;
+  not_council_or_councillor_receipt: boolean;
+  money_flow_count: number;
+  gift_or_donation_count?: number;
+  electoral_expenditure_count?: number;
+  exact_area_count?: number;
+  alias_area_count?: number;
+  child_area_count?: number;
+  matched_local_electorate_count?: number;
+  reported_amount_total?: number | null;
+  gift_or_donation_reported_amount_total?: number | null;
+  electoral_expenditure_reported_amount_total?: number | null;
+  first_record_date?: string | null;
+  last_record_date?: string | null;
+  matched_local_electorates?: Array<{
+    local_electorate_external_id: string | null;
+    local_electorate_name: string | null;
+    match_scope: string;
+    money_flow_count: number;
+    gift_or_donation_count: number;
+    electoral_expenditure_count: number;
+    reported_amount_total: number | null;
+  }>;
+  top_events?: Array<{
+    event_external_id: string | null;
+    event_name: string | null;
+    money_flow_count: number;
+    reported_amount_total: number | null;
+  }>;
+  top_gift_donors?: Array<{
+    source_name: string | null;
+    money_flow_count: number;
+    reported_amount_total: number | null;
+  }>;
+  top_expenditure_actors?: Array<{
+    source_name: string | null;
+    money_flow_count: number;
+    reported_amount_total: number | null;
+  }>;
+  caveat: string;
+};
+
+export type ElectorateProfile = {
+  electorate: {
+    id: number;
+    name: string;
+    chamber: Chamber;
+    state_or_territory: string | null;
+    has_boundary: boolean;
+  };
+  representatives: Array<Record<string, unknown>>;
+  current_representative_influence_summary: Array<Record<string, unknown>>;
+  qld_ecq_local_disclosure_context: QldCouncilDisclosureContext | null;
+  caveat: string;
+};
+
 export type SearchResult = {
   type: string;
   id: number | string;

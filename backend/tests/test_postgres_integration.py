@@ -1152,7 +1152,12 @@ def test_qld_council_boundary_loader_exposes_council_map(
     )
     features = []
     for index in range(78):
-        name = "Brisbane City" if index == 0 else f"Fixture Council {index}"
+        if index == 0:
+            name = "Brisbane City"
+        elif index == 1:
+            name = "Moreton Bay City"
+        else:
+            name = f"Fixture Council {index}"
         x = 152.0 + (index % 10) * 0.02
         y = -27.0 - (index // 10) * 0.02
         features.append(
@@ -1212,6 +1217,24 @@ def test_qld_council_boundary_loader_exposes_council_map(
             source_document_id = cur.fetchone()[0]
             cur.execute(
                 """
+                SELECT electorate.id
+                FROM electorate
+                WHERE electorate.name = 'Brisbane City'
+                  AND electorate.chamber = 'council'
+                """
+            )
+            brisbane_electorate_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                SELECT electorate.id
+                FROM electorate
+                WHERE electorate.name = 'Moreton Bay City'
+                  AND electorate.chamber = 'council'
+                """
+            )
+            moreton_bay_electorate_id = cur.fetchone()[0]
+            cur.execute(
+                """
                 INSERT INTO electorate (
                     name, jurisdiction_id, chamber, state_or_territory, source_document_id
                 )
@@ -1219,6 +1242,256 @@ def test_qld_council_boundary_loader_exposes_council_map(
                 """,
                 (qld_local_jurisdiction_id, source_document_id),
             )
+            qld_context_rows = (
+                (
+                    "pytest-qld-council-brisbane-division-spend",
+                    "Campaign Supplier",
+                    "Local Candidate",
+                    250,
+                    "qld_electoral_expenditure",
+                    "2026-01-03",
+                    True,
+                    "Brisbane City Division 7",
+                    "lga-brisbane-division-7",
+                    "2028 Local Government Elections",
+                    "event-local-2028",
+                ),
+                (
+                    "pytest-qld-council-brisbane-named-ward-spend",
+                    "Ward Campaign Supplier",
+                    "Local Candidate",
+                    125,
+                    "qld_electoral_expenditure",
+                    "2026-01-03",
+                    True,
+                    "Brisbane City Tennyson",
+                    "lga-brisbane-tennyson",
+                    "2028 Local Government Elections",
+                    "event-local-2028",
+                ),
+                (
+                    "pytest-qld-council-division-nonnumeric",
+                    "Office Supplier",
+                    "Local Candidate",
+                    500,
+                    "qld_electoral_expenditure",
+                    "2026-01-04",
+                    True,
+                    "Brisbane City Division Office",
+                    "lga-brisbane-division-office",
+                    "2028 Local Government Elections",
+                    "event-local-2028",
+                ),
+                (
+                    "pytest-qld-council-inactive-spend",
+                    "Inactive Supplier",
+                    "Local Recipient",
+                    9900,
+                    "qld_electoral_expenditure",
+                    "2026-01-05",
+                    False,
+                    "Brisbane City Division 7",
+                    "lga-brisbane-division-7",
+                    "2028 Local Government Elections",
+                    "event-local-2028",
+                ),
+                (
+                    "pytest-qld-council-other-area",
+                    "Other Donor",
+                    "Other Recipient",
+                    77,
+                    "qld_electoral_expenditure",
+                    "2026-01-05",
+                    True,
+                    "Whitsunday Regional",
+                    "lga-whitsunday",
+                    "2028 Local Government Elections",
+                    "event-local-2028",
+                ),
+                (
+                    "pytest-qld-council-moreton-bay-legacy-division-spend",
+                    "Moreton Campaign Supplier",
+                    "Moreton Local Candidate",
+                    300,
+                    "qld_electoral_expenditure",
+                    "2026-01-06",
+                    True,
+                    "Moreton Bay Regional Division 7",
+                    "lga-moreton-bay-regional-division-7",
+                    "2028 Local Government Elections",
+                    "event-local-2028",
+                ),
+            )
+            for (
+                external_key,
+                source_name,
+                recipient_name,
+                amount,
+                flow_kind,
+                date_received,
+                is_current,
+                local_electorate_name,
+                local_electorate_id,
+                event_name,
+                event_id,
+            ) in qld_context_rows:
+                cur.execute(
+                    """
+                    INSERT INTO money_flow (
+                        external_key, source_raw_name, recipient_raw_name, amount,
+                        receipt_type, disclosure_category, jurisdiction_id,
+                        source_document_id, source_row_ref, original_text,
+                        date_received, confidence, is_current, metadata
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, '{}',
+                        %s, 'resolved', %s, %s
+                    )
+                    """,
+                    (
+                        external_key,
+                        source_name,
+                        recipient_name,
+                        amount,
+                        "Gift" if flow_kind == "qld_gift" else "Electoral Expenditure",
+                        flow_kind,
+                        qld_local_jurisdiction_id,
+                        source_document_id,
+                        external_key,
+                        date_received,
+                        is_current,
+                        Jsonb(
+                            {
+                                "flow_kind": flow_kind,
+                                "source_dataset": "qld_ecq_eds",
+                                "event_name": event_name,
+                                "local_electorate": local_electorate_name,
+                            }
+                        ),
+                    ),
+                )
+            qld_contexts_path = tmp_path / "qld-council-contexts.jsonl"
+            qld_context_records = [
+                {
+                    "schema_version": "qld_ecq_eds_context_v1",
+                    "parser_name": "qld_ecq_eds_context_normalizer",
+                    "parser_version": "1",
+                    "source_id": "qld_ecq_eds_api_political_events",
+                    "source_record_type": "qld_ecq_political_event",
+                    "context_type": "political_event",
+                    "external_id": "event-local-2028",
+                    "identifier": {
+                        "identifier_type": "qld_ecq_event_id",
+                        "identifier_value": "event-local-2028",
+                    },
+                    "display_name": "2028 Local Government Elections",
+                    "normalized_name": "2028 local government elections",
+                    "level": "council",
+                    "stable_key": "pytest:qld_ecq_political_event:event-local-2028",
+                    "metadata": {"event_type": "Local Government Election"},
+                },
+                {
+                    "schema_version": "qld_ecq_eds_context_v1",
+                    "parser_name": "qld_ecq_eds_context_normalizer",
+                    "parser_version": "1",
+                    "source_id": "qld_ecq_eds_api_local_electorates",
+                    "source_record_type": "qld_ecq_local_electorate",
+                    "context_type": "local_electorate",
+                    "external_id": "lga-brisbane-division-7",
+                    "identifier": {
+                        "identifier_type": "qld_ecq_local_electorate_id",
+                        "identifier_value": "lga-brisbane-division-7",
+                    },
+                    "display_name": "Brisbane City Division 7",
+                    "normalized_name": "brisbane city division 7",
+                    "level": "council",
+                    "stable_key": "pytest:qld_ecq_local_electorate:lga-brisbane-division-7",
+                    "metadata": {},
+                },
+                {
+                    "schema_version": "qld_ecq_eds_context_v1",
+                    "parser_name": "qld_ecq_eds_context_normalizer",
+                    "parser_version": "1",
+                    "source_id": "qld_ecq_eds_api_local_electorates",
+                    "source_record_type": "qld_ecq_local_electorate",
+                    "context_type": "local_electorate",
+                    "external_id": "lga-brisbane-tennyson",
+                    "identifier": {
+                        "identifier_type": "qld_ecq_local_electorate_id",
+                        "identifier_value": "lga-brisbane-tennyson",
+                    },
+                    "display_name": "Brisbane City Tennyson",
+                    "normalized_name": "brisbane city tennyson",
+                    "level": "council",
+                    "stable_key": "pytest:qld_ecq_local_electorate:lga-brisbane-tennyson",
+                    "metadata": {},
+                },
+                {
+                    "schema_version": "qld_ecq_eds_context_v1",
+                    "parser_name": "qld_ecq_eds_context_normalizer",
+                    "parser_version": "1",
+                    "source_id": "qld_ecq_eds_api_local_electorates",
+                    "source_record_type": "qld_ecq_local_electorate",
+                    "context_type": "local_electorate",
+                    "external_id": "lga-brisbane-division-office",
+                    "identifier": {
+                        "identifier_type": "qld_ecq_local_electorate_id",
+                        "identifier_value": "lga-brisbane-division-office",
+                    },
+                    "display_name": "Brisbane City Division Office",
+                    "normalized_name": "brisbane city division office",
+                    "level": "council",
+                    "stable_key": (
+                        "pytest:qld_ecq_local_electorate:lga-brisbane-division-office"
+                    ),
+                    "metadata": {},
+                },
+                {
+                    "schema_version": "qld_ecq_eds_context_v1",
+                    "parser_name": "qld_ecq_eds_context_normalizer",
+                    "parser_version": "1",
+                    "source_id": "qld_ecq_eds_api_local_electorates",
+                    "source_record_type": "qld_ecq_local_electorate",
+                    "context_type": "local_electorate",
+                    "external_id": "lga-whitsunday",
+                    "identifier": {
+                        "identifier_type": "qld_ecq_local_electorate_id",
+                        "identifier_value": "lga-whitsunday",
+                    },
+                    "display_name": "Whitsunday Regional",
+                    "normalized_name": "whitsunday regional",
+                    "level": "council",
+                    "stable_key": "pytest:qld_ecq_local_electorate:lga-whitsunday",
+                    "metadata": {},
+                },
+                {
+                    "schema_version": "qld_ecq_eds_context_v1",
+                    "parser_name": "qld_ecq_eds_context_normalizer",
+                    "parser_version": "1",
+                    "source_id": "qld_ecq_eds_api_local_electorates",
+                    "source_record_type": "qld_ecq_local_electorate",
+                    "context_type": "local_electorate",
+                    "external_id": "lga-moreton-bay-regional-division-7",
+                    "identifier": {
+                        "identifier_type": "qld_ecq_local_electorate_id",
+                        "identifier_value": "lga-moreton-bay-regional-division-7",
+                    },
+                    "display_name": "Moreton Bay Regional Division 7",
+                    "normalized_name": "moreton bay regional division 7",
+                    "level": "council",
+                    "stable_key": (
+                        "pytest:qld_ecq_local_electorate:"
+                        "lga-moreton-bay-regional-division-7"
+                    ),
+                    "metadata": {},
+                },
+            ]
+            qld_contexts_path.write_text(
+                "\n".join(json.dumps(record) for record in qld_context_records) + "\n",
+                encoding="utf-8",
+            )
+            context_summary = load_qld_ecq_eds_contexts(conn, jsonl_path=qld_contexts_path)
+            assert context_summary["local_electorate_context_matched_money_flows"] == 5
             cur.execute(
                 """
                 SELECT jurisdiction.level, jurisdiction.code, count(electorate_boundary.id)
@@ -1254,6 +1527,50 @@ def test_qld_council_boundary_loader_exposes_council_map(
     assert first["electorate_name"] == "Brisbane City"
     assert first["current_representative_count"] == 0
     assert "not attributed to councillors" in payload["caveat"]
+
+    profile_response = client.get(f"/api/electorates/{brisbane_electorate_id}")
+    assert profile_response.status_code == 200
+    profile_payload = profile_response.json()
+    context = profile_payload["qld_ecq_local_disclosure_context"]
+    assert context["available"] is True
+    assert context["not_council_or_councillor_receipt"] is True
+    assert context["money_flow_count"] == 2
+    assert context["gift_or_donation_count"] == 0
+    assert context["electoral_expenditure_count"] == 2
+    assert context["exact_area_count"] == 0
+    assert context["alias_area_count"] == 0
+    assert context["child_area_count"] == 2
+    assert context["matched_local_electorate_count"] == 2
+    assert context["reported_amount_total"] == 375.0
+    assert context["gift_or_donation_reported_amount_total"] is None
+    assert context["electoral_expenditure_reported_amount_total"] == 375.0
+    assert {
+        row["local_electorate_name"] for row in context["matched_local_electorates"]
+    } == {"Brisbane City Division 7", "Brisbane City Tennyson"}
+    assert {row["match_scope"] for row in context["matched_local_electorates"]} == {
+        "child_area",
+    }
+    assert context["top_events"][0]["event_name"] == "2028 Local Government Elections"
+    assert context["top_gift_donors"] == []
+    assert context["top_expenditure_actors"][0]["source_name"] in {
+        "Campaign Supplier",
+        "Ward Campaign Supplier",
+    }
+    assert "not claims" in context["caveat"]
+
+    moreton_profile_response = client.get(f"/api/electorates/{moreton_bay_electorate_id}")
+    assert moreton_profile_response.status_code == 200
+    moreton_profile_payload = moreton_profile_response.json()
+    moreton_context = moreton_profile_payload["qld_ecq_local_disclosure_context"]
+    assert moreton_context["available"] is True
+    assert moreton_context["money_flow_count"] == 1
+    assert moreton_context["child_area_count"] == 1
+    assert moreton_context["matched_local_electorates"][0]["local_electorate_name"] == (
+        "Moreton Bay Regional Division 7"
+    )
+    assert moreton_context["matched_local_electorates"][0]["match_scope"] == (
+        "alias_child_area"
+    )
 
     default_response = client.get(
         "/api/map/electorates",

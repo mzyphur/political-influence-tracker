@@ -21,6 +21,7 @@ import { fetchRepresentativeEvidence } from "../api";
 import { formatMoney } from "../map";
 import type {
   ElectorateFeature,
+  ElectorateProfile,
   LoadState,
   RepresentativeContact,
   RepresentativeEvent,
@@ -35,6 +36,8 @@ type DetailsPanelProps = {
   contactPersonId: number | null;
   representativeProfile: RepresentativeProfile | null;
   representativeProfileStatus: LoadState;
+  electorateProfile: ElectorateProfile | null;
+  electorateProfileStatus: LoadState;
   onSelectRepresentative: (personId: number) => void;
   onOpenRepresentativeGraph: (personId: number, label: string) => void;
   onOpenPartyProfile: (partyId: number, label: string) => void;
@@ -65,6 +68,8 @@ export function DetailsPanel({
   contactPersonId,
   representativeProfile,
   representativeProfileStatus,
+  electorateProfile,
+  electorateProfileStatus,
   onSelectRepresentative,
   onOpenRepresentativeGraph,
   onOpenPartyProfile,
@@ -110,7 +115,7 @@ export function DetailsPanel({
       { key: "all", label: "All", count: totalRepresentativeEvents },
       ...summaries.map((summary) => ({
         key: summary.event_family,
-        label: summary.event_family.replaceAll("_", " "),
+        label: eventFamilyLabel(summary.event_family),
         count: summary.event_count
       }))
     ];
@@ -283,6 +288,16 @@ export function DetailsPanel({
   const properties = feature.properties;
   if (properties.chamber.toLowerCase() === "council") {
     const councilRepresentatives = properties.current_representatives ?? [];
+    const councilProfileMatchesSelection =
+      electorateProfile?.electorate.id === properties.electorate_id;
+    const councilContext = councilProfileMatchesSelection
+      ? electorateProfile?.qld_ecq_local_disclosure_context ?? null
+      : null;
+    const councilProfileStatus = councilProfileMatchesSelection
+      ? electorateProfileStatus
+      : electorateProfileStatus === "loading"
+        ? "loading"
+        : "idle";
     return (
       <aside className="details-panel" id="selection-details-panel" aria-label="Selection details">
         <button
@@ -343,12 +358,149 @@ export function DetailsPanel({
           </div>
         </section>
         <section className="panel-section">
-          <h3>Disclosure Context</h3>
+          <h3>Local Disclosure Context</h3>
           <p className="scope-caption">
-            Use the Council summary in the Explore panel for gifts, expenditure, and source
-            rows filtered by jurisdiction. Local labels are attribution context from
-            source documents, not allegations about councillors or candidates.
+            These counts use ECQ local-electorate labels matched to this council
+            area, named wards, numbered divisions, or cautious current/legacy
+            council-name aliases. They are useful context for the place, not evidence
+            that a council, councillor, candidate, or MP personally received the money.
           </p>
+          {councilProfileStatus === "loading" && (
+            <p className="muted inline-loading">
+              <Loader2 size={14} className="spin" aria-hidden="true" />
+              Loading ECQ local disclosure context
+            </p>
+          )}
+          {councilProfileStatus === "error" && (
+            <p className="muted">Could not load ECQ local disclosure context.</p>
+          )}
+          {councilProfileStatus === "ready" && councilContext && councilContext.available && (
+            <>
+              <div className="fact-grid">
+                <Fact
+                  icon={<CheckCircle2 size={17} />}
+                  label="Matched ECQ rows"
+                  value={councilContext.money_flow_count.toLocaleString("en-AU")}
+                  tooltip="QLD ECQ EDS disclosure rows whose matched local-electorate context names this council area, child local label, or cautious current/legacy council-name alias."
+                />
+                <Fact
+                  icon={<Gift size={17} />}
+                  label="Gifts / donations"
+                  value={(councilContext.gift_or_donation_count ?? 0).toLocaleString("en-AU")}
+                  tooltip="Matched ECQ gift rows. These are not treated as councillor or council personal receipts from the boundary match alone."
+                />
+                <Fact
+                  icon={<Megaphone size={17} />}
+                  label="Campaign spend"
+                  value={(councilContext.electoral_expenditure_count ?? 0).toLocaleString("en-AU")}
+                  tooltip="Matched ECQ electoral-expenditure rows. Expenditure is campaign activity incurred by an actor, not personal receipt."
+                />
+                <Fact
+                  icon={<MapPin size={17} />}
+                  label="Matched labels"
+                  value={(councilContext.matched_local_electorate_count ?? 0).toLocaleString("en-AU")}
+                  tooltip="Distinct ECQ local-electorate labels matched to this council area, child local label, or cautious current/legacy council-name alias."
+                />
+              </div>
+              <div className="council-context-split">
+                <div>
+                  <small>Gift / donation total</small>
+                  <strong>
+                    {contextAmountLabel(
+                      councilContext.gift_or_donation_reported_amount_total ?? null,
+                      councilContext.gift_or_donation_count ?? 0
+                    )}
+                  </strong>
+                </div>
+                <div>
+                  <small>Campaign spend total</small>
+                  <strong>
+                    {contextAmountLabel(
+                      councilContext.electoral_expenditure_reported_amount_total ?? null,
+                      councilContext.electoral_expenditure_count ?? 0
+                    )}
+                  </strong>
+                </div>
+              </div>
+              {(councilContext.exact_area_count ||
+                councilContext.alias_area_count ||
+                councilContext.child_area_count) && (
+                <p className="event-count-note">
+                  Matched {Number(councilContext.exact_area_count ?? 0).toLocaleString("en-AU")} whole-area
+                  rows, {Number(councilContext.alias_area_count ?? 0).toLocaleString("en-AU")} current/legacy
+                  alias rows, and {Number(councilContext.child_area_count ?? 0).toLocaleString("en-AU")} ward/division
+                  rows
+                  {councilContext.first_record_date || councilContext.last_record_date
+                    ? ` from ${voteDateSpan(
+                        councilContext.first_record_date ?? null,
+                        councilContext.last_record_date ?? null
+                      )}`
+                    : ""}.
+                </p>
+              )}
+              {councilContext.matched_local_electorates?.length ? (
+                <SignalBlock title="Matched local labels">
+                  {councilContext.matched_local_electorates.slice(0, 4).map((row) => (
+                    <SignalRow
+                      key={`${row.local_electorate_external_id}:${row.local_electorate_name}`}
+                      label={row.local_electorate_name || "Unnamed ECQ local label"}
+                      value={`${row.money_flow_count.toLocaleString("en-AU")} rows`}
+                      detail={[
+                        row.match_scope === "child_area"
+                          ? "ward or division under council"
+                          : row.match_scope === "alias_child_area"
+                            ? "ward or division under current/legacy council alias"
+                            : row.match_scope === "alias_area"
+                              ? "current/legacy council-name alias"
+                              : "whole council area",
+                        row.gift_or_donation_count
+                          ? `${row.gift_or_donation_count.toLocaleString("en-AU")} gifts`
+                          : "",
+                        row.electoral_expenditure_count
+                          ? `${row.electoral_expenditure_count.toLocaleString("en-AU")} spend`
+                          : "",
+                        formatMoney(row.reported_amount_total)
+                      ].filter(Boolean).join(" · ")}
+                    />
+                  ))}
+                </SignalBlock>
+              ) : null}
+              {councilContext.top_gift_donors?.length ? (
+                <SignalBlock title="Top gift / donation donors">
+                  {councilContext.top_gift_donors.slice(0, 4).map((row) => (
+                    <SignalRow
+                      key={row.source_name || "unnamed-source"}
+                      label={row.source_name || "Donor not named"}
+                      value={formatMoney(row.reported_amount_total)}
+                      detail={[
+                        `${row.money_flow_count.toLocaleString("en-AU")} gift rows`
+                      ].filter(Boolean).join(" · ")}
+                    />
+                  ))}
+                </SignalBlock>
+              ) : null}
+              {councilContext.top_expenditure_actors?.length ? (
+                <SignalBlock title="Top campaign spenders">
+                  {councilContext.top_expenditure_actors.slice(0, 4).map((row) => (
+                    <SignalRow
+                      key={row.source_name || "unnamed-spender"}
+                      label={row.source_name || "Spender not named"}
+                      value={formatMoney(row.reported_amount_total)}
+                      detail={`${row.money_flow_count.toLocaleString("en-AU")} expenditure rows`}
+                    />
+                  ))}
+                </SignalBlock>
+              ) : null}
+              <p className="event-count-note">{councilContext.caveat}</p>
+            </>
+          )}
+          {councilProfileStatus === "ready" && councilContext && !councilContext.available && (
+            <p className="muted">
+              No matched QLD ECQ local disclosure rows are attached to this council
+              boundary yet. The jurisdiction-level Council summary may still contain
+              rows that cannot be narrowed to this area.
+            </p>
+          )}
           {properties.map_geometry_scope && (
             <p className="scope-caption">
               Map geometry: {properties.map_geometry_scope.replaceAll("_", " ")}
@@ -530,7 +682,7 @@ export function DetailsPanel({
       </section>
 
       <section className="panel-section">
-        <h3>Representative-Linked Disclosures</h3>
+        <h3>Records Linked To This Representative</h3>
         <p className="scope-caption">
           Published rows are source-backed records that have not been rejected by review.
           Counts are descriptive and do not imply wrongdoing.
@@ -540,25 +692,25 @@ export function DetailsPanel({
             icon={<CheckCircle2 size={17} />}
             label="Published records"
             value={properties.current_representative_lifetime_influence_event_count.toLocaleString("en-AU")}
-            tooltip="Backend filter: influence_event rows linked to the current representative where review_status is not rejected. This is a disclosed-record count, not a wrongdoing claim."
+            tooltip="Source-backed rows linked to the current representative and not rejected by review. This is a disclosed-record count, not a wrongdoing claim."
           />
           <Fact
             icon={<Banknote size={17} />}
             label="Money records"
             value={properties.current_representative_lifetime_money_event_count.toLocaleString("en-AU")}
-            tooltip="Backend event_family = money. These are AEC financial-disclosure rows directly linked to this representative only when the source supports that person-level attribution."
+            tooltip="Financial-disclosure rows directly linked to this representative only when the source supports person-level attribution."
           />
           <Fact
             icon={<Gift size={17} />}
-            label="Benefit records"
+            label="Gifts, travel & benefits"
             value={properties.current_representative_lifetime_benefit_event_count.toLocaleString("en-AU")}
-            tooltip="Backend event_family = benefit. Includes disclosed gifts, sponsored travel, hospitality, tickets, memberships, flights, meals, and similar register records where classified as benefits."
+            tooltip="Disclosed gifts, sponsored travel, hospitality, tickets, memberships, flights, meals, and similar register records where classified as benefits."
           />
           <Fact
             icon={<Megaphone size={17} />}
             label="Campaign support"
             value={properties.current_representative_lifetime_campaign_support_event_count.toLocaleString("en-AU")}
-            tooltip="Backend event_family = campaign_support. These are candidate, Senate group, party-channelled, third-party, or advertising campaign records. They are not treated as money personally received by the representative."
+            tooltip="Candidate, Senate group, party-channelled, third-party, or advertising campaign records. They are not treated as money personally received by the representative."
           />
           <Fact
             icon={<Vote size={17} />}
@@ -570,7 +722,7 @@ export function DetailsPanel({
       </section>
 
       <section className="panel-section campaign-support-panel">
-        <h3>Campaign and Party-Channelled Support</h3>
+        <h3>Campaign Support Context, Not Personal Receipts</h3>
         <p className="scope-caption">
           Direct money and benefit counts are shown above. This section expands campaign,
           party-channelled, public-funding, and advertising context only; we deliberately do
@@ -735,7 +887,7 @@ export function DetailsPanel({
         )}
 
       <section className="panel-section">
-        <h3>Direct Disclosed Person Records</h3>
+        <h3>Source Records</h3>
         {representativeProfileStatus === "loading" && (
           <p className="muted inline-loading">
             <Loader2 size={14} className="spin" aria-hidden="true" />
@@ -762,7 +914,7 @@ export function DetailsPanel({
                     key={summary.event_family}
                     title={eventFamilyTooltip(summary)}
                   >
-                    <small>{summary.event_family.replaceAll("_", " ")}</small>
+                    <small>{eventFamilyLabel(summary.event_family)}</small>
                     <strong>{summary.event_count.toLocaleString("en-AU")}</strong>
                     <span>{formatMoney(summary.reported_amount_total)}</span>
                   </div>
@@ -898,6 +1050,11 @@ function eventSummaryMeta(event: RepresentativeEvent): string {
     .join(" · ");
 }
 
+function contextAmountLabel(amount: number | null, rowCount: number): string {
+  if (rowCount <= 0) return "No rows";
+  return formatMoney(amount);
+}
+
 function registerPeriodLabel(value: string): string {
   const cleaned = value.trim();
   if (!cleaned) return "";
@@ -935,10 +1092,10 @@ function humanize(value: string | null | undefined): string {
 function eventTypeLabel(event: RepresentativeEvent): string {
   const normalized = event.event_type.toLowerCase();
   const labels: Record<string, string> = {
-    gift: "Gift or benefit",
+    gift: "Declared gift or benefit",
     gift_in_kind: "Gift in kind",
     membership: "Membership or role",
-    organisational_role: "Organisation role",
+    organisational_role: "Declared role or membership",
     sponsored_travel_or_hospitality: "Sponsored travel or hospitality",
     travel_or_hospitality: "Travel or hospitality"
   };
@@ -947,10 +1104,10 @@ function eventTypeLabel(event: RepresentativeEvent): string {
 
 function eventFamilyLabel(value: string): string {
   const labels: Record<string, string> = {
-    benefit: "Benefit",
-    money: "Money",
-    organisational_role: "Role or membership",
-    private_interest: "Private interest",
+    benefit: "Gifts, travel & benefits",
+    money: "Money flows",
+    organisational_role: "Roles & memberships",
+    private_interest: "Declared interests",
     access: "Access context"
   };
   return labels[value] ?? humanize(value);
@@ -968,6 +1125,35 @@ function eventDetailMeta(event: RepresentativeEvent): string[] {
   return [
     event.date_reported ? `Reported ${event.date_reported}` : null
   ].filter((value): value is string => Boolean(value));
+}
+
+function sourceBasisLabel(event: RepresentativeEvent): string {
+  const evidenceStatus = normalizeStatusKey(event.evidence_status);
+  if (evidenceStatus === "official_record" || evidenceStatus === "official_record_parsed") {
+    return "Parsed from an official public register or return";
+  }
+  if (evidenceStatus === "third_party_civic") return "Parsed from a civic data source";
+  if (evidenceStatus === "manual_reviewed") return "Human-reviewed source record";
+  return humanize(event.evidence_status) || "Source-backed record";
+}
+
+function eventClaimBoundary(event: RepresentativeEvent): string {
+  if (event.event_family === "campaign_support") {
+    return "Campaign context, not money personally received by the representative.";
+  }
+  if (event.event_family === "benefit") {
+    return "The register lists this declared gift, travel, hospitality, or benefit. It does not by itself show wrongdoing or causation.";
+  }
+  if (event.event_family === "private_interest") {
+    return "The register lists this declared interest. It does not by itself show that a vote or policy position was caused by the interest.";
+  }
+  if (event.event_family === "organisational_role") {
+    return "The register lists this declared role or membership. It is context for possible networks, not proof of improper influence.";
+  }
+  if (event.event_family === "money") {
+    return "A disclosed money-flow record at the available attribution level. Claim strength depends on whether the source names the person, campaign, party, or another recipient.";
+  }
+  return "A source-backed context record to read with the source and attribution caveats.";
 }
 
 function eventChips(event: RepresentativeEvent): string[] {
@@ -1035,13 +1221,12 @@ function EventRow({
 }) {
   const sourceHref = safeSourceHref(event.source_final_url || event.source_url);
   const sourceName = event.source_name || event.source_id || "Source document";
-  const tooltip = eventBackendTooltip(event);
   const summaryMeta = eventSummaryMeta(event);
   const detailMeta = eventDetailMeta(event);
   const chips = eventChips(event);
   const description = eventDescription(event);
   return (
-    <article className="event-row" data-expanded={expanded} title={tooltip}>
+    <article className="event-row" data-expanded={expanded} title={eventPublicTooltip(event)}>
       <button
         type="button"
         className="event-summary-button"
@@ -1070,9 +1255,9 @@ function EventRow({
             {[event.event_type, event.event_subtype].filter(Boolean).join(" / ")}
           </DetailLine>
           <DetailLine label="Public register">{event.disclosure_system}</DetailLine>
-          <DetailLine label="How captured">{humanize(event.extraction_method)}</DetailLine>
-          <DetailLine label="Evidence status">{humanize(event.evidence_status)}</DetailLine>
-          <DetailLine label="Review status">{humanize(event.review_status)}</DetailLine>
+          <DetailLine label="Source basis">{sourceBasisLabel(event)}</DetailLine>
+          <DetailLine label="Review / validation">{reviewStateLabel(event.review_status)}</DetailLine>
+          <DetailLine label="What this supports">{eventClaimBoundary(event)}</DetailLine>
           <DetailLine label="Source document">
             {sourceHref ? (
               <a href={sourceHref} target="_blank" rel="noreferrer">
@@ -1082,21 +1267,23 @@ function EventRow({
               sourceName
             )}
           </DetailLine>
-          <DetailLine label="Source row">{event.source_ref || "Not recorded"}</DetailLine>
+          {event.source_ref && <DetailLine label="Source row">{event.source_ref}</DetailLine>}
           {event.reporting_period && (
             <DetailLine label="Parliament/register period">
               {registerPeriodLabel(event.reporting_period)}
             </DetailLine>
           )}
-          <DetailLine label="Dollar value">
-            {[humanize(event.amount_status), event.currency].filter(Boolean).join(" · ")}
+          <DetailLine label="Value">
+            {eventValueLabel(event)}
           </DetailLine>
-          <DetailLine label="Disclosure threshold">
-            {event.disclosure_threshold || "Not recorded"}
-          </DetailLine>
-          <DetailLine label="Missing fields">
-            {formatMissingFlags(event.missing_data_flags)}
-          </DetailLine>
+          {event.disclosure_threshold && (
+            <DetailLine label="Disclosure threshold">{event.disclosure_threshold}</DetailLine>
+          )}
+          {hasMissingFlags(event.missing_data_flags) && (
+            <DetailLine label="Missing fields">
+              {formatMissingFlags(event.missing_data_flags)}
+            </DetailLine>
+          )}
         </div>
       )}
     </article>
@@ -1137,8 +1324,8 @@ function eventFamilyTooltip(summary: {
       ? `${summary.first_event_date || "unknown"} to ${summary.last_event_date || "unknown"}`
       : "no event dates disclosed";
   return [
-    `Backend event_family: ${summary.event_family}`,
-    `Non-rejected person-linked rows: ${summary.event_count.toLocaleString("en-AU")}`,
+    `Database family key: ${summary.event_family}`,
+    `Published person-linked rows: ${summary.event_count.toLocaleString("en-AU")}`,
     `Rows with reported amounts: ${summary.reported_amount_event_count.toLocaleString("en-AU")}`,
     `Reported total: ${formatMoney(summary.reported_amount_total)}`,
     `Date span: ${dateSpan}`
@@ -1159,7 +1346,7 @@ function campaignSupportTooltip(summary: {
       ? `${summary.first_event_date || "unknown"} to ${summary.last_event_date || "unknown"}`
       : "no event dates disclosed";
   return [
-    `Backend event_type: ${summary.event_type}`,
+    `Database event key: ${summary.event_type}`,
     `Attribution tier: ${summary.attribution_tier || "source-backed campaign support"}`,
     "Interpretation: campaign support connected to a candidate/electorate context, not personal receipt.",
     `Rows: ${summary.event_count.toLocaleString("en-AU")}`,
@@ -1169,17 +1356,33 @@ function campaignSupportTooltip(summary: {
   ].join("\n");
 }
 
-function eventBackendTooltip(event: RepresentativeEvent) {
+function eventPublicTooltip(event: RepresentativeEvent) {
   return [
-    `Backend family: ${event.event_family}`,
-    `Backend type: ${[event.event_type, event.event_subtype].filter(Boolean).join(" / ")}`,
-    `Disclosure system: ${event.disclosure_system}`,
-    `Extraction method: ${event.extraction_method}`,
-    `Evidence: ${event.evidence_status}`,
-    `Review: ${event.review_status}`,
-    `Amount status: ${event.amount_status}`,
-    `Source ref: ${event.source_ref || "not recorded"}`
-  ].join("\n");
+    eventTypeLabel(event),
+    eventClaimBoundary(event),
+    `Source: ${event.disclosure_system}`,
+    event.source_ref ? `Source row/page: ${event.source_ref}` : ""
+  ].filter(Boolean).join("\n");
+}
+
+function reviewStateLabel(value: string | null | undefined): string {
+  const status = normalizeStatusKey(value);
+  if (status === "needs_review") {
+    return "Machine parsed; pending human review";
+  }
+  if (status === "reviewed") return "Human reviewed";
+  if (!status) return "Review state not recorded";
+  return humanize(value);
+}
+
+function eventValueLabel(event: RepresentativeEvent): string {
+  if (event.amount !== null) return `${formatMoney(event.amount)} ${event.currency}`;
+  const status = normalizeStatusKey(event.amount_status);
+  if (status === "not_applicable") return "No dollar value applies to this record";
+  if (status === "not_disclosed") return "Dollar value not disclosed in the loaded record";
+  if (status === "unknown" || status === "missing") return "Dollar value unknown in the loaded record";
+  if (status === "reported") return "Reported amount missing from the loaded record";
+  return humanize(event.amount_status) || "No dollar value published in the loaded record";
 }
 
 function DetailLine({
@@ -1243,6 +1446,10 @@ function formatMissingFlags(flags: unknown[]) {
     .map((flag) => String(flag).replaceAll("_", " "))
     .filter(Boolean);
   return cleaned.length ? cleaned.join(", ") : "No missing-field flags recorded";
+}
+
+function hasMissingFlags(flags: unknown[]) {
+  return flags.map((flag) => String(flag).trim()).filter(Boolean).length > 0;
 }
 
 function ContactPopup({

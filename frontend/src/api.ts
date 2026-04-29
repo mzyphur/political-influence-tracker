@@ -2,6 +2,7 @@ import type {
   CoverageResponse,
   Chamber,
   ElectorateFeatureCollection,
+  ElectorateProfile,
   EntityProfile,
   InfluenceGraph,
   PartyProfile,
@@ -61,6 +62,13 @@ export async function fetchElectorateMap(options: {
 
 export async function fetchCoverage(signal?: AbortSignal): Promise<CoverageResponse> {
   return fetchJson<CoverageResponse>(apiUrl("/api/coverage"), signal);
+}
+
+export async function fetchElectorateProfile(
+  electorateId: number,
+  signal?: AbortSignal
+): Promise<ElectorateProfile> {
+  return fetchJson<ElectorateProfile>(apiUrl(`/api/electorates/${electorateId}`), signal);
 }
 
 export async function fetchStateLocalSummary(options: {

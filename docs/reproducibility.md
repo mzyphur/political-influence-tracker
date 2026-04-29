@@ -269,6 +269,15 @@ These features make Council mode navigable, but any link from a disclosure row
 to a council, councillor, candidate, state MP, or federal MP must come from a
 separate source-backed or reviewed attribution rule.
 
+The QLD council details view is a deliberately weaker place-context join. It
+matches ECQ disclosure rows only where the archived ECQ local-electorate lookup
+label exactly names the selected council area, a child ward/division label
+under that area, or a cautious current/legacy council-name alias with the same
+base name. This supports claims such as "ECQ rows are contextually connected to
+this local-government area label." It does not support claims that the council,
+councillors, candidates, state MPs, or federal MPs personally received the
+money.
+
 The targeted serving-database loader refreshes just the QLD ECQ EDS
 `money_flow` rows, applies the latest participant identifier artifact when
 present, and then rebuilds the unified `influence_event` surface. The general

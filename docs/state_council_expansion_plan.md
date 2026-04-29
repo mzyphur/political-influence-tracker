@@ -458,6 +458,15 @@ Current implementation status:
   those roster facts remain separate from disclosure attribution. Council mode
   now displays 78 source-backed local-government boundaries and uses a separate
   council caveat rather than representative-linked disclosure claims.
+- QLD council map clicks now have a bounded disclosure-context drilldown.
+  `GET /api/electorates/{id}` returns `qld_ecq_local_disclosure_context` when
+  the selected council boundary name exactly matches an ECQ local-electorate
+  label, a child ward/division label under that council, or a cautious
+  current/legacy council-name alias with the same base name. This is a
+  place-context match only: it can show counts/totals, matched ECQ labels,
+  events, and top disclosed sources/spenders for that local area, but it must
+  not be described as money received by the council, councillors, candidates,
+  state MPs, or federal MPs.
 - The QLD adapter also normalizes archived ECQ political-event and
   local-electorate lookup APIs. These exact unique name matches are displayed as
   disclosure context only. They improve event/local summaries but do not by
@@ -488,8 +497,10 @@ Current implementation status:
 
 Next QLD task: map candidate/group/electorate records into state and local
 electoral districts without reclassifying campaign expenditure as personal
-receipt, then build stronger candidate, party-branch, council, and electorate
-drilldowns on top of the state/council maps and roster.
+receipt. The council-label drilldown is useful place context, but stronger
+candidate, party-branch, councillor, and representative claims still require
+event-specific candidate/group/party evidence and review-safe attribution
+tiers.
 
 ## Data Model Requirements
 

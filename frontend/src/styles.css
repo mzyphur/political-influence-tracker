@@ -1287,6 +1287,39 @@ a:focus-visible {
   margin-top: 10px;
 }
 
+.council-context-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 9px;
+}
+
+.council-context-split div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  border: 1px solid rgba(30, 109, 121, 0.16);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.72);
+  padding: 9px;
+}
+
+.council-context-split small {
+  color: var(--ink-muted);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+
+.council-context-split strong {
+  color: #17252b;
+  font-size: 14px;
+  line-height: 1.2;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .event-family {
   display: grid;
   gap: 3px;
