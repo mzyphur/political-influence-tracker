@@ -59,6 +59,17 @@ Completed:
   and 18 sector-policy suggestions. These files are review inputs only; public
   graph/path claims still require accepted review decisions with supporting
   sources.
+- Hardened House interest record filtering against additional alteration-form
+  and OCR artifacts, including inline `GIVEN NAMES`, `FAMILY NAME`,
+  electorate/state labels, `N/A`, `Value: Unknown`, standalone value fragments,
+  and short parliamentary form-tail lines. After regenerating House records and
+  refreshing `gift_interest`/`influence_event`, the local DB now has 5,818
+  current House interest records and 1,360 benefit events; known form artifacts
+  such as `GIVEN NAMES`, `FAMILY NAME`, `48TH PARLIAMENT`, `N/A`,
+  `Value: Unknown`, and `GRAYNDLER NSW` are absent from benefit events. A
+  cleaned federal review bundle was then generated at
+  `data/audit/review_bundles/federal_review_bundle_20260429T163520Z.summary.json`
+  with 1,340 benefit-event review rows.
 - Hardened ACT annual-return receipt handling after review. Broad annual
   `act_annual_receipt` rows are now loaded as state source-row context with
   `public_amount_counting_role =

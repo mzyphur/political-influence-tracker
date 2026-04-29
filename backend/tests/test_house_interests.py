@@ -214,6 +214,84 @@ Self Two tickets from Rugby Australia
     assert [record["description"] for record in records] == ["Two tickets from Rugby Australia"]
 
 
+def test_records_from_house_section_skips_alteration_form_identity_tail() -> None:
+    section = {
+        "source_id": "source-1",
+        "source_name": "Example PDF",
+        "source_metadata_path": "/tmp/metadata.json",
+        "body_path": "/tmp/body.pdf",
+        "url": "https://example.test/example.pdf",
+        "member_name": "Anthony Albanese",
+        "family_name": "Albanese",
+        "given_names": "Anthony",
+        "electorate": "Grayndler",
+        "state": "New South Wales",
+        "section_number": "12",
+        "section_title": "Sponsored travel or hospitality",
+        "section_text": """
+12. Sponsored travel or hospitality
+Tickets to Oasis - Sydney 7 November from Venues NSW
+PARLIAMENT OF AUSTRALIA
+HOUSE OF REPRESENTATIVES
+REGISTER OF MEMBERS' INTERESTS
+NOTIFICATION OF AL TERATION(S) OF INTERESTS
+48TH PARLIAMENT
+45TH PARLIAMENT
+FAMILY NAME
+ALBANESE
+(please print)
+GIVEN NAMES
+ANTHONY
+ELECTORAL DIVISION I STATE
+GRAYNDLER NSW
+GRAYNDLER I STATE NSW
+I wish to alter my statement of registrable interests as follows:
+ADDITION
+Item Details
+""",
+    }
+
+    records = records_from_house_section(section)
+
+    assert [record["description"] for record in records] == [
+        "Tickets to Oasis - Sydney 7 November from Venues NSW"
+    ]
+
+
+def test_records_from_house_section_normalizes_non_values() -> None:
+    section = {
+        "source_id": "source-1",
+        "source_name": "Example PDF",
+        "source_metadata_path": "/tmp/metadata.json",
+        "body_path": "/tmp/body.pdf",
+        "url": "https://example.test/example.pdf",
+        "member_name": "Example Member",
+        "family_name": "Member",
+        "given_names": "Example",
+        "electorate": "Example",
+        "state": "Victoria",
+        "section_number": "11",
+        "section_title": "Gifts",
+        "section_text": """
+11. Gifts
+Self N/A
+Spouse/ Nil applicable
+Partner
+Dependent Value: Unknown
+Children
+Self valued at $20
+Self 2025 – valued at $50
+Self Ticket from Example Association
+""",
+    }
+
+    records = records_from_house_section(section)
+
+    assert [record["description"] for record in records] == [
+        "Ticket from Example Association"
+    ]
+
+
 def test_records_from_house_section_handles_spouse_slash_prefix() -> None:
     section = {
         "source_id": "source-1",

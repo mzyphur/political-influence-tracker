@@ -44,6 +44,11 @@ HEADER_LINES = {
     "details",
     "details of travel/hospitality",
     "details of travel hospitality",
+    "electoral division",
+    "electoral division i state",
+    "electoral division state",
+    "family name",
+    "given names",
     "hospitality exceeds $300",
     "house of representatives",
     "item details",
@@ -63,14 +68,23 @@ HEADER_LINES = {
     "nature of operation",
     "parliament of australia",
     "purpose for which owned",
+    "register of members interests",
+    "signed",
     "signed date",
     "signature date",
+    "state",
     "type of investment",
+    "48th parliament",
+    "notification of alteration s of interests",
+    "notification of al teration s of interests",
 }
 
 INSTRUCTION_LINE_PREFIXES = (
     "any sponsored travel or hospitality received",
+    "electoral division",
     "family and business trusts and nominee companies",
+    "family name",
+    "given names",
     "held by the member",
     "hospitality exceeds",
     "in public and private companies",
@@ -84,17 +98,25 @@ INSTRUCTION_LINE_PREFIXES = (
     "membership of any organisation",
     "name of",
     "nature of its operation",
+    "i wish to alter my statement",
     "the nature of",
 )
 
 NON_VALUES = {
+    "as above",
     "n/a",
     "na",
     "nil",
+    "nil applicable",
+    "no",
     "none",
     "not applicable",
     "not applicable not applicable",
     "not applicable not applicable not applicable",
+    "not disclosed",
+    "surrendered",
+    "unknown",
+    "value unknown",
 }
 
 STOP_MARKERS = (
@@ -134,6 +156,18 @@ SHORT_HEADING_PREFIXES = (
     "travel or hospitality",
 )
 
+STATE_ABBREVIATIONS = {
+    "australian capital territory": "act",
+    "new south wales": "nsw",
+    "northern territory": "nt",
+    "queensland": "qld",
+    "south australia": "sa",
+    "tasmania": "tas",
+    "victoria": "vic",
+    "western australia": "wa",
+}
+STATE_ABBREVIATION_VALUES = set(STATE_ABBREVIATIONS.values())
+
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -156,6 +190,10 @@ def _normal_value(value: str) -> str:
     return " ".join(lowered.split())
 
 
+def _normalized_non_values() -> set[str]:
+    return {_normal_value(value) for value in NON_VALUES}
+
+
 def _is_noise_line(line: str) -> bool:
     cleaned = _clean_line(line)
     lowered = cleaned.lower()
@@ -164,11 +202,40 @@ def _is_noise_line(line: str) -> bool:
         return True
     if "\ufffd" in cleaned:
         return True
+    if "(please print)" in lowered:
+        return True
     if re.fullmatch(r"\d{1,3}", cleaned):
+        return True
+    if re.fullmatch(r"\d+", normalized):
+        return True
+    if len(normalized) <= 2:
         return True
     if normalized in {"australia", "australi"}:
         return True
-    if normalized in {_normal_value(value) for value in HEADER_LINES} or normalized in NON_VALUES:
+    if normalized in {"a u", "db", "1 jk", "1 australia j"}:
+        return True
+    tokens = normalized.split()
+    if (
+        tokens
+        and tokens[-1] in STATE_ABBREVIATION_VALUES
+        and len(tokens) <= 5
+        and cleaned.upper() == cleaned
+    ):
+        return True
+    if re.fullmatch(r"(?:\d{1,2})?(?:st|nd|rd|th)?\s*parliament", normalized):
+        return True
+    if normalized in {_normal_value(value) for value in HEADER_LINES}:
+        return True
+    if normalized in _normalized_non_values():
+        return True
+    value_probe = lowered.strip(" -–—")
+    if re.match(r"^(?:valued at|value|at)\s+\$?\d", value_probe):
+        return True
+    if re.match(r"^(?:\d{4}|[a-z]+\s+\d{4})\s+[-–]\s+valued at", value_probe):
+        return True
+    if re.fullmatch(r"[a-z]+\s+(?:19|20)\d{2}", normalized):
+        return True
+    if normalized == "self entries":
         return True
     if re.match(r"^\([ivx]+\)\s+", lowered):
         return True
@@ -221,7 +288,37 @@ def _line_has_context_prefix(line: str) -> bool:
 
 def _looks_like_value(value: str) -> bool:
     normalized = _normal_value(value)
-    return bool(normalized) and normalized not in NON_VALUES
+    return bool(normalized) and normalized not in _normalized_non_values()
+
+
+def _section_metadata_noise_values(section: dict[str, Any]) -> set[str]:
+    raw_values = [
+        str(section.get("member_name") or ""),
+        str(section.get("family_name") or ""),
+        str(section.get("given_names") or ""),
+        str(section.get("electorate") or ""),
+        str(section.get("state") or ""),
+    ]
+    family_name = str(section.get("family_name") or "")
+    given_names = str(section.get("given_names") or "")
+    electorate = str(section.get("electorate") or "")
+    state = str(section.get("state") or "")
+    if family_name and given_names:
+        raw_values.extend([f"{family_name} {given_names}", f"{given_names} {family_name}"])
+    if electorate and state:
+        state_variants = {state}
+        state_abbreviation = STATE_ABBREVIATIONS.get(_normal_value(state))
+        if state_abbreviation:
+            state_variants.add(state_abbreviation)
+        for state_variant in state_variants:
+            raw_values.extend(
+                [
+                    f"{electorate} {state_variant}",
+                    f"{electorate} state {state_variant}",
+                    f"{electorate} i state {state_variant}",
+                ]
+            )
+    return {normalized for value in raw_values if (normalized := _normal_value(value))}
 
 
 def extracted_interest_fields(description: str) -> dict[str, Any]:
@@ -271,6 +368,7 @@ def records_from_house_section(section: dict[str, Any]) -> list[dict[str, Any]]:
     section_digest = hashlib.sha1(section["section_text"].encode("utf-8")).hexdigest()[:12]
     lines = _strip_section_heading(section["section_text"])
     section_uses_owner_context = any(_line_has_context_prefix(line) for line in lines)
+    metadata_noise_values = _section_metadata_noise_values(section)
     for line in lines:
         if _is_noise_line(line):
             continue
@@ -281,6 +379,8 @@ def records_from_house_section(section: dict[str, Any]) -> list[dict[str, Any]]:
 
         current_context, value, consumed_context = _consume_context_prefix(line, current_context)
         if section_uses_owner_context and current_context == "member_unspecified" and not consumed_context:
+            continue
+        if _normal_value(value) in metadata_noise_values:
             continue
         if not _looks_like_value(value) or _is_noise_line(value):
             continue
