@@ -20,6 +20,15 @@ Completed:
   is not counted in consolidated reported totals and is not a personal receipt.
   ACT annual gift rows and free-facility-use rows remain counted
   source-backed observations.
+- Expanded the Tasmania TEC adapter to archive linked donor/recipient
+  declaration PDFs as supporting evidence. The 2026-04-29 live run extracted
+  216 reportable donation/loan rows and 366 declaration-document URLs; 365
+  declaration PDFs archived successfully with SHA-256 hashes and 1 TEC link
+  returned HTTP 404. Failed supporting-document fetches are retained as audit
+  metadata and do not stop the table row from loading, because the table itself
+  remains the structured source observation. The public API exposes declaration
+  URL, role, archive status, hash, HTTP status, content type, and fetched time,
+  but strips local filesystem archive paths.
 
 ## 2026-04-29
 

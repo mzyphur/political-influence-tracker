@@ -101,6 +101,7 @@ from au_politics_money.ingest.senate_interests import (
 from au_politics_money.ingest.sources import get_source
 from au_politics_money.ingest.tas_tec import (
     SOURCE_DATASET as TAS_TEC_SOURCE_DATASET,
+    fetch_tas_tec_declaration_documents,
     fetch_tas_tec_donation_tables,
     normalize_tas_tec_donations,
 )
@@ -914,6 +915,7 @@ def _run_vic_state_local_pipeline(*, smoke: bool = False) -> Path:
 def _run_tas_state_local_pipeline(*, smoke: bool = False) -> Path:
     started = utc_now()
     tas_artifacts: dict[str, Path] = {}
+    tas_declaration_documents: dict[str, Path] = {}
 
     def fetch_tas_sources() -> dict[str, Any]:
         metadata_paths = fetch_tas_tec_donation_tables()
@@ -923,6 +925,23 @@ def _run_tas_state_local_pipeline(*, smoke: bool = False) -> Path:
             "metadata_paths": {
                 source_id: str(path)
                 for source_id, path in sorted(metadata_paths.items())
+            },
+        }
+
+    def fetch_tas_declaration_documents() -> dict[str, Any]:
+        metadata_paths = fetch_tas_tec_declaration_documents(
+            metadata_paths=tas_artifacts,
+            limit=10 if smoke else None,
+        )
+        tas_declaration_documents.update(
+            {url: Path(path) for url, path in metadata_paths.items()}
+        )
+        return {
+            "source_count": len(metadata_paths),
+            "limited_by_smoke": smoke,
+            "metadata_paths": {
+                url: str(path)
+                for url, path in sorted(metadata_paths.items())
             },
         }
 
@@ -950,9 +969,13 @@ def _run_tas_state_local_pipeline(*, smoke: bool = False) -> Path:
 
     steps: list[tuple[str, Callable[[], Any]]] = [
         ("fetch_tas_tec_donation_table_sources", fetch_tas_sources),
+        ("fetch_tas_tec_declaration_documents", fetch_tas_declaration_documents),
         (
             "normalize_tas_tec_donations",
-            lambda: normalize_tas_tec_donations(metadata_paths=tas_artifacts),
+            lambda: normalize_tas_tec_donations(
+                metadata_paths=tas_artifacts,
+                declaration_metadata_paths=tas_declaration_documents,
+            ),
         ),
     ]
 

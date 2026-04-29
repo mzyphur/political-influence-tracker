@@ -1331,7 +1331,8 @@ function StateLocalRecentRecords({
           const context = stateLocalRecordContext(row);
           const idSignals = [
             row.source_identifier_backed ? "source official ID" : "",
-            row.recipient_identifier_backed ? "recipient official ID" : ""
+            row.recipient_identifier_backed ? "recipient official ID" : "",
+            stateLocalSupportingDocumentLabel(row)
           ].filter(Boolean);
           return (
             <div
@@ -1518,6 +1519,8 @@ function stateLocalRecordContext(row: StateLocalSummaryRecord): string[] {
 }
 
 function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
+  const supportingDocumentCount = stateLocalSupportingDocumentCount(row);
+  const archivedDocumentCount = stateLocalArchivedSupportingDocumentCount(row);
   return [
     `Source document ID: ${row.source_document_id}`,
     `Source: ${row.source_document_name}`,
@@ -1527,6 +1530,9 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
     row.transaction_kind ? `Transaction kind: ${row.transaction_kind}` : null,
     row.public_amount_counting_role
       ? `Amount counting role: ${row.public_amount_counting_role}`
+      : null,
+    supportingDocumentCount
+      ? `Supporting declaration documents: ${archivedDocumentCount}/${supportingDocumentCount} archived`
       : null,
     row.source_dataset ? `Source dataset: ${row.source_dataset}` : null,
     typeof row.public_funding_context?.tier === "string"
@@ -1571,6 +1577,25 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+function stateLocalSupportingDocumentCount(row: StateLocalSummaryRecord): number {
+  return Array.isArray(row.supporting_documents) ? row.supporting_documents.length : 0;
+}
+
+function stateLocalArchivedSupportingDocumentCount(row: StateLocalSummaryRecord): number {
+  if (!Array.isArray(row.supporting_documents)) return 0;
+  return row.supporting_documents.filter((document) => document.archived === true).length;
+}
+
+function stateLocalSupportingDocumentLabel(row: StateLocalSummaryRecord): string {
+  const count = stateLocalSupportingDocumentCount(row);
+  if (!count) return "";
+  const archived = stateLocalArchivedSupportingDocumentCount(row);
+  if (archived === count) {
+    return `${count.toLocaleString("en-AU")} declarations archived`;
+  }
+  return `${archived.toLocaleString("en-AU")}/${count.toLocaleString("en-AU")} declarations archived`;
 }
 
 function formatCompactDateTime(value: string | null): string {

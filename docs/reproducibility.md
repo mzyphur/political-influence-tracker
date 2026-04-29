@@ -166,8 +166,10 @@ The TAS adapter archives the official TEC monthly reportable political donation
 table and the 2025 House of Assembly / 2026 Legislative Council seven-day
 disclosure table fragments. It validates the exact table headers and preserves
 donation date, amount, donor, recipient, recipient type, donor ABN/ACN where
-published, declaration status, declaration document URLs, and source snapshot
-hashes. `tas_reportable_donation` rows count as gift/donation state-local rows.
+published, declaration status, declaration document URLs, supporting-document
+archive status, declaration PDF hashes where available, failed declaration
+fetch metadata, and source snapshot hashes. `tas_reportable_donation` rows
+count as gift/donation state-local rows.
 `tas_reportable_loan` rows remain source-backed loan observations and are not
 merged into gift totals. Both are disclosure observations, not claims of
 wrongdoing, causation, or personal receipt unless another source supports that

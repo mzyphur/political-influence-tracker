@@ -590,14 +590,28 @@ def test_state_local_tas_pipeline_records_donation_steps(monkeypatch) -> None:
     def fake_fetch_tas():
         return metadata_paths
 
-    def fake_normalize_tas(*, metadata_paths):
+    def fake_fetch_declarations(*, metadata_paths, limit):
+        calls["declaration_metadata_paths_input"] = {
+            key: str(value) for key, value in metadata_paths.items()
+        }
+        calls["declaration_limit"] = limit
+        return {"https://example.test/declaration.pdf": "tas-declaration-metadata"}
+
+    def fake_normalize_tas(*, metadata_paths, declaration_metadata_paths):
         calls["metadata_paths"] = {key: str(value) for key, value in metadata_paths.items()}
+        calls["declaration_metadata_paths"] = {
+            key: str(value) for key, value in declaration_metadata_paths.items()
+        }
         return "tas-donation-summary"
 
     monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
     monkeypatch.setattr(
         "au_politics_money.pipeline.fetch_tas_tec_donation_tables",
         fake_fetch_tas,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_tas_tec_declaration_documents",
+        fake_fetch_declarations,
     )
     monkeypatch.setattr(
         "au_politics_money.pipeline.normalize_tas_tec_donations",
@@ -615,10 +629,17 @@ def test_state_local_tas_pipeline_records_donation_steps(monkeypatch) -> None:
     assert "not claims of wrongdoing" in manifest.parameters["claim_boundary"]
     assert [step.name for step in manifest.steps] == [
         "fetch_tas_tec_donation_table_sources",
+        "fetch_tas_tec_declaration_documents",
         "normalize_tas_tec_donations",
     ]
     assert manifest.steps[0].output["metadata_paths"] == metadata_paths
+    assert manifest.steps[1].output["limited_by_smoke"] is True
+    assert calls["declaration_metadata_paths_input"] == metadata_paths
+    assert calls["declaration_limit"] == 10
     assert calls["metadata_paths"] == metadata_paths
+    assert calls["declaration_metadata_paths"] == {
+        "https://example.test/declaration.pdf": "tas-declaration-metadata"
+    }
 
 
 def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:

@@ -395,12 +395,44 @@ def _with_state_local_record_cursors(
     flow_kind: str | None,
 ) -> list[dict[str, Any]]:
     for row in rows:
+        if "supporting_documents" in row:
+            row["supporting_documents"] = _public_supporting_documents(
+                row.get("supporting_documents")
+            )
         row["pagination_cursor"] = _state_local_record_cursor(
             row,
             db_level=db_level,
             flow_kind=flow_kind,
         )
     return rows
+
+
+def _public_supporting_documents(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    documents: list[dict[str, Any]] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        documents.append(
+            {
+                "role": item.get("role"),
+                "status": item.get("status"),
+                "label": item.get("label"),
+                "url": item.get("url"),
+                "archived": item.get("archived") is True,
+                "archive_attempted": item.get("archive_attempted") is True,
+                "archive_source_id": item.get("archive_source_id"),
+                "archive_fetched_at": item.get("archive_fetched_at"),
+                "archive_body_sha256": item.get("archive_body_sha256"),
+                "archive_metadata_sha256": item.get("archive_metadata_sha256"),
+                "archive_http_status": item.get("archive_http_status"),
+                "archive_content_type": item.get("archive_content_type"),
+                "archive_content_length": item.get("archive_content_length"),
+                "archive_error": item.get("archive_error"),
+            }
+        )
+    return documents
 
 
 def _table_exists(conn, table_name: str) -> bool:
@@ -1898,6 +1930,7 @@ def _qld_recent_money_flow_rows(
             money_flow.metadata->>'caveat' AS record_caveat,
             money_flow.metadata->'campaign_support_attribution' AS campaign_support_attribution,
             money_flow.metadata->'public_funding_context' AS public_funding_context,
+            money_flow.metadata->'supporting_documents' AS supporting_documents,
             EXISTS (
                 SELECT 1
                 FROM entity_identifier
@@ -2057,6 +2090,8 @@ def get_state_local_records(
                     AS campaign_support_attribution,
                 money_flow.metadata->'public_funding_context'
                     AS public_funding_context,
+                money_flow.metadata->'supporting_documents'
+                    AS supporting_documents,
                 EXISTS (
                     SELECT 1
                     FROM entity_identifier

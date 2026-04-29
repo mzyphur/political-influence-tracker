@@ -233,6 +233,7 @@ export type StateLocalSummaryRecord = {
   record_caveat: string | null;
   campaign_support_attribution: Record<string, unknown> | null;
   public_funding_context: Record<string, unknown> | null;
+  supporting_documents: Array<Record<string, unknown>> | null;
   source_identifier_backed: boolean | null;
   recipient_identifier_backed: boolean | null;
   event_external_id: string | null;

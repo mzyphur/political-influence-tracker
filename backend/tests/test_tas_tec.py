@@ -7,6 +7,7 @@ import pytest
 from au_politics_money.ingest.tas_tec import (
     SOURCE_IDS,
     _source_link_url,
+    fetch_tas_tec_declaration_documents,
     normalize_tas_tec_donations,
 )
 
@@ -80,6 +81,33 @@ def _write_metadata(tmp_path: Path, source_id: str, body: str) -> Path:
     return metadata_path
 
 
+def _write_declaration_metadata(tmp_path: Path, url: str) -> Path:
+    body_path = tmp_path / "declaration.pdf"
+    body_path.write_bytes(b"%PDF-1.4\nfixture\n%%EOF\n")
+    metadata_path = tmp_path / "declaration.metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "source": {
+                    "source_id": "tas_tec_declaration_document_fixture",
+                    "url": url,
+                },
+                "final_url": url,
+                "body_path": str(body_path),
+                "sha256": _sha256_path(body_path),
+                "content_type": "application/pdf",
+                "content_length": body_path.stat().st_size,
+                "fetched_at": "20260428T010000Z",
+                "ok": True,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return metadata_path
+
+
 def test_normalize_tas_tec_donations_extracts_donations_and_loans(tmp_path) -> None:
     metadata_paths = {
         "tas_tec_donations_monthly_table": _write_metadata(
@@ -134,9 +162,147 @@ def test_normalize_tas_tec_donations_extracts_donations_and_loans(tmp_path) -> N
     assert rows[0]["donor_abn_or_acn"]["digits"] == "00632816383"
     assert rows[0]["donor_declaration_status"] == "download_available"
     assert rows[0]["recipient_declaration_status"] == "failed_to_lodge"
+    assert rows[0]["supporting_documents"][0]["role"] == "donor_declaration"
+    assert rows[0]["supporting_documents"][0]["archived"] is False
     assert rows[1]["flow_kind"] == "tas_reportable_loan"
     assert rows[1]["transaction_kind"] == "loan"
     assert "not claims of wrongdoing" in rows[1]["claim_boundary"]
+
+
+def test_normalize_tas_tec_donations_attaches_archived_declaration_metadata(tmp_path) -> None:
+    metadata_paths = {
+        source_id: _write_metadata(
+            tmp_path,
+            source_id,
+            _table_html(
+                amount="$1,200.00",
+                donor="Example Donor Pty Ltd",
+                recipient="Example Party Tasmania",
+            ),
+        )
+        for source_id in SOURCE_IDS
+    }
+    declaration_url = (
+        "https://www.tec.tas.gov.au/disclosure-and-funding/"
+        "registers-and-reports/donations/data/downloads/edf-donation-ha25-0001-d.pdf"
+    )
+    declaration_metadata = _write_declaration_metadata(tmp_path, declaration_url)
+
+    summary_path = normalize_tas_tec_donations(
+        metadata_paths=metadata_paths,
+        declaration_metadata_paths={declaration_url: declaration_metadata},
+        processed_dir=tmp_path / "processed",
+    )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    rows = [
+        json.loads(line)
+        for line in Path(summary["jsonl_path"]).read_text(encoding="utf-8").splitlines()
+    ]
+
+    donor_document = rows[0]["supporting_documents"][0]
+    assert donor_document["role"] == "donor_declaration"
+    assert donor_document["url"] == declaration_url
+    assert donor_document["archived"] is True
+    assert donor_document["archive_body_sha256"] == _sha256_path(tmp_path / "declaration.pdf")
+    assert summary["supporting_document_url_count"] == 1
+    assert summary["supporting_document_archived_count"] == 1
+    assert summary["supporting_document_failed_count"] == 0
+    assert declaration_url in summary["supporting_document_hashes"]
+
+
+def test_fetch_tas_tec_declaration_documents_archives_unique_links(tmp_path, monkeypatch) -> None:
+    metadata_paths = {
+        source_id: _write_metadata(
+            tmp_path,
+            source_id,
+            _table_html(
+                amount="$1,200.00",
+                donor="Example Donor Pty Ltd",
+                recipient="Example Party Tasmania",
+            ),
+        )
+        for source_id in SOURCE_IDS
+    }
+    fetched: list[str] = []
+
+    def fake_fetch_source(source, raw_dir):
+        fetched.append(source.url)
+        path = tmp_path / f"{source.source_id}.metadata.json"
+        path.write_text(
+            json.dumps(
+                {
+                    "source": source.to_dict(),
+                    "body_path": str(tmp_path / f"{source.source_id}.pdf"),
+                    "sha256": "fixture",
+                    "ok": True,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return path
+
+    monkeypatch.setattr("au_politics_money.ingest.tas_tec.fetch_source", fake_fetch_source)
+
+    archived = fetch_tas_tec_declaration_documents(
+        metadata_paths=metadata_paths,
+        raw_dir=tmp_path / "raw",
+    )
+
+    assert len(archived) == 1
+    assert fetched == list(archived)
+
+
+def test_fetch_tas_tec_declaration_documents_keeps_failed_fetch_metadata(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    metadata_paths = {
+        source_id: _write_metadata(
+            tmp_path,
+            source_id,
+            _table_html(
+                amount="$1,200.00",
+                donor="Example Donor Pty Ltd",
+                recipient="Example Party Tasmania",
+            ),
+        )
+        for source_id in SOURCE_IDS
+    }
+
+    def fake_fetch_source(source, raw_dir):
+        target_dir = raw_dir / source.source_id / "20260428T020000Z"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        metadata_path = target_dir / "metadata.json"
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "source": source.to_dict(),
+                    "body_path": str(target_dir / "body.html"),
+                    "sha256": "error-body",
+                    "ok": False,
+                    "http_status": 404,
+                    "fetched_at": "20260428T020000Z",
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        raise RuntimeError("404")
+
+    monkeypatch.setattr("au_politics_money.ingest.tas_tec.fetch_source", fake_fetch_source)
+
+    archived = fetch_tas_tec_declaration_documents(
+        metadata_paths=metadata_paths,
+        raw_dir=tmp_path / "raw",
+    )
+
+    assert len(archived) == 1
+    failed_metadata = json.loads(next(iter(archived.values())).read_text(encoding="utf-8"))
+    assert failed_metadata["ok"] is False
+    assert failed_metadata["http_status"] == 404
 
 
 def test_tas_tec_relative_links_do_not_duplicate_data_directory() -> None:

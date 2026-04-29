@@ -17,12 +17,14 @@ from au_politics_money.config import PROCESSED_DIR, RAW_DIR
 from au_politics_money.ingest.fetch import fetch_source
 from au_politics_money.ingest.official_identifiers import normalize_name
 from au_politics_money.ingest.sources import get_source
+from au_politics_money.models import SourceRecord
 
 SOURCE_DATASET = "tas_tec_donations"
 PARSER_NAME = "tas_tec_reportable_donation_table_normalizer"
 PARSER_VERSION = "1"
 SOURCE_TABLE = "tas_tec_reportable_political_donation_html_tables"
 SCHEMA_VERSION = "tas_tec_reportable_donation_money_flow_v1"
+DECLARATION_DOCUMENT_SOURCE_PREFIX = "tas_tec_declaration_document"
 EXPECTED_HEADERS = (
     "date of donation",
     "dollar value of donation",
@@ -164,6 +166,33 @@ def _source_link_url(base_url: str, href: str) -> str:
     return urljoin(base_url, href)
 
 
+def _declaration_source_id(url: str) -> str:
+    parsed = urlparse(url)
+    stem = Path(parsed.path).stem or "document"
+    cleaned = re.sub(r"[^a-z0-9]+", "_", stem.lower()).strip("_") or "document"
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:10]
+    return f"{DECLARATION_DOCUMENT_SOURCE_PREFIX}_{cleaned}_{digest}"
+
+
+def _declaration_source_record(url: str) -> SourceRecord:
+    return SourceRecord(
+        source_id=_declaration_source_id(url),
+        name=f"TAS TEC declaration document {Path(urlparse(url).path).name or url}",
+        jurisdiction="Tasmania",
+        level="state",
+        source_type="state_financial_disclosure_declaration_document",
+        url=url,
+        expected_format="pdf",
+        update_frequency="linked_from_source_table",
+        priority="high",
+        notes=(
+            "Declaration PDF linked from an official Tasmanian Electoral Commission "
+            "reportable political donation table. The table row is the structured "
+            "observation; this document is archived as supporting evidence."
+        ),
+    )
+
+
 def _declaration(cell: Tag, base_url: str) -> dict[str, str]:
     text = _clean_text(cell.get_text(" ", strip=True))
     link = cell.find("a", href=True)
@@ -206,6 +235,143 @@ def fetch_tas_tec_donation_tables(*, raw_dir: Path = RAW_DIR) -> dict[str, Path]
     }
 
 
+def _resolve_metadata_paths(
+    *,
+    metadata_paths: Mapping[str, Path | str] | None,
+    raw_dir: Path,
+) -> dict[str, Path]:
+    resolved_metadata_paths: dict[str, Path] = {}
+    for spec in TAS_TEC_DONATION_TABLES:
+        if metadata_paths and spec.source_id in metadata_paths:
+            resolved_metadata_paths[spec.source_id] = Path(metadata_paths[spec.source_id])
+            continue
+        try:
+            resolved_metadata_paths[spec.source_id] = _latest_metadata(
+                spec.source_id,
+                raw_dir=raw_dir,
+            )
+        except FileNotFoundError:
+            resolved_metadata_paths[spec.source_id] = fetch_source(
+                get_source(spec.source_id),
+                raw_dir=raw_dir,
+            )
+    return resolved_metadata_paths
+
+
+def _declaration_urls_from_body(
+    *,
+    spec: TasTecDonationTableSpec,
+    body: str,
+    source_url: str,
+) -> list[str]:
+    soup = BeautifulSoup(body, "html.parser")
+    table = soup.find("table")
+    if not isinstance(table, Tag):
+        raise ValueError(f"No TAS TEC donation table found for {spec.source_id}")
+    headers = tuple(_normalize_header(th.get_text(" ", strip=True)) for th in table.find_all("th"))
+    if headers != EXPECTED_HEADERS:
+        raise ValueError(
+            f"Unexpected TAS TEC donation headers for {spec.source_id}: "
+            f"expected={EXPECTED_HEADERS!r} actual={headers!r}"
+        )
+    urls: list[str] = []
+    for row in table.select("tbody tr")[1:]:
+        cells = row.find_all("td")
+        if len(cells) != len(EXPECTED_HEADERS):
+            continue
+        for declaration_cell in cells[-2:]:
+            declaration = _declaration(declaration_cell, source_url)
+            url = declaration.get("url") or ""
+            if url:
+                urls.append(url)
+    return urls
+
+
+def fetch_tas_tec_declaration_documents(
+    *,
+    metadata_paths: Mapping[str, Path | str] | None = None,
+    raw_dir: Path = RAW_DIR,
+    limit: int | None = None,
+) -> dict[str, Path]:
+    resolved_metadata_paths = _resolve_metadata_paths(
+        metadata_paths=metadata_paths,
+        raw_dir=raw_dir,
+    )
+    urls: list[str] = []
+    seen: set[str] = set()
+    for spec in TAS_TEC_DONATION_TABLES:
+        metadata = json.loads(resolved_metadata_paths[spec.source_id].read_text(encoding="utf-8"))
+        body_path = Path(str(metadata["body_path"]))
+        source = metadata.get("source") or {}
+        for url in _declaration_urls_from_body(
+            spec=spec,
+            body=body_path.read_text(encoding="utf-8", errors="replace"),
+            source_url=str(metadata.get("final_url") or source.get("url") or ""),
+        ):
+            if url in seen:
+                continue
+            seen.add(url)
+            urls.append(url)
+    if limit is not None:
+        urls = urls[:limit]
+    metadata_paths: dict[str, Path] = {}
+    for url in urls:
+        source = _declaration_source_record(url)
+        try:
+            metadata_paths[url] = fetch_source(source, raw_dir=raw_dir)
+        except Exception:
+            candidates = sorted((raw_dir / source.source_id).glob("*/metadata.json"), reverse=True)
+            if not candidates:
+                raise
+            metadata_paths[url] = candidates[0]
+    return metadata_paths
+
+
+def _archived_declaration_document(
+    *,
+    role: str,
+    declaration: Mapping[str, str],
+    declaration_metadata_paths: Mapping[str, Path | str] | None,
+) -> dict[str, Any]:
+    url = declaration.get("url") or ""
+    document: dict[str, Any] = {
+        "role": role,
+        "status": declaration.get("status") or "",
+        "label": declaration.get("label") or "",
+        "url": url,
+        "archived": False,
+    }
+    if not url or not declaration_metadata_paths or url not in declaration_metadata_paths:
+        return document
+
+    metadata_path = Path(declaration_metadata_paths[url])
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    ok = metadata.get("ok") is True
+    body_path = Path(str(metadata["body_path"])) if metadata.get("body_path") else None
+    document.update(
+        {
+            "archive_attempted": True,
+            "archived": bool(ok and body_path),
+            "archive_metadata_path": str(metadata_path),
+            "archive_metadata_sha256": _sha256_path(metadata_path),
+            "archive_source_id": (metadata.get("source") or {}).get("source_id"),
+            "archive_fetched_at": metadata.get("fetched_at"),
+            "archive_content_type": metadata.get("content_type"),
+            "archive_content_length": metadata.get("content_length"),
+            "archive_http_status": metadata.get("http_status"),
+            "archive_error": metadata.get("error") or "",
+        }
+    )
+    if body_path:
+        document.update(
+            {
+                "archive_body_path": str(body_path),
+                "archive_body_sha256": metadata.get("sha256") or _sha256_path(body_path),
+            }
+        )
+    return document
+
+
 def _records_from_table_body(
     *,
     spec: TasTecDonationTableSpec,
@@ -215,6 +381,7 @@ def _records_from_table_body(
     body_sha256: str,
     body: str,
     source_url: str,
+    declaration_metadata_paths: Mapping[str, Path | str] | None = None,
 ) -> list[dict[str, Any]]:
     soup = BeautifulSoup(body, "html.parser")
     table = soup.find("table")
@@ -258,6 +425,18 @@ def _records_from_table_body(
         )
         donor_declaration = _declaration(donor_decl_cell, source_url)
         recipient_declaration = _declaration(recipient_decl_cell, source_url)
+        supporting_documents = [
+            _archived_declaration_document(
+                role="donor_declaration",
+                declaration=donor_declaration,
+                declaration_metadata_paths=declaration_metadata_paths,
+            ),
+            _archived_declaration_document(
+                role="recipient_declaration",
+                declaration=recipient_declaration,
+                declaration_metadata_paths=declaration_metadata_paths,
+            ),
+        ]
         source_row_number = f"{spec.source_id}:r{row_number}"
         fallback_payload = "|".join(
             [
@@ -326,6 +505,7 @@ def _records_from_table_body(
                 "donor_declaration_status": donor_declaration["status"],
                 "recipient_declaration_status": recipient_declaration["status"],
                 "supporting_document_urls": source_urls,
+                "supporting_documents": supporting_documents,
                 "source_as_at": caption,
                 "public_amount_counting_role": "single_observation",
                 "disclosure_system": "tas_tec_electoral_disclosure_funding",
@@ -350,30 +530,22 @@ def _records_from_table_body(
 def normalize_tas_tec_donations(
     *,
     metadata_paths: Mapping[str, Path | str] | None = None,
+    declaration_metadata_paths: Mapping[str, Path | str] | None = None,
     raw_dir: Path = RAW_DIR,
     processed_dir: Path = PROCESSED_DIR,
 ) -> Path:
-    resolved_metadata_paths: dict[str, Path] = {}
-    for spec in TAS_TEC_DONATION_TABLES:
-        if metadata_paths and spec.source_id in metadata_paths:
-            resolved_metadata_paths[spec.source_id] = Path(metadata_paths[spec.source_id])
-            continue
-        try:
-            resolved_metadata_paths[spec.source_id] = _latest_metadata(
-                spec.source_id,
-                raw_dir=raw_dir,
-            )
-        except FileNotFoundError:
-            resolved_metadata_paths[spec.source_id] = fetch_source(
-                get_source(spec.source_id),
-                raw_dir=raw_dir,
-            )
+    resolved_metadata_paths = _resolve_metadata_paths(
+        metadata_paths=metadata_paths,
+        raw_dir=raw_dir,
+    )
 
     records: list[dict[str, Any]] = []
     source_counts: Counter[str] = Counter()
     flow_counts: Counter[str] = Counter()
     report_counts: Counter[str] = Counter()
     source_hashes: dict[str, dict[str, str]] = {}
+    supporting_document_hashes: dict[str, dict[str, Any]] = {}
+    supporting_document_attempts: dict[str, dict[str, Any]] = {}
     amount_total = Decimal("0")
 
     for spec in TAS_TEC_DONATION_TABLES:
@@ -400,6 +572,7 @@ def normalize_tas_tec_donations(
             body_sha256=body_sha256,
             body=body_path.read_text(encoding="utf-8", errors="replace"),
             source_url=str(metadata.get("final_url") or source.get("url") or ""),
+            declaration_metadata_paths=declaration_metadata_paths,
         )
         source_counts[spec.source_id] += len(table_records)
         report_counts[spec.report_label] += len(table_records)
@@ -412,6 +585,27 @@ def normalize_tas_tec_donations(
         for record in table_records:
             amount_total += Decimal(str(record["amount_aud"]))
             flow_counts[str(record["flow_kind"])] += 1
+            for document in record.get("supporting_documents") or []:
+                if not document.get("url") or not document.get("archive_attempted"):
+                    continue
+                url = str(document["url"])
+                supporting_document_attempts[url] = {
+                    "archive_source_id": document.get("archive_source_id"),
+                    "archive_metadata_path": document.get("archive_metadata_path"),
+                    "archive_metadata_sha256": document.get("archive_metadata_sha256"),
+                    "archive_fetched_at": document.get("archive_fetched_at"),
+                    "archive_content_type": document.get("archive_content_type"),
+                    "archive_content_length": document.get("archive_content_length"),
+                    "archive_http_status": document.get("archive_http_status"),
+                    "archive_error": document.get("archive_error"),
+                    "archived": document.get("archived"),
+                }
+                if document.get("archived"):
+                    supporting_document_hashes[url] = {
+                        **supporting_document_attempts[url],
+                        "archive_body_path": document.get("archive_body_path"),
+                        "archive_body_sha256": document.get("archive_body_sha256"),
+                    }
         records.extend(table_records)
 
     if not records:
@@ -434,6 +628,19 @@ def normalize_tas_tec_donations(
         "source_ids": list(SOURCE_IDS),
         "source_counts": dict(sorted(source_counts.items())),
         "source_hashes": source_hashes,
+        "supporting_document_url_count": len(
+            {
+                url
+                for record in records
+                for url in record.get("supporting_document_urls", [])
+            }
+        ),
+        "supporting_document_archived_count": len(supporting_document_hashes),
+        "supporting_document_failed_count": (
+            len(supporting_document_attempts) - len(supporting_document_hashes)
+        ),
+        "supporting_document_attempts": dict(sorted(supporting_document_attempts.items())),
+        "supporting_document_hashes": dict(sorted(supporting_document_hashes.items())),
         "flow_kind_counts": dict(sorted(flow_counts.items())),
         "report_counts": dict(sorted(report_counts.items())),
         "total_count": len(records),
