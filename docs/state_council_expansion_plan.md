@@ -328,6 +328,16 @@ Current implementation status:
   disclosure context only. They improve event/local summaries but do not by
   themselves attribute money to a candidate, councillor, or current
   representative.
+- The QLD adapter is now orchestrated by
+  `run-state-local-pipeline --jurisdiction qld`, which fetches source pages and
+  lookup APIs, fetches current ECQ CSV exports, normalizes money-flow rows,
+  participants, and disclosure contexts, and writes a pipeline manifest without
+  mutating the serving database. This is the adapter template for the next state
+  and council jurisdictions: acquisition, normalization, loading, and public
+  attribution remain separate auditable stages. The QLD runner passes exact
+  fetched metadata paths into later export and normalization steps, which is the
+  reproducibility standard future adapters should follow rather than relying on
+  ambient latest-file lookup during a run.
 - The historical disclosure-return archive currently returned HTTP 401 during
   reproducible fetch. Treat it as a blocked/pending source until an official
   public access path is confirmed.

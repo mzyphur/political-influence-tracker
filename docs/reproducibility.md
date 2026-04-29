@@ -41,24 +41,23 @@ a small subset. It is for CI/development only, not production data publication.
 
 The first active state/local adapter is Queensland ECQ EDS. It is deliberately
 separate from the federal foundation command while the state/council framework
-is being generalized.
+is being generalized, but it now has its own manifest-producing runner:
 
 ```bash
 cd backend
-.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_public_map
-.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_expenditures
-.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_electors
-.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_parties
-.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_associated_entities
-.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_local_groups
-.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_events
-.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_local_electorates
-.venv/bin/python -m au_politics_money.cli fetch-qld-ecq-eds-exports
-.venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-money-flows
-.venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-participants
-.venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-contexts
+.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction qld
 .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-money-flows
 ```
+
+`run-state-local-pipeline` performs acquisition and normalization only. It does
+not mutate the serving database. Its manifest records `loads_database: false`
+and the claim boundary that ECQ gift/donation rows, electoral expenditure rows,
+participants, and disclosure contexts are source-backed state/local disclosure
+records, not automatic claims about personal receipt by an MP, senator, state
+MP, or councillor. Loading remains explicit through
+`load-qld-ecq-eds-money-flows`. The runner passes the exact fetched page,
+export, and lookup metadata paths into downstream normalizers so the normalized
+artifacts can be traced to the same run instead of an unrelated "latest" file.
 
 The export fetcher does not depend on a manual browser download. It reads the
 latest archived ECQ EDS public map and expenditure pages, extracts their current

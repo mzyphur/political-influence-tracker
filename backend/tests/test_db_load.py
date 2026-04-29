@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from au_politics_money.db import load as load_module
 from au_politics_money.db.load import (
     MAX_COASTLINE_REPAIR_BUFFER_METERS,
     _can_create_house_interest_person,
@@ -15,6 +16,7 @@ from au_politics_money.db.load import (
     load_official_parliamentary_decision_record_documents,
     load_official_parliamentary_decision_records,
     load_electorate_boundary_display_geometries,
+    load_processed_artifacts,
     missing_interest_flags,
     normalize_electorate_name,
     normalize_name,
@@ -147,6 +149,51 @@ def test_apply_schema_loads_backend_schema() -> None:
     assert "'sector_policy_topic_link'" in conn.cursor_instance.executed_sql
     assert "CREATE OR REPLACE VIEW person_policy_vote_summary" in conn.cursor_instance.executed_sql
     assert conn.committed is True
+
+
+def test_default_load_refreshes_official_identifiers_before_influence_events(monkeypatch) -> None:
+    calls: list[str] = []
+
+    class ContextConnection:
+        def __enter__(self):
+            return object()
+
+        def __exit__(self, exc_type, exc, tb) -> None:
+            return None
+
+    monkeypatch.setattr(load_module, "connect", lambda database_url=None: ContextConnection())
+    monkeypatch.setattr(
+        load_module,
+        "load_official_identifiers",
+        lambda conn: calls.append("official_identifiers") or {"official_identifier_records": 1},
+    )
+    monkeypatch.setattr(
+        load_module,
+        "load_influence_events",
+        lambda conn: calls.append("influence_events") or {"events": 1},
+    )
+
+    summary = load_processed_artifacts(
+        include_roster=False,
+        include_money_flows=False,
+        include_qld_ecq=False,
+        include_house_interests=False,
+        include_senate_interests=False,
+        include_electorate_boundaries=False,
+        include_influence_events=True,
+        include_entity_classifications=False,
+        include_official_identifiers=True,
+        include_official_decision_records=False,
+        include_official_decision_record_documents=False,
+        include_official_aph_divisions=False,
+        include_vote_divisions=False,
+        include_postcode_crosswalk=False,
+        include_party_entity_links=False,
+        reapply_reviews=False,
+    )
+
+    assert calls == ["official_identifiers", "influence_events"]
+    assert list(summary) == ["schema_applied", "official_identifiers", "influence_events"]
 
 
 def test_display_geometry_repair_buffer_validates_range() -> None:

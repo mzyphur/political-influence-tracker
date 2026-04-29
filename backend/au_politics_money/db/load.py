@@ -1558,8 +1558,12 @@ def _load_aec_money_flow_jsonl(
                         last_seen_at, withdrawn_at, metadata
                     )
                     VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, TRUE, now(), NULL, %s
+                        %s, %s, %s,
+                        %s, %s, %s,
+                        %s, %s, %s, %s,
+                        %s, %s, %s,
+                        %s, %s, %s, TRUE,
+                        now(), NULL, %s
                     )
                     ON CONFLICT (external_key) DO UPDATE SET
                         source_entity_id = EXCLUDED.source_entity_id,
@@ -1576,6 +1580,9 @@ def _load_aec_money_flow_jsonl(
                         source_document_id = EXCLUDED.source_document_id,
                         source_row_ref = EXCLUDED.source_row_ref,
                         original_text = EXCLUDED.original_text,
+                        recipient_person_id = NULL,
+                        candidate_contest_id = NULL,
+                        office_term_id = NULL,
                         confidence = EXCLUDED.confidence,
                         is_current = TRUE,
                         last_seen_at = now(),
@@ -2415,12 +2422,14 @@ def load_aec_candidate_contests(conn) -> dict[str, int]:
             """
             SELECT
                 id,
+                external_key,
                 recipient_person_id,
                 office_term_id,
                 source_document_id,
                 jurisdiction_id,
                 confidence,
                 recipient_raw_name,
+                source_row_ref,
                 metadata
             FROM money_flow
             WHERE is_current = TRUE
@@ -2434,12 +2443,14 @@ def load_aec_candidate_contests(conn) -> dict[str, int]:
     contests: dict[str, dict[str, Any]] = {}
     for (
         money_flow_id,
+        money_flow_external_key,
         person_id,
         office_term_id,
         source_document_id,
         jurisdiction_id,
         confidence,
         recipient_raw_name,
+        source_row_ref,
         metadata,
     ) in rows:
         base_metadata = metadata or {}
@@ -2481,12 +2492,14 @@ def load_aec_candidate_contests(conn) -> dict[str, int]:
                 "office_term_id": office_term_id,
                 "confidence": confidence or "unresolved",
                 "money_flow_ids": [],
+                "money_flow_external_keys": [],
                 "source_row_refs": [],
                 "candidate_context": context,
                 "recipient_person_match": base_metadata.get("recipient_person_match") or {},
             },
         )
         contest["money_flow_ids"].append(int(money_flow_id))
+        contest["money_flow_external_keys"].append(str(money_flow_external_key))
         if person_id is not None:
             existing_person_id = contest.get("person_id")
             contest["person_id"] = (
@@ -2499,8 +2512,8 @@ def load_aec_candidate_contests(conn) -> dict[str, int]:
                 if existing_office_term_id in (None, office_term_id)
                 else None
             )
-        if base_metadata.get("source_row_ref"):
-            contest["source_row_refs"].append(base_metadata["source_row_ref"])
+        if source_row_ref:
+            contest["source_row_refs"].append(str(source_row_ref))
 
     inserted_or_updated = 0
     linked_money_flows = 0
@@ -2571,7 +2584,9 @@ def load_aec_candidate_contests(conn) -> dict[str, int]:
                             "source_dataset": "aec_election",
                             "candidate_context": contest["candidate_context"],
                             "recipient_person_match": contest["recipient_person_match"],
-                            "input_money_flow_ids": contest["money_flow_ids"],
+                            "input_money_flow_external_keys": sorted(
+                                set(contest["money_flow_external_keys"])
+                            ),
                             "source_row_refs": sorted(set(contest["source_row_refs"])),
                             "attribution_scope": "campaign_context_not_personal_receipt",
                             "temporal_check": (
@@ -6249,12 +6264,12 @@ def load_processed_artifacts(
             summary["senate_interests"] = load_senate_interest_records(conn)
         if include_electorate_boundaries:
             summary["electorate_boundaries"] = load_electorate_boundaries(conn)
+        if include_official_identifiers:
+            summary["official_identifiers"] = load_official_identifiers(conn)
         if include_influence_events:
             summary["influence_events"] = load_influence_events(conn)
         if include_entity_classifications:
             summary["entity_classifications"] = load_entity_classifications(conn)
-        if include_official_identifiers:
-            summary["official_identifiers"] = load_official_identifiers(conn)
         if include_official_decision_records:
             summary["official_decision_records"] = load_official_parliamentary_decision_records(
                 conn

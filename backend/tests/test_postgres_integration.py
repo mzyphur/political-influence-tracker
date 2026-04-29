@@ -21,6 +21,7 @@ from au_politics_money.db.load import (
     connect,
     link_aec_candidate_campaign_money_flows,
     link_aec_direct_representative_money_flows,
+    _load_aec_money_flow_jsonl,
     load_aec_candidate_contests,
     load_influence_events,
     load_postcode_electorate_crosswalk,
@@ -2227,7 +2228,9 @@ def test_candidate_contest_spine_preserves_non_temporal_campaign_context(
                     contest.office_term_id,
                     contest.election_year,
                     contest.chamber,
-                    contest.metadata->>'temporal_check'
+                    contest.metadata->>'temporal_check',
+                    contest.metadata->'input_money_flow_external_keys',
+                    contest.metadata->'source_row_refs'
                 FROM money_flow
                 JOIN candidate_contest contest
                   ON contest.id = money_flow.candidate_contest_id
@@ -2265,11 +2268,146 @@ def test_candidate_contest_spine_preserves_non_temporal_campaign_context(
     assert money_flow_row[8] == 2025
     assert money_flow_row[9] == "house"
     assert money_flow_row[10] == "not_applied"
+    assert money_flow_row[11] == ["aec-election-candidate:jane-citizen"]
+    assert money_flow_row[12] == ["Candidate Donations.csv:1"]
     assert event_row[0] == money_flow_row[1]
     assert event_row[1] is None
     assert event_row[2] == "campaign_support"
     assert event_row[3] == "candidate_or_senate_group_donation"
     assert event_row[4] == "name_context_only"
+
+
+def test_candidate_contest_links_are_cleared_when_source_context_disappears(
+    integration_db: IntegrationDatabase,
+    tmp_path: Path,
+) -> None:
+    metadata_path = tmp_path / "metadata.json"
+    source_body_path = tmp_path / "aec-election.csv"
+    source_body_path.write_text("fixture\n", encoding="utf-8")
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "source": {
+                    "source_id": "pytest-aec-election-corrected",
+                    "name": "Pytest Corrected AEC Election Export",
+                    "source_type": "test_fixture",
+                    "jurisdiction": "Commonwealth",
+                    "url": "https://example.test/aec-election",
+                },
+                "fetched_at": "20260429T000000Z",
+                "http_status": 200,
+                "content_type": "text/csv",
+                "sha256": "pytest-aec-election-corrected-sha",
+                "body_path": str(source_body_path),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def write_record(include_candidate_context: bool) -> Path:
+        record = {
+            "source_dataset": "aec_election",
+            "source_table": "Candidate Donations.csv",
+            "source_row_number": "1",
+            "flow_kind": "election_candidate_or_senate_group_donation_received",
+            "financial_year": "",
+            "return_type": "Candidate",
+            "source_raw_name": "Example Donor Pty Ltd",
+            "recipient_raw_name": "Jane Citizen",
+            "receipt_type": "Donation Received",
+            "date": "14/04/2025",
+            "amount_aud": "3000.00",
+            "jurisdiction_name": "Commonwealth",
+            "jurisdiction_level": "federal",
+            "jurisdiction_code": "CWLTH",
+            "event_name": "2025 Federal Election",
+            "source_metadata_path": str(metadata_path),
+            "source_body_path": str(source_body_path),
+            "original": {"fixture": "candidate-context-correction"},
+        }
+        if include_candidate_context:
+            record["candidate_context"] = {
+                "event_name": "2025 Federal Election",
+                "return_type": "Candidate",
+                "name": "Jane Citizen",
+                "electorate_name": "Melbourne",
+                "electorate_state": "VIC",
+                "party_id": "EX",
+                "party_name": "Example Party",
+            }
+        jsonl_path = tmp_path / (
+            "with_candidate_context.jsonl"
+            if include_candidate_context
+            else "without_candidate_context.jsonl"
+        )
+        jsonl_path.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
+        return jsonl_path
+
+    with connect(integration_db.url) as conn:
+        first_summary = _load_aec_money_flow_jsonl(
+            conn,
+            write_record(include_candidate_context=True),
+            default_source_dataset="aec_election",
+        )
+        load_influence_events(conn)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT recipient_person_id, candidate_contest_id, metadata ? 'candidate_contest'
+                FROM money_flow
+                WHERE source_row_ref = 'Candidate Donations.csv:1'
+                  AND metadata->>'source_dataset' = 'aec_election'
+                """
+            )
+            linked_row = cur.fetchone()
+
+        second_summary = _load_aec_money_flow_jsonl(
+            conn,
+            write_record(include_candidate_context=False),
+            default_source_dataset="aec_election",
+        )
+        load_influence_events(conn)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    id,
+                    recipient_person_id,
+                    candidate_contest_id,
+                    office_term_id,
+                    metadata ? 'candidate_contest',
+                    metadata ? 'recipient_person_match'
+                FROM money_flow
+                WHERE source_row_ref = 'Candidate Donations.csv:1'
+                  AND metadata->>'source_dataset' = 'aec_election'
+                """
+            )
+            corrected_row = cur.fetchone()
+            cur.execute(
+                """
+                SELECT recipient_person_id, candidate_contest_id, office_term_id
+                FROM influence_event
+                WHERE money_flow_id = %s
+                """,
+                (corrected_row[0],),
+            )
+            corrected_event = cur.fetchone()
+
+    assert first_summary["candidate_contests"] == 1
+    assert linked_row[0] == integration_db.person_id
+    assert linked_row[1] is not None
+    assert linked_row[2] is True
+    assert second_summary["candidate_contests"] == 0
+    assert corrected_row[1] is None
+    assert corrected_row[2] is None
+    assert corrected_row[3] is None
+    assert corrected_row[4] is False
+    assert corrected_row[5] is False
+    assert corrected_event == (None, None, None)
 
 
 def test_election_disclosure_observations_do_not_inflate_reported_totals(

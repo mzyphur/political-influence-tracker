@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -189,11 +190,17 @@ def _request_headers() -> dict[str, str]:
     }
 
 
-def _fetch_export(spec: QldEcqExportSpec, raw_dir: Path) -> dict[str, object]:
+def _fetch_export(
+    spec: QldEcqExportSpec,
+    raw_dir: Path,
+    *,
+    page_metadata_path: Path | None = None,
+) -> dict[str, object]:
     page_source = get_source(spec.page_source_id)
-    page_metadata_path = _latest_metadata(page_source.source_id, raw_dir=raw_dir)
     if page_metadata_path is None:
-        page_metadata_path = fetch_source(page_source, raw_dir=raw_dir)
+        page_metadata_path = _latest_metadata(page_source.source_id, raw_dir=raw_dir)
+        if page_metadata_path is None:
+            page_metadata_path = fetch_source(page_source, raw_dir=raw_dir)
 
     page_metadata = json.loads(page_metadata_path.read_text(encoding="utf-8"))
     page_body_path = Path(page_metadata["body_path"])
@@ -269,6 +276,7 @@ def _fetch_export(spec: QldEcqExportSpec, raw_dir: Path) -> dict[str, object]:
 
 def fetch_qld_ecq_eds_exports(
     export_names: list[str] | None = None,
+    page_metadata_paths: Mapping[str, Path] | None = None,
     raw_dir: Path = RAW_DIR,
     processed_dir: Path = PROCESSED_DIR,
 ) -> Path:
@@ -280,7 +288,25 @@ def fetch_qld_ecq_eds_exports(
     if not specs:
         raise ValueError("No QLD ECQ EDS exports selected")
 
-    outputs = [_fetch_export(spec, raw_dir=raw_dir) for spec in specs]
+    if page_metadata_paths is not None:
+        missing = [spec.page_source_id for spec in specs if spec.page_source_id not in page_metadata_paths]
+        if missing:
+            raise ValueError(
+                "Missing QLD ECQ page metadata path(s): " + ", ".join(sorted(missing))
+            )
+
+    outputs = [
+        _fetch_export(
+            spec,
+            raw_dir=raw_dir,
+            page_metadata_path=(
+                Path(page_metadata_paths[spec.page_source_id])
+                if page_metadata_paths is not None
+                else None
+            ),
+        )
+        for spec in specs
+    ]
     timestamp = _timestamp()
     target_dir = processed_dir / "qld_ecq_eds_exports"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -456,6 +482,7 @@ def _normalize_expenditure_row(
 def normalize_qld_ecq_eds_money_flows(
     raw_dir: Path = RAW_DIR,
     processed_dir: Path = PROCESSED_DIR,
+    export_metadata_paths: Mapping[str, Path] | None = None,
 ) -> Path:
     export_specs = {
         "qld_ecq_eds_map_export_csv": _normalize_gift_row,
@@ -473,7 +500,12 @@ def normalize_qld_ecq_eds_money_flows(
     source_metadata_paths: dict[str, str] = {}
     with jsonl_path.open("w", encoding="utf-8") as handle:
         for source_id, normalizer in export_specs.items():
-            metadata_path = _latest_export_metadata(source_id, raw_dir=raw_dir)
+            if export_metadata_paths is not None:
+                if source_id not in export_metadata_paths:
+                    raise ValueError(f"Missing QLD ECQ export metadata path for {source_id}")
+                metadata_path = Path(export_metadata_paths[source_id])
+            else:
+                metadata_path = _latest_export_metadata(source_id, raw_dir=raw_dir)
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             body_path = Path(metadata["body_path"])
             source_metadata_paths[source_id] = str(metadata_path)
@@ -578,6 +610,7 @@ def _participant_record(
 def normalize_qld_ecq_eds_participants(
     raw_dir: Path = RAW_DIR,
     processed_dir: Path = PROCESSED_DIR,
+    lookup_metadata_paths: Mapping[str, Path] | None = None,
 ) -> Path:
     timestamp = _timestamp()
     target_dir = processed_dir / "qld_ecq_eds_participants"
@@ -591,7 +624,14 @@ def normalize_qld_ecq_eds_participants(
     source_metadata_paths: dict[str, str] = {}
     with jsonl_path.open("w", encoding="utf-8") as handle:
         for spec in QLD_ECQ_EDS_PARTICIPANT_LOOKUPS:
-            metadata_path = _latest_lookup_metadata(spec.source_id, raw_dir=raw_dir)
+            if lookup_metadata_paths is not None:
+                if spec.source_id not in lookup_metadata_paths:
+                    raise ValueError(
+                        f"Missing QLD ECQ participant lookup metadata path for {spec.source_id}"
+                    )
+                metadata_path = Path(lookup_metadata_paths[spec.source_id])
+            else:
+                metadata_path = _latest_lookup_metadata(spec.source_id, raw_dir=raw_dir)
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             body_path = Path(metadata["body_path"])
             rows = json.loads(body_path.read_text(encoding="utf-8"))
@@ -690,6 +730,7 @@ def _context_record(
 def normalize_qld_ecq_eds_contexts(
     raw_dir: Path = RAW_DIR,
     processed_dir: Path = PROCESSED_DIR,
+    lookup_metadata_paths: Mapping[str, Path] | None = None,
 ) -> Path:
     timestamp = _timestamp()
     target_dir = processed_dir / "qld_ecq_eds_contexts"
@@ -704,7 +745,14 @@ def normalize_qld_ecq_eds_contexts(
     source_metadata_paths: dict[str, str] = {}
     with jsonl_path.open("w", encoding="utf-8") as handle:
         for spec in QLD_ECQ_EDS_CONTEXT_LOOKUPS:
-            metadata_path = _latest_lookup_metadata(spec.source_id, raw_dir=raw_dir)
+            if lookup_metadata_paths is not None:
+                if spec.source_id not in lookup_metadata_paths:
+                    raise ValueError(
+                        f"Missing QLD ECQ context lookup metadata path for {spec.source_id}"
+                    )
+                metadata_path = Path(lookup_metadata_paths[spec.source_id])
+            else:
+                metadata_path = _latest_lookup_metadata(spec.source_id, raw_dir=raw_dir)
             metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
             body_path = Path(metadata["body_path"])
             rows = json.loads(body_path.read_text(encoding="utf-8"))

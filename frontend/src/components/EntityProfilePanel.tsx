@@ -200,6 +200,12 @@ function eventTimeLabel(event: EntityEvent) {
   return "Date not disclosed";
 }
 
+function eventAmountLabel(event: EntityEvent) {
+  if (event.event_family === "access") return "Not a money record";
+  if (event.amount_status === "not_applicable") return "Not applicable";
+  return formatMoney(event.amount);
+}
+
 function EntityEventRow({ event }: { event: EntityEvent }) {
   const sourceHref = event.source_final_url || event.source_url;
   const counterparty =
@@ -213,7 +219,7 @@ function EntityEventRow({ event }: { event: EntityEvent }) {
         <span>{counterparty || "Counterparty not identified"}</span>
       </div>
       <small>
-        {[eventTimeLabel(event), formatMoney(event.amount)].filter(Boolean).join(" · ")}
+        {[eventTimeLabel(event), eventAmountLabel(event)].filter(Boolean).join(" · ")}
       </small>
       {sourceHref && (
         <a href={sourceHref} target="_blank" rel="noreferrer">

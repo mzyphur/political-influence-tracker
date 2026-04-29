@@ -1,4 +1,10 @@
-from au_politics_money.pipeline import PipelineManifest, run_federal_foundation_pipeline
+import pytest
+
+from au_politics_money.pipeline import (
+    PipelineManifest,
+    run_federal_foundation_pipeline,
+    run_state_local_pipeline,
+)
 
 
 def test_pipeline_manifest_records_reproducibility_fields() -> None:
@@ -151,3 +157,109 @@ def test_pipeline_refresh_mode_refetches_cached_update_sensitive_sources(monkeyp
     assert calls["boundary_refetch"] is True
     assert calls["aph_documents"] == {"only_missing": False, "limit": 10}
     assert calls["official_identifier_bulk_limit"] == 25
+
+
+def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_path) -> None:
+    calls: dict[str, object] = {}
+    export_summary_path = tmp_path / "qld-export-summary.json"
+    export_summary_path.write_text(
+        """
+        {
+          "outputs": [
+            {
+              "source_id": "qld_ecq_eds_map_export_csv",
+              "metadata_path": "/tmp/qld-map-metadata.json"
+            },
+            {
+              "source_id": "qld_ecq_eds_expenditure_export_csv",
+              "metadata_path": "/tmp/qld-expenditure-metadata.json"
+            }
+          ]
+        }
+        """,
+        encoding="utf-8",
+    )
+
+    monkeypatch.setattr("au_politics_money.pipeline._git_commit", lambda: "def456")
+    monkeypatch.setattr("au_politics_money.pipeline._dependency_versions", lambda: {})
+
+    def fake_write_manifest(manifest):
+        calls["manifest"] = manifest
+        return "manifest.json"
+
+    monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_source",
+        lambda source: f"fetch:{source.source_id}",
+    )
+
+    def fake_fetch_qld_exports(*, page_metadata_paths):
+        calls["export_page_metadata_paths"] = sorted(page_metadata_paths)
+        return export_summary_path
+
+    def fake_normalize_qld_money(*, export_metadata_paths):
+        calls["money_export_metadata_paths"] = sorted(export_metadata_paths)
+        return "qld-money-flow-summary"
+
+    def fake_normalize_qld_participants(*, lookup_metadata_paths):
+        calls["participant_lookup_metadata_paths"] = sorted(lookup_metadata_paths)
+        return "qld-participant-summary"
+
+    def fake_normalize_qld_contexts(*, lookup_metadata_paths):
+        calls["context_lookup_metadata_paths"] = sorted(lookup_metadata_paths)
+        return "qld-context-summary"
+
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_qld_ecq_eds_exports",
+        fake_fetch_qld_exports,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_qld_ecq_eds_money_flows",
+        fake_normalize_qld_money,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_qld_ecq_eds_participants",
+        fake_normalize_qld_participants,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_qld_ecq_eds_contexts",
+        fake_normalize_qld_contexts,
+    )
+
+    assert run_state_local_pipeline(jurisdiction="Queensland", smoke=True) == "manifest.json"
+
+    manifest = calls["manifest"]
+    assert manifest.pipeline_name == "state_local"
+    assert manifest.git_commit == "def456"
+    assert manifest.parameters["jurisdiction"] == "qld"
+    assert manifest.parameters["source_family"] == "qld_ecq_eds"
+    assert manifest.parameters["loads_database"] is False
+    assert manifest.parameters["smoke"] is True
+
+    assert [step.name for step in manifest.steps] == [
+        "fetch_qld_ecq_form_and_lookup_sources",
+        "fetch_qld_ecq_eds_exports",
+        "normalize_qld_ecq_eds_money_flows",
+        "normalize_qld_ecq_eds_participants",
+        "normalize_qld_ecq_eds_contexts",
+    ]
+    fetched_sources = set(manifest.steps[0].output["metadata_paths"].values())
+    assert "fetch:qld_ecq_eds_public_map" in fetched_sources
+    assert "fetch:qld_ecq_eds_expenditures" in fetched_sources
+    assert "fetch:qld_ecq_eds_api_political_parties" in fetched_sources
+    assert "fetch:qld_ecq_eds_api_local_electorates" in fetched_sources
+    assert calls["export_page_metadata_paths"] == [
+        "qld_ecq_eds_expenditures",
+        "qld_ecq_eds_public_map",
+    ]
+    assert calls["money_export_metadata_paths"] == [
+        "qld_ecq_eds_expenditure_export_csv",
+        "qld_ecq_eds_map_export_csv",
+    ]
+    assert "qld_ecq_eds_api_political_parties" in calls["participant_lookup_metadata_paths"]
+    assert "qld_ecq_eds_api_local_electorates" in calls["context_lookup_metadata_paths"]
+
+
+def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:
+    with pytest.raises(ValueError, match="Unsupported state/local jurisdiction"):
+        run_state_local_pipeline(jurisdiction="nsw")

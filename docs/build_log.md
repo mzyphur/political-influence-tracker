@@ -4,6 +4,14 @@
 
 Completed:
 
+- Added `run-state-local-pipeline --jurisdiction qld` as the first
+  manifest-producing state/local orchestration command. It refreshes ECQ form
+  pages and lookup API snapshots, fetches current ECQ CSV exports, normalizes
+  money-flow, participant, and disclosure-context artifacts, and records that
+  database loading and public attribution remain separate downstream steps.
+  Follow-up hardening now passes exact fetched metadata paths between QLD
+  runner steps so a manifest is tied to the artifacts it normalized rather than
+  whichever source snapshot happens to be latest.
 - Added a reproducible AEC Electorate Finder postcode crosswalk pipeline:
   archived AEC postcode search pages, normalized source-backed postcode to
   electorate-candidate rows with ambiguity/confidence/locality metadata, added

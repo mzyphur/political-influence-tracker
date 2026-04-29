@@ -108,7 +108,7 @@ from au_politics_money.ingest.they_vote_for_you import (
     fetch_they_vote_for_you_people,
 )
 from au_politics_money.models import DiscoveredLink, SourceRecord
-from au_politics_money.pipeline import run_federal_foundation_pipeline
+from au_politics_money.pipeline import run_federal_foundation_pipeline, run_state_local_pipeline
 
 
 def list_sources() -> int:
@@ -539,6 +539,12 @@ def run_pipeline_command(
     return 0
 
 
+def run_state_local_pipeline_command(jurisdiction: str, smoke: bool) -> int:
+    manifest_path = run_state_local_pipeline(jurisdiction=jurisdiction, smoke=smoke)
+    print(str(Path(manifest_path).resolve()))
+    return 0
+
+
 def load_postgres_command(
     apply_schema_first: bool,
     skip_roster: bool,
@@ -588,12 +594,26 @@ def migrate_postgres_command() -> int:
     return 0
 
 
-def load_qld_ecq_eds_money_flows_command(skip_influence_events: bool) -> int:
+def load_qld_ecq_eds_money_flows_command(
+    skip_influence_events: bool,
+    money_flows_path: str | None,
+    participants_path: str | None,
+    contexts_path: str | None,
+) -> int:
     with connect() as conn:
         summary: dict[str, object] = {
-            "qld_ecq_eds_money_flows": load_qld_ecq_eds_money_flows(conn),
-            "qld_ecq_eds_participants": load_qld_ecq_eds_participants(conn),
-            "qld_ecq_eds_contexts": load_qld_ecq_eds_contexts(conn),
+            "qld_ecq_eds_money_flows": load_qld_ecq_eds_money_flows(
+                conn,
+                jsonl_path=Path(money_flows_path) if money_flows_path else None,
+            ),
+            "qld_ecq_eds_participants": load_qld_ecq_eds_participants(
+                conn,
+                jsonl_path=Path(participants_path) if participants_path else None,
+            ),
+            "qld_ecq_eds_contexts": load_qld_ecq_eds_contexts(
+                conn,
+                jsonl_path=Path(contexts_path) if contexts_path else None,
+            ),
         }
         if not skip_influence_events:
             summary["influence_events"] = load_influence_events(conn)
@@ -601,17 +621,23 @@ def load_qld_ecq_eds_money_flows_command(skip_influence_events: bool) -> int:
     return 0
 
 
-def load_qld_ecq_eds_participants_command() -> int:
+def load_qld_ecq_eds_participants_command(jsonl_path: str | None) -> int:
     with connect() as conn:
-        summary = load_qld_ecq_eds_participants(conn)
+        summary = load_qld_ecq_eds_participants(
+            conn,
+            jsonl_path=Path(jsonl_path) if jsonl_path else None,
+        )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
 
-def load_qld_ecq_eds_contexts_command(skip_influence_events: bool) -> int:
+def load_qld_ecq_eds_contexts_command(skip_influence_events: bool, jsonl_path: str | None) -> int:
     with connect() as conn:
         summary: dict[str, object] = {
-            "qld_ecq_eds_contexts": load_qld_ecq_eds_contexts(conn),
+            "qld_ecq_eds_contexts": load_qld_ecq_eds_contexts(
+                conn,
+                jsonl_path=Path(jsonl_path) if jsonl_path else None,
+            ),
         }
         if not skip_influence_events:
             summary["influence_events"] = load_influence_events(conn)
@@ -969,9 +995,29 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Load QLD ECQ EDS money_flow rows without rebuilding influence_event.",
     )
-    subparsers.add_parser("load-qld-ecq-eds-participants")
+    load_qld_parser.add_argument(
+        "--money-flows-path",
+        help="Explicit qld_ecq_eds_money_flows JSONL path; omit to load latest processed artifact.",
+    )
+    load_qld_parser.add_argument(
+        "--participants-path",
+        help="Explicit qld_ecq_eds_participants JSONL path; omit to load latest processed artifact.",
+    )
+    load_qld_parser.add_argument(
+        "--contexts-path",
+        help="Explicit qld_ecq_eds_contexts JSONL path; omit to load latest processed artifact.",
+    )
+    load_qld_participants_parser = subparsers.add_parser("load-qld-ecq-eds-participants")
+    load_qld_participants_parser.add_argument(
+        "--jsonl-path",
+        help="Explicit qld_ecq_eds_participants JSONL path; omit to load latest processed artifact.",
+    )
 
     load_qld_contexts_parser = subparsers.add_parser("load-qld-ecq-eds-contexts")
+    load_qld_contexts_parser.add_argument(
+        "--jsonl-path",
+        help="Explicit qld_ecq_eds_contexts JSONL path; omit to load latest processed artifact.",
+    )
     load_qld_contexts_parser.add_argument(
         "--skip-influence-events",
         action="store_true",
@@ -1049,6 +1095,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pipeline_parser.add_argument("--votes-start-date")
     pipeline_parser.add_argument("--votes-end-date")
+
+    state_local_pipeline_parser = subparsers.add_parser("run-state-local-pipeline")
+    state_local_pipeline_parser.add_argument(
+        "--jurisdiction",
+        choices=("qld",),
+        default="qld",
+        help="State/local adapter to run. Currently supported: qld.",
+    )
+    state_local_pipeline_parser.add_argument(
+        "--smoke",
+        action="store_true",
+        help=(
+            "Record a smoke intent in the manifest. The current QLD adapter still "
+            "fetches and normalizes the full official ECQ export set so source "
+            "tables stay internally consistent."
+        ),
+    )
 
     load_parser = subparsers.add_parser("load-postgres")
     load_parser.add_argument("--apply-schema", action="store_true")
@@ -1200,11 +1263,16 @@ def main() -> int:
     if args.command == "migrate-postgres":
         return migrate_postgres_command()
     if args.command == "load-qld-ecq-eds-money-flows":
-        return load_qld_ecq_eds_money_flows_command(args.skip_influence_events)
+        return load_qld_ecq_eds_money_flows_command(
+            args.skip_influence_events,
+            args.money_flows_path,
+            args.participants_path,
+            args.contexts_path,
+        )
     if args.command == "load-qld-ecq-eds-participants":
-        return load_qld_ecq_eds_participants_command()
+        return load_qld_ecq_eds_participants_command(args.jsonl_path)
     if args.command == "load-qld-ecq-eds-contexts":
-        return load_qld_ecq_eds_contexts_command(args.skip_influence_events)
+        return load_qld_ecq_eds_contexts_command(args.skip_influence_events, args.jsonl_path)
     if args.command == "load-postcode-electorate-crosswalk":
         return load_postcode_electorate_crosswalk_command()
     if args.command == "export-review-queue":
@@ -1246,6 +1314,8 @@ def main() -> int:
             args.votes_start_date,
             args.votes_end_date,
         )
+    if args.command == "run-state-local-pipeline":
+        return run_state_local_pipeline_command(args.jurisdiction, args.smoke)
     if args.command == "load-postgres":
         return load_postgres_command(
             args.apply_schema,

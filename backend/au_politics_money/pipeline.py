@@ -62,6 +62,15 @@ from au_politics_money.ingest.official_identifiers import (
     fetch_lobbyist_register_snapshot,
 )
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
+from au_politics_money.ingest.qld_ecq_eds import (
+    QLD_ECQ_EDS_CONTEXT_LOOKUPS,
+    QLD_ECQ_EDS_EXPORTS,
+    QLD_ECQ_EDS_PARTICIPANT_LOOKUPS,
+    fetch_qld_ecq_eds_exports,
+    normalize_qld_ecq_eds_contexts,
+    normalize_qld_ecq_eds_money_flows,
+    normalize_qld_ecq_eds_participants,
+)
 from au_politics_money.ingest.senate_interests import (
     extract_senate_interest_records,
     fetch_senate_interest_statements,
@@ -247,6 +256,39 @@ def _write_manifest(manifest: PipelineManifest) -> Path:
         encoding="utf-8",
     )
     return target_path
+
+
+def _qld_ecq_source_ids() -> tuple[str, ...]:
+    source_ids = [
+        spec.page_source_id for spec in QLD_ECQ_EDS_EXPORTS
+    ] + [
+        spec.source_id for spec in QLD_ECQ_EDS_PARTICIPANT_LOOKUPS
+    ] + [
+        spec.source_id for spec in QLD_ECQ_EDS_CONTEXT_LOOKUPS
+    ]
+    return tuple(dict.fromkeys(source_ids))
+
+
+def _qld_export_metadata_paths_from_summary(summary_path: Path) -> dict[str, Path]:
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    outputs = summary.get("outputs")
+    if not isinstance(outputs, list):
+        raise RuntimeError(f"Malformed QLD ECQ export summary: {summary_path}")
+    metadata_paths: dict[str, Path] = {}
+    for output in outputs:
+        if not isinstance(output, dict):
+            continue
+        source_id = str(output.get("source_id") or "")
+        metadata_path = output.get("metadata_path")
+        if source_id and metadata_path:
+            metadata_paths[source_id] = Path(str(metadata_path))
+    expected_source_ids = {spec.export_source_id for spec in QLD_ECQ_EDS_EXPORTS}
+    missing = expected_source_ids - set(metadata_paths)
+    if missing:
+        raise RuntimeError(
+            f"QLD ECQ export summary missing metadata path(s): {', '.join(sorted(missing))}"
+        )
+    return metadata_paths
 
 
 def run_federal_foundation_pipeline(
@@ -440,6 +482,112 @@ def run_federal_foundation_pipeline(
                 ("extract_they_vote_for_you_divisions", extract_they_vote_for_you_divisions),
             ]
         )
+
+    try:
+        for name, func in steps:
+            manifest.steps.append(_run_step(name, func))
+        manifest.status = "succeeded"
+    except PipelineStepError as exc:
+        manifest.steps.append(exc.result)
+        manifest.status = "failed"
+    finally:
+        finished = utc_now()
+        manifest.finished_at = finished.isoformat()
+        manifest.duration_seconds = (finished - started).total_seconds()
+
+    manifest_path = _write_manifest(manifest)
+    if manifest.status == "failed":
+        raise RuntimeError(f"Pipeline failed. Manifest: {manifest_path}")
+    return manifest_path
+
+
+def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) -> Path:
+    normalized_jurisdiction = jurisdiction.strip().lower()
+    if normalized_jurisdiction not in {"qld", "queensland"}:
+        raise ValueError(
+            "Unsupported state/local jurisdiction. Currently supported: qld."
+        )
+
+    started = utc_now()
+    page_source_ids = {spec.page_source_id for spec in QLD_ECQ_EDS_EXPORTS}
+    lookup_source_ids = {
+        spec.source_id
+        for spec in (*QLD_ECQ_EDS_PARTICIPANT_LOOKUPS, *QLD_ECQ_EDS_CONTEXT_LOOKUPS)
+    }
+    qld_artifacts: dict[str, dict[str, Path]] = {
+        "page_metadata_paths": {},
+        "lookup_metadata_paths": {},
+        "export_metadata_paths": {},
+    }
+
+    def fetch_qld_form_and_lookup_sources() -> dict[str, Any]:
+        metadata_paths: dict[str, str] = {}
+        for source_id in _qld_ecq_source_ids():
+            metadata_path = fetch_source(get_source(source_id))
+            metadata_paths[source_id] = str(metadata_path)
+            if source_id in page_source_ids:
+                qld_artifacts["page_metadata_paths"][source_id] = Path(metadata_path)
+            if source_id in lookup_source_ids:
+                qld_artifacts["lookup_metadata_paths"][source_id] = Path(metadata_path)
+        return {
+            "source_count": len(metadata_paths),
+            "metadata_paths": metadata_paths,
+        }
+
+    def fetch_qld_exports() -> Path:
+        summary_path = fetch_qld_ecq_eds_exports(
+            page_metadata_paths=qld_artifacts["page_metadata_paths"],
+        )
+        qld_artifacts["export_metadata_paths"] = _qld_export_metadata_paths_from_summary(
+            summary_path
+        )
+        return summary_path
+
+    manifest = PipelineManifest(
+        pipeline_name="state_local",
+        run_id=f"state_local_qld_{timestamp(started)}",
+        status="running",
+        started_at=started.isoformat(),
+        git_commit=_git_commit(),
+        dependency_versions=_dependency_versions(),
+        parameters={
+            "jurisdiction": "qld",
+            "source_family": "qld_ecq_eds",
+            "smoke": smoke,
+            "loads_database": False,
+            "claim_boundary": (
+                "Fetch and normalize Queensland ECQ disclosure rows, participants, "
+                "and disclosure contexts. Loading, review, and public claims remain "
+                "separate downstream steps."
+            ),
+        },
+    )
+
+    steps: list[tuple[str, Callable[[], Any]]] = [
+        (
+            "fetch_qld_ecq_form_and_lookup_sources",
+            fetch_qld_form_and_lookup_sources,
+        ),
+        ("fetch_qld_ecq_eds_exports", fetch_qld_exports),
+        (
+            "normalize_qld_ecq_eds_money_flows",
+            lambda: normalize_qld_ecq_eds_money_flows(
+                export_metadata_paths=qld_artifacts["export_metadata_paths"],
+            ),
+        ),
+        (
+            "normalize_qld_ecq_eds_participants",
+            lambda: normalize_qld_ecq_eds_participants(
+                lookup_metadata_paths=qld_artifacts["lookup_metadata_paths"],
+            ),
+        ),
+        (
+            "normalize_qld_ecq_eds_contexts",
+            lambda: normalize_qld_ecq_eds_contexts(
+                lookup_metadata_paths=qld_artifacts["lookup_metadata_paths"],
+            ),
+        ),
+    ]
 
     try:
         for name, func in steps:
