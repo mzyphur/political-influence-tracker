@@ -195,12 +195,19 @@ Useful parameters:
 The response includes:
 
 - `totals_by_level`: money-flow row counts, gift/donation counts, electoral
-  expenditure counts, reported amount totals, and source/recipient row counts
-  where that side of the row is backed by an ECQ participant identifier. These
-  are row-side counts, not counts of distinct ECQ IDs.
+  expenditure counts, separate gift/donation and electoral-expenditure reported
+  amount totals, ECQ event/local-electorate context-backed row counts, and
+  source/recipient row counts where that side of the row is backed by an ECQ
+  participant identifier. There is intentionally no combined reported-amount
+  total because gift/donation money and campaign expenditure are different
+  evidence families. These are row-side counts, not counts of distinct ECQ IDs.
 - `top_gift_donors` and `top_gift_recipients`: disclosed gift/donation actors.
 - `top_expenditure_actors`: electoral expenditure actors, which are
   campaign-support context rather than personal receipt.
+- `top_events` and `top_local_electorates`: exact unique matches from archived
+  ECQ political-event and local-electorate lookup APIs. Event dates describe the
+  election event, not the gift/donation/expenditure transaction date; local
+  electorate labels are context labels, not candidate/councillor attribution.
 
 ECQ identifiers are attached only when the archived public lookup APIs provide
 an evidence-backed participant ID and the loader can make an exact unique match

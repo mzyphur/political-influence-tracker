@@ -131,10 +131,13 @@ def test_state_local_summary_endpoint_delegates_to_query_layer(monkeypatch) -> N
             "status": "ok",
             "source_family": "qld_ecq_eds",
             "requested_level": level,
+            "db_level": "local",
             "totals_by_level": [],
             "top_gift_donors": [],
             "top_gift_recipients": [],
             "top_expenditure_actors": [],
+            "top_events": [],
+            "top_local_electorates": [],
             "caveat": "fixture",
         }
 

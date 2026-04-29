@@ -41,6 +41,17 @@ class QldEcqLookupSpec:
     level: str
 
 
+@dataclass(frozen=True)
+class QldEcqContextSpec:
+    source_id: str
+    source_record_type: str
+    id_field: str
+    name_field: str
+    identifier_type: str
+    context_type: str
+    level: str
+
+
 QLD_ECQ_EDS_EXPORTS: tuple[QldEcqExportSpec, ...] = (
     QldEcqExportSpec(
         export_name="map",
@@ -93,10 +104,33 @@ QLD_ECQ_EDS_PARTICIPANT_LOOKUPS: tuple[QldEcqLookupSpec, ...] = (
     ),
 )
 
+QLD_ECQ_EDS_CONTEXT_LOOKUPS: tuple[QldEcqContextSpec, ...] = (
+    QldEcqContextSpec(
+        source_id="qld_ecq_eds_api_political_events",
+        source_record_type="qld_ecq_political_event",
+        id_field="eventId",
+        name_field="name",
+        identifier_type="qld_ecq_event_id",
+        context_type="political_event",
+        level="state_council",
+    ),
+    QldEcqContextSpec(
+        source_id="qld_ecq_eds_api_local_electorates",
+        source_record_type="qld_ecq_local_electorate",
+        id_field="localElectorateId",
+        name_field="localElectorateName",
+        identifier_type="qld_ecq_local_electorate_id",
+        context_type="local_electorate",
+        level="council",
+    ),
+)
+
 PARSER_NAME = "qld_ecq_eds_money_flow_normalizer"
 PARSER_VERSION = "1"
 PARTICIPANT_PARSER_NAME = "qld_ecq_eds_participant_normalizer"
 PARTICIPANT_PARSER_VERSION = "1"
+CONTEXT_PARSER_NAME = "qld_ecq_eds_context_normalizer"
+CONTEXT_PARSER_VERSION = "1"
 SOURCE_DATASET = "qld_ecq_eds"
 
 
@@ -595,6 +629,122 @@ def normalize_qld_ecq_eds_participants(
         "source_counts": source_counts,
         "normalizer_name": PARTICIPANT_PARSER_NAME,
         "normalizer_version": PARTICIPANT_PARSER_VERSION,
+    }
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return summary_path
+
+
+def _context_record(
+    *,
+    spec: QldEcqContextSpec,
+    source_metadata_path: Path,
+    source_body_path: Path,
+    raw_record: dict[str, object],
+) -> dict[str, object] | None:
+    external_id = str(raw_record.get(spec.id_field) or "").strip()
+    display_name = str(raw_record.get(spec.name_field) or "").strip()
+    if not external_id or not display_name:
+        return None
+    normalized = normalize_name(display_name)
+    if not normalized:
+        return None
+
+    level = spec.level
+    if spec.context_type == "political_event":
+        is_state = raw_record.get("isState")
+        if is_state is True:
+            level = "state"
+        elif is_state is False:
+            level = "council"
+
+    return {
+        "schema_version": "qld_ecq_eds_context_v1",
+        "parser_name": CONTEXT_PARSER_NAME,
+        "parser_version": CONTEXT_PARSER_VERSION,
+        "source_id": spec.source_id,
+        "source_record_type": spec.source_record_type,
+        "context_type": spec.context_type,
+        "external_id": external_id,
+        "identifier": {
+            "identifier_type": spec.identifier_type,
+            "identifier_value": external_id,
+        },
+        "display_name": display_name,
+        "normalized_name": normalized,
+        "level": level,
+        "stable_key": f"{spec.source_id}:{spec.source_record_type}:{external_id}",
+        "source_metadata_path": str(source_metadata_path),
+        "source_body_path": str(source_body_path),
+        "raw_record": raw_record,
+        "metadata": {
+            "source_lookup": "qld_ecq_eds_public_api",
+            "code": raw_record.get("code"),
+            "event_type": raw_record.get("eventType"),
+            "is_state": raw_record.get("isState"),
+            "polling_date": raw_record.get("pollingDate"),
+            "start_date": raw_record.get("startDate"),
+        },
+    }
+
+
+def normalize_qld_ecq_eds_contexts(
+    raw_dir: Path = RAW_DIR,
+    processed_dir: Path = PROCESSED_DIR,
+) -> Path:
+    timestamp = _timestamp()
+    target_dir = processed_dir / "qld_ecq_eds_contexts"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = target_dir / f"{timestamp}.jsonl"
+    summary_path = target_dir / f"{timestamp}.summary.json"
+
+    total_count = 0
+    skipped_count = 0
+    source_counts: dict[str, int] = {}
+    context_type_counts: dict[str, int] = {}
+    source_metadata_paths: dict[str, str] = {}
+    with jsonl_path.open("w", encoding="utf-8") as handle:
+        for spec in QLD_ECQ_EDS_CONTEXT_LOOKUPS:
+            metadata_path = _latest_lookup_metadata(spec.source_id, raw_dir=raw_dir)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            body_path = Path(metadata["body_path"])
+            rows = json.loads(body_path.read_text(encoding="utf-8"))
+            if not isinstance(rows, list):
+                raise RuntimeError(f"Expected JSON list in {body_path}")
+            source_metadata_paths[spec.source_id] = str(metadata_path)
+            source_count = 0
+            for row in rows:
+                if not isinstance(row, dict):
+                    skipped_count += 1
+                    continue
+                record = _context_record(
+                    spec=spec,
+                    source_metadata_path=metadata_path,
+                    source_body_path=body_path,
+                    raw_record=row,
+                )
+                if record is None:
+                    skipped_count += 1
+                    continue
+                handle.write(json.dumps(record, sort_keys=True) + "\n")
+                source_count += 1
+                total_count += 1
+                context_type = str(record["context_type"])
+                context_type_counts[context_type] = context_type_counts.get(context_type, 0) + 1
+            source_counts[spec.source_id] = source_count
+
+    if total_count == 0:
+        raise RuntimeError("No QLD ECQ EDS context records normalized from lookup APIs")
+
+    summary = {
+        "generated_at": timestamp,
+        "jsonl_path": str(jsonl_path),
+        "source_metadata_paths": source_metadata_paths,
+        "total_count": total_count,
+        "skipped_count": skipped_count,
+        "source_counts": source_counts,
+        "context_type_counts": context_type_counts,
+        "normalizer_name": CONTEXT_PARSER_NAME,
+        "normalizer_version": CONTEXT_PARSER_VERSION,
     }
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return summary_path

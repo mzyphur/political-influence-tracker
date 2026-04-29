@@ -128,6 +128,22 @@ export type StateLocalSummaryEntityRow = {
   identifier_backed: boolean | null;
 };
 
+export type StateLocalSummaryContextRow = {
+  external_id: string | null;
+  name: string | null;
+  level: string | null;
+  code: string | null;
+  event_type: string | null;
+  polling_date: string | null;
+  start_date: string | null;
+  date_caveat: string | null;
+  money_flow_count: number;
+  gift_or_donation_count: number;
+  electoral_expenditure_count: number;
+  gift_or_donation_reported_amount_total: number | null;
+  electoral_expenditure_reported_amount_total: number | null;
+};
+
 export type StateLocalSummaryTotalRow = {
   jurisdiction_name: string;
   jurisdiction_level: string;
@@ -135,10 +151,12 @@ export type StateLocalSummaryTotalRow = {
   money_flow_count: number;
   gift_or_donation_count: number;
   electoral_expenditure_count: number;
-  reported_amount_event_count: number;
-  reported_amount_total: number | null;
+  gift_or_donation_reported_amount_total: number | null;
+  electoral_expenditure_reported_amount_total: number | null;
   source_identifier_backed_count: number;
   recipient_identifier_backed_count: number;
+  event_context_backed_count: number;
+  local_electorate_context_backed_count: number;
 };
 
 export type StateLocalSummaryResponse = {
@@ -151,6 +169,8 @@ export type StateLocalSummaryResponse = {
   top_gift_donors: StateLocalSummaryEntityRow[];
   top_gift_recipients: StateLocalSummaryEntityRow[];
   top_expenditure_actors: StateLocalSummaryEntityRow[];
+  top_events: StateLocalSummaryContextRow[];
+  top_local_electorates: StateLocalSummaryContextRow[];
   caveat: string;
 };
 

@@ -51,9 +51,12 @@ cd backend
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_parties
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_associated_entities
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_local_groups
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_events
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_local_electorates
 .venv/bin/python -m au_politics_money.cli fetch-qld-ecq-eds-exports
 .venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-money-flows
 .venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-participants
+.venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-contexts
 .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-money-flows
 ```
 
@@ -75,6 +78,8 @@ data/processed/qld_ecq_eds_money_flows/<timestamp>.jsonl
 data/processed/qld_ecq_eds_money_flows/<timestamp>.summary.json
 data/processed/qld_ecq_eds_participants/<timestamp>.jsonl
 data/processed/qld_ecq_eds_participants/<timestamp>.summary.json
+data/processed/qld_ecq_eds_contexts/<timestamp>.jsonl
+data/processed/qld_ecq_eds_contexts/<timestamp>.summary.json
 ```
 
 Current normalized coverage is 49,839 rows: 22,726 gift/donation rows and
@@ -97,6 +102,13 @@ supports the identity. Duplicate lookup names and ambiguous matches also remain
 `needs_review`; the original free-text money-flow evidence is not overwritten.
 Donors are ECQ-identifier-backed only when they also appear in an accepted ECQ
 participant lookup record.
+
+The context normalizer uses archived ECQ political-event and local-electorate
+lookup APIs to annotate disclosure rows with exact unique event/local-electorate
+name matches. These are source-backed context labels, not personal attribution:
+the ECQ event date is the election event date rather than a transaction date,
+and a local-electorate name is not sufficient evidence that a specific candidate,
+councillor, or MP received money.
 
 The targeted serving-database loader refreshes just the QLD ECQ EDS
 `money_flow` rows, applies the latest participant identifier artifact when

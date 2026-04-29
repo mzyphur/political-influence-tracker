@@ -49,6 +49,7 @@ import type {
   PartyProfile,
   RepresentativeProfile,
   SearchResult,
+  StateLocalSummaryContextRow,
   StateLocalSummaryEntityRow,
   StateLocalSummaryResponse
 } from "./types";
@@ -838,20 +839,35 @@ function StateLocalSummaryPanel({
         <strong>{totals.sourceIdentifierBacked.toLocaleString("en-AU")}</strong>
         <span>Recipient ID-backed rows</span>
         <strong>{totals.recipientIdentifierBacked.toLocaleString("en-AU")}</strong>
+        <span>Event-backed rows</span>
+        <strong>{totals.eventContextBacked.toLocaleString("en-AU")}</strong>
+        <span>Local electorate-backed rows</span>
+        <strong>{totals.localElectorateContextBacked.toLocaleString("en-AU")}</strong>
       </div>
       <div className="state-summary-money-row">
-        <span>Reported total</span>
-        <strong>{formatMoney(totals.reportedAmountTotal)}</strong>
+        <span>Gift/donation total</span>
+        <strong>{formatMoney(totals.giftOrDonationReportedAmountTotal)}</strong>
+        <span>Campaign spend total</span>
+        <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
       </div>
       <StateLocalRankList title="Top gift donors" rows={summary.top_gift_donors} />
       <StateLocalRankList title="Top gift recipients" rows={summary.top_gift_recipients} />
       <StateLocalRankList title="Top campaign spend actors" rows={summary.top_expenditure_actors} />
+      <StateLocalContextList title="Top ECQ election events" rows={summary.top_events} />
+      <StateLocalContextList
+        title="Top local electorates named"
+        rows={summary.top_local_electorates}
+      />
       <details className="coverage-caveat">
         <summary>State/local caveat</summary>
         <p>{summary.caveat}</p>
         <p>
           Map drilldown is pending. These rows are source-family disclosure coverage,
           not claims that a current MP personally received the money.
+        </p>
+        <p>
+          Local electorate labels are ECQ disclosure context only. They do not attribute
+          a gift, donation, or campaign expenditure row to a candidate, councillor, or MP.
         </p>
       </details>
     </div>
@@ -877,10 +893,47 @@ function StateLocalRankList({
             <span>
               {row.event_count.toLocaleString("en-AU")} records ·{" "}
               {formatMoney(row.reported_amount_total)} ·{" "}
-              {row.identifier_backed ? "ECQ-backed ID" : "free-text match"}
+              {row.identifier_backed ? "ECQ-backed ID" : "source free-text name"}
             </span>
           </div>
         ))
+      )}
+    </div>
+  );
+}
+
+function StateLocalContextList({
+  title,
+  rows
+}: {
+  title: string;
+  rows: StateLocalSummaryContextRow[];
+}) {
+  return (
+    <div className="state-summary-list state-summary-context-list">
+      <h3>{title}</h3>
+      {rows.length === 0 ? (
+        <p className="muted">No ECQ lookup-backed context rows returned for this slice.</p>
+      ) : (
+        rows.slice(0, 5).map((row) => {
+          const dateLabel = row.polling_date || row.start_date;
+          const moneyParts = [
+            `${row.money_flow_count.toLocaleString("en-AU")} records`,
+            `${row.gift_or_donation_count.toLocaleString("en-AU")} gifts`,
+            `${row.electoral_expenditure_count.toLocaleString("en-AU")} spend rows`
+          ];
+          return (
+            <div className="state-summary-row" key={`${title}:${row.external_id ?? row.name}`}>
+              <strong>{row.name || "ECQ context not named"}</strong>
+              <span>{moneyParts.join(" · ")}</span>
+              <span>
+                {formatMoney(row.gift_or_donation_reported_amount_total)} gifts ·{" "}
+                {formatMoney(row.electoral_expenditure_reported_amount_total)} spend
+                {dateLabel ? ` · event date ${dateLabel}` : ""}
+              </span>
+            </div>
+          );
+        })
       )}
     </div>
   );
@@ -892,7 +945,10 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
   electoralExpenditureCount: number;
   sourceIdentifierBacked: number;
   recipientIdentifierBacked: number;
-  reportedAmountTotal: number | null;
+  eventContextBacked: number;
+  localElectorateContextBacked: number;
+  giftOrDonationReportedAmountTotal: number | null;
+  electoralExpenditureReportedAmountTotal: number | null;
 } {
   return summary.totals_by_level.reduce(
     (acc, row) => {
@@ -901,11 +957,27 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
       acc.electoralExpenditureCount += numberValue(row.electoral_expenditure_count);
       acc.sourceIdentifierBacked += numberValue(row.source_identifier_backed_count);
       acc.recipientIdentifierBacked += numberValue(row.recipient_identifier_backed_count);
-      if (row.reported_amount_total !== null && row.reported_amount_total !== undefined) {
-        acc.reportedAmountTotal = (
-          acc.reportedAmountTotal === null
-            ? row.reported_amount_total
-            : acc.reportedAmountTotal + row.reported_amount_total
+      acc.eventContextBacked += numberValue(row.event_context_backed_count);
+      acc.localElectorateContextBacked += numberValue(row.local_electorate_context_backed_count);
+      if (
+        row.gift_or_donation_reported_amount_total !== null &&
+        row.gift_or_donation_reported_amount_total !== undefined
+      ) {
+        acc.giftOrDonationReportedAmountTotal = (
+          acc.giftOrDonationReportedAmountTotal === null
+            ? row.gift_or_donation_reported_amount_total
+            : acc.giftOrDonationReportedAmountTotal + row.gift_or_donation_reported_amount_total
+        );
+      }
+      if (
+        row.electoral_expenditure_reported_amount_total !== null &&
+        row.electoral_expenditure_reported_amount_total !== undefined
+      ) {
+        acc.electoralExpenditureReportedAmountTotal = (
+          acc.electoralExpenditureReportedAmountTotal === null
+            ? row.electoral_expenditure_reported_amount_total
+            : acc.electoralExpenditureReportedAmountTotal +
+              row.electoral_expenditure_reported_amount_total
         );
       }
       return acc;
@@ -916,7 +988,10 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
       electoralExpenditureCount: 0,
       sourceIdentifierBacked: 0,
       recipientIdentifierBacked: 0,
-      reportedAmountTotal: null as number | null
+      eventContextBacked: 0,
+      localElectorateContextBacked: 0,
+      giftOrDonationReportedAmountTotal: null as number | null,
+      electoralExpenditureReportedAmountTotal: null as number | null
     }
   );
 }

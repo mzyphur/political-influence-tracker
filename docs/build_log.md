@@ -123,6 +123,12 @@ Completed:
   name-only matches now remain `needs_review` unless future event,
   electorate, or role context supports the identity, while exact unique
   party/associated-entity/local-group matches can still be auto-accepted.
+- Added QLD ECQ political-event and local-electorate context normalization from
+  archived lookup APIs. QLD money-flow rows now carry exact unique
+  event/local-electorate context matches where available, `/api/state-local/summary`
+  exposes top events/local electorates, and the frontend splits gift/donation
+  totals from electoral campaign-spend totals so users do not read campaign
+  expenditure as personal receipt.
 
 Verification:
 

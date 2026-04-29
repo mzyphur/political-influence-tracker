@@ -323,6 +323,11 @@ Current implementation status:
   expose QLD ECQ disclosure totals, identifier-backed counts, top gift
   donors/recipients, and top electoral-expenditure actors before state/council
   boundary maps are ready.
+- The QLD adapter also normalizes archived ECQ political-event and
+  local-electorate lookup APIs. These exact unique name matches are displayed as
+  disclosure context only. They improve event/local summaries but do not by
+  themselves attribute money to a candidate, councillor, or current
+  representative.
 - The historical disclosure-return archive currently returned HTTP 401 during
   reproducible fetch. Treat it as a blocked/pending source until an official
   public access path is confirmed.

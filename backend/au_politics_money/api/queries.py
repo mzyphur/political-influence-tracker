@@ -1389,6 +1389,87 @@ def _qld_summary_rows(
     )
 
 
+def _qld_context_summary_rows(
+    conn,
+    *,
+    context_key: str,
+    db_level: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    if context_key not in {"event", "local_electorate"}:
+        raise ValueError("context_key must be event or local_electorate")
+    level_filter = "AND jurisdiction.level = %s" if db_level else ""
+    params: tuple[Any, ...] = (db_level, limit) if db_level else (limit,)
+    return _fetch_dicts(
+        conn,
+        f"""
+        SELECT
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'external_id'
+                AS external_id,
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'name'
+                AS name,
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'level'
+                AS level,
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'code'
+                AS code,
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'event_type'
+                AS event_type,
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'polling_date'
+                AS polling_date,
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'start_date'
+                AS start_date,
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'date_caveat'
+                AS date_caveat,
+            count(*) AS money_flow_count,
+            count(*) FILTER (
+                WHERE money_flow.metadata->>'flow_kind' = 'qld_gift'
+            ) AS gift_or_donation_count,
+            count(*) FILTER (
+                WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
+            ) AS electoral_expenditure_count,
+            CASE
+                WHEN count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = 'qld_gift'
+                ) = 0 THEN 0
+                ELSE sum(money_flow.amount) FILTER (
+                    WHERE money_flow.amount IS NOT NULL
+                      AND money_flow.metadata->>'flow_kind' = 'qld_gift'
+                )
+            END AS gift_or_donation_reported_amount_total,
+            CASE
+                WHEN count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                ) = 0 THEN 0
+                ELSE sum(money_flow.amount) FILTER (
+                    WHERE money_flow.amount IS NOT NULL
+                      AND money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                )
+            END AS electoral_expenditure_reported_amount_total
+        FROM money_flow
+        JOIN jurisdiction
+          ON jurisdiction.id = money_flow.jurisdiction_id
+        WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+          AND money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'status' = 'matched'
+          {level_filter}
+        GROUP BY
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'external_id',
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'name',
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'level',
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'code',
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'event_type',
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'polling_date',
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'start_date',
+            money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'date_caveat'
+        ORDER BY
+            count(*) DESC,
+            COALESCE(sum(money_flow.amount), 0) DESC,
+            name
+        LIMIT %s
+        """,
+        params,
+    )
+
+
 def get_state_local_summary(
     *,
     level: str | None = None,
@@ -1417,10 +1498,24 @@ def get_state_local_summary(
                 count(*) FILTER (
                     WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
                 ) AS electoral_expenditure_count,
-                count(*) FILTER (WHERE money_flow.amount IS NOT NULL)
-                    AS reported_amount_event_count,
-                sum(money_flow.amount) FILTER (WHERE money_flow.amount IS NOT NULL)
-                    AS reported_amount_total,
+                CASE
+                    WHEN count(*) FILTER (
+                        WHERE money_flow.metadata->>'flow_kind' = 'qld_gift'
+                    ) = 0 THEN 0
+                    ELSE sum(money_flow.amount) FILTER (
+                        WHERE money_flow.amount IS NOT NULL
+                          AND money_flow.metadata->>'flow_kind' = 'qld_gift'
+                    )
+                END AS gift_or_donation_reported_amount_total,
+                CASE
+                    WHEN count(*) FILTER (
+                        WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                    ) = 0 THEN 0
+                    ELSE sum(money_flow.amount) FILTER (
+                        WHERE money_flow.amount IS NOT NULL
+                          AND money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                    )
+                END AS electoral_expenditure_reported_amount_total,
                 count(*) FILTER (
                     WHERE EXISTS (
                         SELECT 1
@@ -1436,7 +1531,14 @@ def get_state_local_summary(
                         WHERE entity_identifier.entity_id = money_flow.recipient_entity_id
                           AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
                     )
-                ) AS recipient_identifier_backed_count
+                ) AS recipient_identifier_backed_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->'qld_ecq_context'->'event'->>'status' = 'matched'
+                ) AS event_context_backed_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->'qld_ecq_context'->'local_electorate'->>'status'
+                        = 'matched'
+                ) AS local_electorate_context_backed_count
             FROM money_flow
             JOIN jurisdiction
               ON jurisdiction.id = money_flow.jurisdiction_id
@@ -1468,6 +1570,18 @@ def get_state_local_summary(
             db_level=db_level,
             limit=limit,
         )
+        top_events = _qld_context_summary_rows(
+            conn,
+            context_key="event",
+            db_level=db_level,
+            limit=limit,
+        )
+        top_local_electorates = _qld_context_summary_rows(
+            conn,
+            context_key="local_electorate",
+            db_level=db_level,
+            limit=limit,
+        )
 
     return _jsonable(
         {
@@ -1480,10 +1594,16 @@ def get_state_local_summary(
             "top_gift_donors": top_gift_donors,
             "top_gift_recipients": top_gift_recipients,
             "top_expenditure_actors": top_expenditure_actors,
+            "top_events": top_events,
+            "top_local_electorates": top_local_electorates,
             "caveat": (
                 "Queensland ECQ EDS rows are state/local disclosure records. "
                 "Gift and donation rows are source-backed money records; electoral "
-                "expenditure rows are campaign-support context and not personal receipt."
+                "expenditure rows are campaign-support context and not personal receipt. "
+                "Event and local-electorate labels are exact matches to archived ECQ "
+                "lookup APIs; event dates describe the election event, not transaction dates, "
+                "and local-electorate labels do not attribute money or campaign expenditure "
+                "to a candidate, councillor, or MP."
             ),
         }
     )

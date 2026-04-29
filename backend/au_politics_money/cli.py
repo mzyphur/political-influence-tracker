@@ -12,6 +12,7 @@ from au_politics_money.db.load import (
     load_electorate_boundary_display_geometries,
     load_influence_events,
     load_processed_artifacts,
+    load_qld_ecq_eds_contexts,
     load_qld_ecq_eds_money_flows,
     load_qld_ecq_eds_participants,
 )
@@ -79,6 +80,7 @@ from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
 from au_politics_money.ingest.qld_ecq_eds import (
     QLD_ECQ_EDS_EXPORTS,
     fetch_qld_ecq_eds_exports,
+    normalize_qld_ecq_eds_contexts,
     normalize_qld_ecq_eds_money_flows,
     normalize_qld_ecq_eds_participants,
 )
@@ -237,6 +239,12 @@ def normalize_qld_ecq_eds_money_flows_command() -> int:
 
 def normalize_qld_ecq_eds_participants_command() -> int:
     summary_path = normalize_qld_ecq_eds_participants()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def normalize_qld_ecq_eds_contexts_command() -> int:
+    summary_path = normalize_qld_ecq_eds_contexts()
     print(str(Path(summary_path).resolve()))
     return 0
 
@@ -518,6 +526,7 @@ def load_qld_ecq_eds_money_flows_command(skip_influence_events: bool) -> int:
         summary: dict[str, object] = {
             "qld_ecq_eds_money_flows": load_qld_ecq_eds_money_flows(conn),
             "qld_ecq_eds_participants": load_qld_ecq_eds_participants(conn),
+            "qld_ecq_eds_contexts": load_qld_ecq_eds_contexts(conn),
         }
         if not skip_influence_events:
             summary["influence_events"] = load_influence_events(conn)
@@ -528,6 +537,17 @@ def load_qld_ecq_eds_money_flows_command(skip_influence_events: bool) -> int:
 def load_qld_ecq_eds_participants_command() -> int:
     with connect() as conn:
         summary = load_qld_ecq_eds_participants(conn)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def load_qld_ecq_eds_contexts_command(skip_influence_events: bool) -> int:
+    with connect() as conn:
+        summary: dict[str, object] = {
+            "qld_ecq_eds_contexts": load_qld_ecq_eds_contexts(conn),
+        }
+        if not skip_influence_events:
+            summary["influence_events"] = load_influence_events(conn)
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
@@ -623,6 +643,8 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("normalize-qld-ecq-eds-money-flows")
 
     subparsers.add_parser("normalize-qld-ecq-eds-participants")
+
+    subparsers.add_parser("normalize-qld-ecq-eds-contexts")
 
     subparsers.add_parser("extract-house-interest-sections")
 
@@ -730,6 +752,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     subparsers.add_parser("load-qld-ecq-eds-participants")
 
+    load_qld_contexts_parser = subparsers.add_parser("load-qld-ecq-eds-contexts")
+    load_qld_contexts_parser.add_argument(
+        "--skip-influence-events",
+        action="store_true",
+        help="Load QLD ECQ event/local-electorate context without rebuilding influence_event.",
+    )
+
     review_parser = subparsers.add_parser("export-review-queue")
     review_parser.add_argument("queue_name", choices=review_queue_names())
     review_parser.add_argument("--limit", type=int)
@@ -824,6 +853,8 @@ def main() -> int:
         return normalize_qld_ecq_eds_money_flows_command()
     if args.command == "normalize-qld-ecq-eds-participants":
         return normalize_qld_ecq_eds_participants_command()
+    if args.command == "normalize-qld-ecq-eds-contexts":
+        return normalize_qld_ecq_eds_contexts_command()
     if args.command == "extract-house-interest-sections":
         return extract_house_interest_sections_command()
     if args.command == "extract-house-interest-records":
@@ -893,6 +924,8 @@ def main() -> int:
         return load_qld_ecq_eds_money_flows_command(args.skip_influence_events)
     if args.command == "load-qld-ecq-eds-participants":
         return load_qld_ecq_eds_participants_command()
+    if args.command == "load-qld-ecq-eds-contexts":
+        return load_qld_ecq_eds_contexts_command(args.skip_influence_events)
     if args.command == "export-review-queue":
         return export_review_queue_command(args.queue_name, args.limit)
     if args.command == "suggest-sector-policy-links":

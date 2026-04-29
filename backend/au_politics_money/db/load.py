@@ -46,6 +46,8 @@ from au_politics_money.ingest.official_identifiers import (
     latest_official_identifier_jsonl_paths,
 )
 from au_politics_money.ingest.qld_ecq_eds import (
+    CONTEXT_PARSER_NAME as QLD_ECQ_CONTEXT_PARSER_NAME,
+    QLD_ECQ_EDS_CONTEXT_LOOKUPS,
     PARTICIPANT_PARSER_NAME as QLD_ECQ_PARTICIPANT_PARSER_NAME,
     QLD_ECQ_EDS_PARTICIPANT_LOOKUPS,
 )
@@ -1142,6 +1144,10 @@ def load_qld_ecq_eds_money_flows(conn, jsonl_path: Path | None = None) -> dict[s
     return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="qld_ecq_eds")
 
 
+def _latest_qld_contexts_jsonl() -> Path:
+    return latest_file(PROCESSED_DIR / "qld_ecq_eds_contexts", "*.jsonl")
+
+
 def _qld_ecq_eds_entity_ids_by_normalized_name(conn, normalized_name: str) -> list[int]:
     with conn.cursor() as cur:
         cur.execute(
@@ -1434,6 +1440,227 @@ def load_qld_ecq_eds_participants(conn, jsonl_path: Path | None = None) -> dict[
         ],
         "jsonl_path": str(path),
         **coverage_counts,
+    }
+
+
+def _qld_context_source_scope() -> list[dict[str, str]]:
+    return [
+        {"source_id": spec.source_id, "source_record_type": spec.source_record_type}
+        for spec in QLD_ECQ_EDS_CONTEXT_LOOKUPS
+    ]
+
+
+def _qld_context_compact_record(
+    record: dict[str, Any],
+    source_document_id: int | None,
+    *,
+    match_method: str,
+) -> dict[str, Any]:
+    metadata = record.get("metadata") if isinstance(record.get("metadata"), dict) else {}
+    compact = {
+        "status": "matched",
+        "match_method": match_method,
+        "source_id": record.get("source_id"),
+        "source_record_type": record.get("source_record_type"),
+        "context_type": record.get("context_type"),
+        "external_id": record.get("external_id"),
+        "identifier": record.get("identifier") or {},
+        "name": record.get("display_name"),
+        "normalized_name": record.get("normalized_name"),
+        "level": record.get("level"),
+        "code": metadata.get("code"),
+        "event_type": metadata.get("event_type"),
+        "is_state": metadata.get("is_state"),
+        "polling_date": metadata.get("polling_date"),
+        "start_date": metadata.get("start_date"),
+        "date_caveat": (
+            "ECQ event polling/start dates describe the election event, not the "
+            "gift, donation, or expenditure transaction date."
+            if record.get("context_type") == "political_event"
+            else None
+        ),
+        "source_document_id": source_document_id,
+    }
+    return {key: value for key, value in compact.items() if value is not None}
+
+
+def _unique_qld_contexts_by_name(
+    records: list[dict[str, Any]],
+    context_type: str,
+) -> tuple[dict[str, dict[str, Any]], set[str]]:
+    grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    for record in records:
+        if record.get("context_type") == context_type:
+            grouped[str(record.get("normalized_name") or "")].append(record)
+    return (
+        {
+            normalized_name: matches[0]
+            for normalized_name, matches in grouped.items()
+            if normalized_name and len(matches) == 1
+        },
+        {normalized_name for normalized_name, matches in grouped.items() if len(matches) > 1},
+    )
+
+
+def load_qld_ecq_eds_contexts(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(PROCESSED_DIR / "qld_ecq_eds_contexts", "*.jsonl")
+    except FileNotFoundError:
+        return {
+            "context_records": 0,
+            "skipped_reason": "no_processed_qld_ecq_eds_contexts",
+        }
+
+    records: list[dict[str, Any]] = []
+    source_doc_cache: dict[str, int] = {}
+    source_document_by_stable_key: dict[str, int | None] = {}
+    source_counts: Counter[str] = Counter()
+    context_type_counts: Counter[str] = Counter()
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            record = json.loads(line)
+            records.append(record)
+            source_counts[str(record.get("source_record_type") or "unknown")] += 1
+            context_type_counts[str(record.get("context_type") or "unknown")] += 1
+            metadata_path = record.get("source_metadata_path")
+            source_document_id = None
+            if metadata_path:
+                if metadata_path not in source_doc_cache:
+                    source_doc_cache[metadata_path] = upsert_source_document(conn, Path(metadata_path))
+                source_document_id = source_doc_cache[metadata_path]
+            source_document_by_stable_key[str(record.get("stable_key") or "")] = source_document_id
+
+    events_by_name, duplicate_event_names = _unique_qld_contexts_by_name(
+        records,
+        "political_event",
+    )
+    local_electorates_by_name, duplicate_local_electorate_names = _unique_qld_contexts_by_name(
+        records,
+        "local_electorate",
+    )
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, metadata
+            FROM money_flow
+            WHERE metadata->>'source_dataset' = 'qld_ecq_eds'
+            ORDER BY id
+            """
+        )
+        rows = [(int(row[0]), row[1] or {}) for row in cur.fetchall()]
+
+    event_matched = 0
+    event_unmatched = 0
+    event_ambiguous = 0
+    event_missing = 0
+    local_electorate_matched = 0
+    local_electorate_unmatched = 0
+    local_electorate_ambiguous = 0
+    local_electorate_missing = 0
+
+    with conn.cursor() as cur:
+        for money_flow_id, metadata in rows:
+            updated_metadata = dict(metadata)
+            event_name = str(updated_metadata.get("event_name") or "").strip()
+            local_electorate_name = str(updated_metadata.get("local_electorate") or "").strip()
+            qld_context: dict[str, Any] = {
+                "loader_name": QLD_ECQ_CONTEXT_PARSER_NAME,
+                "source_scope": _qld_context_source_scope(),
+            }
+
+            if event_name:
+                normalized_event_name = normalize_name(event_name)
+                if normalized_event_name in events_by_name:
+                    event_record = events_by_name[normalized_event_name]
+                    qld_context["event"] = _qld_context_compact_record(
+                        event_record,
+                        source_document_by_stable_key.get(str(event_record.get("stable_key") or "")),
+                        match_method="qld_ecq_exact_normalized_event_name",
+                    )
+                    event_matched += 1
+                elif normalized_event_name in duplicate_event_names:
+                    qld_context["event"] = {
+                        "status": "ambiguous",
+                        "match_method": "qld_ecq_event_name_duplicate_lookup",
+                        "name": event_name,
+                        "normalized_name": normalized_event_name,
+                    }
+                    event_ambiguous += 1
+                else:
+                    qld_context["event"] = {
+                        "status": "unmatched",
+                        "match_method": "qld_ecq_exact_normalized_event_name",
+                        "name": event_name,
+                        "normalized_name": normalized_event_name,
+                    }
+                    event_unmatched += 1
+            else:
+                qld_context["event"] = {"status": "not_present_in_export"}
+                event_missing += 1
+
+            if local_electorate_name:
+                normalized_local_electorate_name = normalize_name(local_electorate_name)
+                if normalized_local_electorate_name in local_electorates_by_name:
+                    local_electorate_record = local_electorates_by_name[
+                        normalized_local_electorate_name
+                    ]
+                    qld_context["local_electorate"] = _qld_context_compact_record(
+                        local_electorate_record,
+                        source_document_by_stable_key.get(
+                            str(local_electorate_record.get("stable_key") or "")
+                        ),
+                        match_method="qld_ecq_exact_normalized_local_electorate_name",
+                    )
+                    local_electorate_matched += 1
+                elif normalized_local_electorate_name in duplicate_local_electorate_names:
+                    qld_context["local_electorate"] = {
+                        "status": "ambiguous",
+                        "match_method": "qld_ecq_local_electorate_duplicate_lookup",
+                        "name": local_electorate_name,
+                        "normalized_name": normalized_local_electorate_name,
+                    }
+                    local_electorate_ambiguous += 1
+                else:
+                    qld_context["local_electorate"] = {
+                        "status": "unmatched",
+                        "match_method": "qld_ecq_exact_normalized_local_electorate_name",
+                        "name": local_electorate_name,
+                        "normalized_name": normalized_local_electorate_name,
+                    }
+                    local_electorate_unmatched += 1
+            else:
+                qld_context["local_electorate"] = {"status": "not_present_in_export"}
+                local_electorate_missing += 1
+
+            updated_metadata["qld_ecq_context"] = qld_context
+            cur.execute(
+                """
+                UPDATE money_flow
+                SET metadata = %s
+                WHERE id = %s
+                """,
+                (as_jsonb(updated_metadata), money_flow_id),
+            )
+
+    conn.commit()
+    return {
+        "context_records": len(records),
+        "money_flow_rows_considered": len(rows),
+        "event_context_matched_money_flows": event_matched,
+        "event_context_unmatched_money_flows": event_unmatched,
+        "event_context_ambiguous_money_flows": event_ambiguous,
+        "event_context_missing_money_flows": event_missing,
+        "local_electorate_context_matched_money_flows": local_electorate_matched,
+        "local_electorate_context_unmatched_money_flows": local_electorate_unmatched,
+        "local_electorate_context_ambiguous_money_flows": local_electorate_ambiguous,
+        "local_electorate_context_missing_money_flows": local_electorate_missing,
+        "duplicate_event_lookup_names": len(duplicate_event_names),
+        "duplicate_local_electorate_lookup_names": len(duplicate_local_electorate_names),
+        "source_record_type_counts": dict(sorted(source_counts.items())),
+        "context_type_counts": dict(sorted(context_type_counts.items())),
+        "source_documents_upserted": len(source_doc_cache),
+        "jsonl_path": str(path),
     }
 
 
@@ -4724,6 +4951,7 @@ def load_processed_artifacts(
             summary["public_funding_money_flows"] = load_aec_public_funding_money_flows(conn)
             summary["qld_ecq_eds_money_flows"] = load_qld_ecq_eds_money_flows(conn)
             summary["qld_ecq_eds_participants"] = load_qld_ecq_eds_participants(conn)
+            summary["qld_ecq_eds_contexts"] = load_qld_ecq_eds_contexts(conn)
         if include_house_interests:
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:

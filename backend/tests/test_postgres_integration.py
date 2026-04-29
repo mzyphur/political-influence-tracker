@@ -20,6 +20,7 @@ from au_politics_money.db.load import (
     connect,
     link_aec_direct_representative_money_flows,
     load_influence_events,
+    load_qld_ecq_eds_contexts,
     load_qld_ecq_eds_participants,
 )
 from au_politics_money.db.party_entity_suggestions import (
@@ -838,6 +839,7 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
 
 def test_coverage_reports_partial_qld_state_and_local_levels(
     integration_db: IntegrationDatabase,
+    tmp_path: Path,
 ) -> None:
     with connect(integration_db.url) as conn:
         with conn.cursor() as cur:
@@ -912,6 +914,11 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                     "Gift",
                     "qld_gift",
                     qld_state_id,
+                    {
+                        "event_name": "2026 Stafford State By-election",
+                        "flow_kind": "qld_gift",
+                        "source_dataset": "qld_ecq_eds",
+                    },
                 ),
                 (
                     "pytest-qld-local-expenditure",
@@ -921,6 +928,12 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                     "Electoral Expenditure",
                     "qld_electoral_expenditure",
                     qld_local_id,
+                    {
+                        "event_name": "2028 Local Government Elections",
+                        "flow_kind": "qld_electoral_expenditure",
+                        "local_electorate": "Whitsunday Regional",
+                        "source_dataset": "qld_ecq_eds",
+                    },
                 ),
             )
             for row in qld_rows:
@@ -932,6 +945,7 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                     receipt_type,
                     flow_kind,
                     jurisdiction_id,
+                    metadata,
                 ) = row
                 cur.execute(
                     """
@@ -960,10 +974,84 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                         source_document_id,
                         external_key,
                         "{}",
-                        Jsonb({"source_dataset": "qld_ecq_eds", "flow_kind": flow_kind}),
+                        Jsonb(metadata),
                     ),
                 )
         conn.commit()
+        qld_contexts_path = tmp_path / "qld_contexts.jsonl"
+        qld_context_records = [
+            {
+                "schema_version": "qld_ecq_eds_context_v1",
+                "parser_name": "qld_ecq_eds_context_normalizer",
+                "parser_version": "1",
+                "source_id": "qld_ecq_eds_api_political_events",
+                "source_record_type": "qld_ecq_political_event",
+                "context_type": "political_event",
+                "external_id": "100",
+                "identifier": {
+                    "identifier_type": "qld_ecq_event_id",
+                    "identifier_value": "100",
+                },
+                "display_name": "2026 Stafford State By-election",
+                "normalized_name": "2026 stafford state by election",
+                "level": "state",
+                "stable_key": "qld_ecq_eds_api_political_events:qld_ecq_political_event:100",
+                "metadata": {
+                    "code": "STAFFORD2026",
+                    "event_type": "State By-election",
+                    "is_state": True,
+                    "polling_date": "2026-04-18T00:00:00",
+                },
+            },
+            {
+                "schema_version": "qld_ecq_eds_context_v1",
+                "parser_name": "qld_ecq_eds_context_normalizer",
+                "parser_version": "1",
+                "source_id": "qld_ecq_eds_api_political_events",
+                "source_record_type": "qld_ecq_political_event",
+                "context_type": "political_event",
+                "external_id": "636",
+                "identifier": {
+                    "identifier_type": "qld_ecq_event_id",
+                    "identifier_value": "636",
+                },
+                "display_name": "2028 Local Government Elections",
+                "normalized_name": "2028 local government elections",
+                "level": "council",
+                "stable_key": "qld_ecq_eds_api_political_events:qld_ecq_political_event:636",
+                "metadata": {
+                    "code": "LGE2028",
+                    "event_type": "Local Government Election",
+                    "is_state": False,
+                    "polling_date": "2028-03-25T00:00:00",
+                },
+            },
+            {
+                "schema_version": "qld_ecq_eds_context_v1",
+                "parser_name": "qld_ecq_eds_context_normalizer",
+                "parser_version": "1",
+                "source_id": "qld_ecq_eds_api_local_electorates",
+                "source_record_type": "qld_ecq_local_electorate",
+                "context_type": "local_electorate",
+                "external_id": "777",
+                "identifier": {
+                    "identifier_type": "qld_ecq_local_electorate_id",
+                    "identifier_value": "777",
+                },
+                "display_name": "Whitsunday Regional",
+                "normalized_name": "whitsunday regional",
+                "level": "council",
+                "stable_key": "qld_ecq_eds_api_local_electorates:qld_ecq_local_electorate:777",
+                "metadata": {},
+            },
+        ]
+        qld_contexts_path.write_text(
+            "\n".join(json.dumps(record) for record in qld_context_records) + "\n",
+            encoding="utf-8",
+        )
+        context_summary = load_qld_ecq_eds_contexts(conn, jsonl_path=qld_contexts_path)
+        assert context_summary["event_context_matched_money_flows"] == 2
+        assert context_summary["local_electorate_context_matched_money_flows"] == 1
 
     client = TestClient(app)
     response = client.get("/api/coverage")
@@ -994,6 +1082,11 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert state_summary["totals_by_level"][0]["recipient_identifier_backed_count"] == 1
     assert state_summary["top_gift_donors"][0]["name"] == "QLD Donor"
     assert state_summary["top_gift_donors"][0]["identifier_backed"] is True
+    assert state_summary["totals_by_level"][0]["gift_or_donation_reported_amount_total"] == 100
+    assert state_summary["totals_by_level"][0]["electoral_expenditure_reported_amount_total"] == 0
+    assert state_summary["totals_by_level"][0]["event_context_backed_count"] == 1
+    assert state_summary["top_events"][0]["external_id"] == "100"
+    assert state_summary["top_events"][0]["name"] == "2026 Stafford State By-election"
 
     council_summary_response = client.get(
         "/api/state-local/summary",
@@ -1003,7 +1096,19 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     council_summary = council_summary_response.json()
     assert council_summary["totals_by_level"][0]["jurisdiction_level"] == "local"
     assert council_summary["totals_by_level"][0]["electoral_expenditure_count"] == 1
+    assert (
+        council_summary["totals_by_level"][0]["electoral_expenditure_reported_amount_total"]
+        == 200
+    )
+    assert council_summary["totals_by_level"][0]["gift_or_donation_reported_amount_total"] == 0
+    assert council_summary["totals_by_level"][0]["local_electorate_context_backed_count"] == 1
     assert council_summary["top_expenditure_actors"][0]["name"] == "QLD Donor"
+    assert council_summary["top_events"][0]["external_id"] == "636"
+    assert council_summary["top_local_electorates"][0]["name"] == "Whitsunday Regional"
+    assert (
+        council_summary["top_local_electorates"][0]["gift_or_donation_reported_amount_total"]
+        == 0
+    )
 
 
 def test_qld_participant_loader_requires_review_for_candidate_name_only_matches(

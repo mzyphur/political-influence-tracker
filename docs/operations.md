@@ -73,9 +73,12 @@ cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Dr
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_parties
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_associated_entities
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_local_groups
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_events
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_local_electorates
 .venv/bin/python -m au_politics_money.cli fetch-qld-ecq-eds-exports
 .venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-money-flows
 .venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-participants
+.venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-contexts
 .venv/bin/dotenv -f .env run -- \
   .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-money-flows
 ```
@@ -86,18 +89,23 @@ The fetcher archives raw CSV bodies and metadata under
 is written under `data/processed/qld_ecq_eds_money_flows/`. Participant lookup
 normalization reads the archived ECQ APIs for political electors/candidates,
 political parties, associated entities, and local groups, then writes
-`data/processed/qld_ecq_eds_participants/`. The participant normalizer can
-fetch a missing lookup snapshot, but reproducible runs should fetch the lookup
-source IDs explicitly first so raw acquisition remains visible in the audit log.
+`data/processed/qld_ecq_eds_participants/`. Context normalization reads archived
+ECQ political-event and local-electorate lookup APIs, then writes
+`data/processed/qld_ecq_eds_contexts/`. The participant and context normalizers
+can fetch a missing lookup snapshot, but reproducible runs should fetch the
+lookup source IDs explicitly first so raw acquisition remains visible in the
+audit log.
 `load-qld-ecq-eds-money-flows` refreshes just this source family and rebuilds
 the derived `influence_event` surface. It also applies the latest participant
-identifier artifact when present. To refresh identifiers only after reviewing a
-new lookup snapshot, run:
+identifier and event/local-electorate context artifacts when present. To refresh
+identifiers or contexts only after reviewing a new lookup snapshot, run:
 
 ```bash
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
 .venv/bin/dotenv -f .env run -- \
   .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-participants
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-contexts
 ```
 
 Use `--skip-influence-events` only for a fast money-flow-table inspection where
@@ -114,7 +122,11 @@ identifiers are auto-attached only for exact unique lookup-to-disclosure-actor
 matches. Candidate/elector lookup matches stay in the manual-review layer unless
 future event/electorate/role evidence strengthens the match. Donor names remain
 free-text unless the donor also matches an accepted ECQ participant lookup
-record; this is a source limitation, not a manual redaction.
+record; this is a source limitation, not a manual redaction. Political-event
+and local-electorate lookup matches are stored as disclosure context only:
+event dates describe the election event, not the transaction date, and local
+electorate names must not be treated as candidate/councillor identity or map
+geometry without further source evidence.
 
 ## Frontend Development
 

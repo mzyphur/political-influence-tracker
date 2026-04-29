@@ -3,6 +3,7 @@ from pathlib import Path
 
 from au_politics_money.ingest.qld_ecq_eds import (
     form_fields_from_html,
+    normalize_qld_ecq_eds_contexts,
     normalize_qld_ecq_eds_money_flows,
     normalize_qld_ecq_eds_participants,
 )
@@ -174,3 +175,61 @@ def test_normalize_qld_ecq_eds_participants(tmp_path: Path) -> None:
     ]
     assert records[1]["aliases"] == ["Example Party"]
     assert records[1]["normalized_name"] == "example party queensland"
+
+
+def test_normalize_qld_ecq_eds_contexts(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+    _write_raw_json(
+        raw_dir,
+        "qld_ecq_eds_api_political_events",
+        [
+            {
+                "eventId": 636,
+                "name": "2028 Local Government Elections",
+                "code": "LGE2028",
+                "eventType": "Local Government Election",
+                "isState": False,
+                "pollingDate": "2028-03-25T00:00:00",
+            },
+            {
+                "eventId": 100,
+                "name": "2026 Stafford State By-election",
+                "code": "STAFFORD2026",
+                "eventType": "State By-election",
+                "isState": True,
+                "pollingDate": "2026-04-18T00:00:00",
+            },
+        ],
+    )
+    _write_raw_json(
+        raw_dir,
+        "qld_ecq_eds_api_local_electorates",
+        [{"localElectorateId": 777, "localElectorateName": "Whitsunday Regional"}],
+    )
+
+    summary_path = normalize_qld_ecq_eds_contexts(
+        raw_dir=raw_dir,
+        processed_dir=processed_dir,
+    )
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    records = [
+        json.loads(line)
+        for line in Path(summary["jsonl_path"]).read_text(encoding="utf-8").splitlines()
+    ]
+    assert summary["total_count"] == 3
+    assert summary["context_type_counts"] == {"local_electorate": 1, "political_event": 2}
+    assert records[0]["context_type"] == "political_event"
+    assert records[0]["external_id"] == "636"
+    assert records[0]["level"] == "council"
+    assert records[0]["identifier"] == {
+        "identifier_type": "qld_ecq_event_id",
+        "identifier_value": "636",
+    }
+    assert records[1]["level"] == "state"
+    assert records[2]["context_type"] == "local_electorate"
+    assert records[2]["identifier"] == {
+        "identifier_type": "qld_ecq_local_electorate_id",
+        "identifier_value": "777",
+    }
