@@ -67,6 +67,10 @@ Completed:
   NSW, Victoria, Queensland, South Australia, Western Australia, Tasmania,
   Northern Territory, and the ACT so subnational fetching can start from named
   reproducible source IDs rather than prose-only targets.
+- Added `scripts/fetch_state_council_seed_sources.sh` as a reproducible
+  acquisition smoke script for those official subnational source records. The
+  script archives raw source bodies and metadata under `data/raw/` and logs
+  command output under `data/audit/logs/`.
 
 Verification:
 

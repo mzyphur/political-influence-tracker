@@ -1,6 +1,6 @@
 # Operations
 
-Last updated: 2026-04-28
+Last updated: 2026-04-29
 
 ## Local Setup
 
@@ -41,6 +41,23 @@ Development smoke run:
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
 .venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline --smoke
 ```
+
+## Subnational Source Smoke Fetch
+
+Before writing state or council parsers, archive the official source landing
+pages through the same raw-source workflow used by the federal pipeline:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics"
+./scripts/fetch_state_council_seed_sources.sh
+```
+
+The script fetches the seed source IDs registered in
+`backend/au_politics_money/ingest/sources.py` for NSW, Victoria, Queensland,
+South Australia, Western Australia, Tasmania, Northern Territory, and the ACT.
+It writes raw source bodies and metadata under `data/raw/` and command logs
+under `data/audit/logs/`. Parsing remains a separate step so acquisition,
+normalization, and interpretation stay reproducible and auditable.
 
 ## Frontend Development
 
