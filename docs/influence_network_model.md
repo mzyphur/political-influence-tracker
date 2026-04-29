@@ -4,6 +4,8 @@ This project treats political influence as a source-backed, typed network. The
 goal is to show how disclosed money, gifts, interests, campaign support,
 party-channelled support, lobbying/client relationships, and policy behaviour
 connect without collapsing different evidence tiers into one misleading total.
+The broader theoretical rationale is maintained in
+`docs/theory_of_influence.md`.
 
 ## Core Principle
 

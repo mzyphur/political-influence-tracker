@@ -15,6 +15,11 @@ The project principle is: show the evidence, preserve the source, and separate f
 from interpretation. The app should make influence visible without overstating what
 the public record can prove.
 
+The project also maintains an explicit operating theory of influence in
+`docs/theory_of_influence.md`. Engineering choices should connect to that theory:
+which influence mechanism is being operationalized, which observable indicator is
+being used, and which public claims remain out of bounds.
+
 ## Current Structure
 
 - `docs/` - planning, research standards, source inventory, and methodology.

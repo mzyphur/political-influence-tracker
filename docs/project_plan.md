@@ -24,6 +24,8 @@ users must be able to drill from a visualization down to the source record.
    assumptions; see `docs/jurisdiction_generalization.md`.
 8. Treat direct, campaign, party/entity, and modelled allocation as separate
    evidence tiers; see `docs/influence_network_model.md`.
+9. Document the operating theory behind substantial engineering and product
+   choices; see `docs/theory_of_influence.md`.
 
 ## Phase 1: Federal Foundation
 
@@ -48,6 +50,8 @@ Work items:
 - Maintain a typed influence graph model so party/entity-level and
   campaign-context records can be connected to representatives without
   mislabelling them as direct personal receipt.
+- Maintain methodology notes that connect each new data family to an influence
+  mechanism, observable indicator, allowed public claim, and limitation.
 
 Deliverable:
 

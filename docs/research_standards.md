@@ -2,6 +2,10 @@
 
 Last updated: 2026-04-28
 
+These standards implement the operating theory in
+`docs/theory_of_influence.md`: influence is treated as a set of observable,
+source-backed mechanisms whose evidentiary limits must remain visible.
+
 ## Evidence Classes
 
 Use these evidence classes throughout the database and public app.

@@ -50,6 +50,10 @@ Completed:
   "worth $X" or "estimated at $X", branded providers for Qantas/Virgin airline
   lounge memberships and similar named benefits, and richer subtypes for
   private jets/flights and sporting or cultural tickets.
+- Added `docs/theory_of_influence.md` as the standing theory/methodology layer
+  connecting engineering decisions to mechanisms of influence, democratic
+  transparency, operating hypotheses, allowed claims, non-claims, and the
+  documentation rule for future data families and UI surfaces.
 
 Verification:
 
