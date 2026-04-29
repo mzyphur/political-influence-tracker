@@ -163,7 +163,20 @@ def _clean_provider_name(name: str) -> str:
         name,
         flags=re.IGNORECASE,
     )
-    return name.strip(" -,:;()[]")
+    name = name.strip(" -,:;[]")
+    if name.startswith("(") and name.endswith(")"):
+        name = name[1:-1].strip()
+    return name
+
+
+def _looks_like_travel_class_change(value: str) -> bool:
+    travel_class = r"(?:economy|premium economy|business|first|coach)"
+    return bool(
+        re.fullmatch(
+            rf"{travel_class}(?:\s+class)?\s+to\s+{travel_class}(?:\s+class)?",
+            _clean_text(value).lower(),
+        )
+    )
 
 
 def _looks_like_travel_route(description: str, match: re.Match[str]) -> bool:
@@ -218,6 +231,32 @@ def _generic_subject_provider(value: str) -> bool:
     }
 
 
+def _explicit_provider_payload(
+    match: re.Match[str],
+    *,
+    source_field: str,
+    allow_from_phrase: bool = True,
+) -> dict[str, Any] | None:
+    phrase = match.group("phrase").lower()
+    if phrase == "from" and not allow_from_phrase:
+        return None
+    provider = _clean_provider_name(match.group("name"))
+    if not provider:
+        return None
+    if provider.lower() in GENERIC_PROVIDER_VALUES:
+        return None
+    if len(provider) < 3 or provider.isdigit():
+        return None
+    if phrase == "from" and _looks_like_travel_class_change(provider):
+        return None
+    return {
+        "value": provider[:250],
+        "source_field": source_field,
+        "method": f"explicit_provider_phrase:{phrase}",
+        "raw_span": match.group(0).strip(),
+    }
+
+
 def extract_provider(description: str, *, fields: dict[str, Any] | None = None) -> dict[str, Any]:
     texts: list[tuple[str, str]] = []
     if fields:
@@ -229,20 +268,18 @@ def extract_provider(description: str, *, fields: dict[str, Any] | None = None) 
     for field_name, text in texts:
         for match in PROVIDER_PATTERN.finditer(text):
             if _looks_like_travel_route(text, match):
+                for route_tail_match in PROVIDER_PATTERN.finditer(match.group("name")):
+                    payload = _explicit_provider_payload(
+                        route_tail_match,
+                        source_field=field_name,
+                        allow_from_phrase=False,
+                    )
+                    if payload:
+                        return payload
                 continue
-            provider = _clean_provider_name(match.group("name"))
-            if not provider:
-                continue
-            if provider.lower() in GENERIC_PROVIDER_VALUES:
-                continue
-            if len(provider) < 3 or provider.isdigit():
-                continue
-            return {
-                "value": provider[:250],
-                "source_field": field_name,
-                "method": f"explicit_provider_phrase:{match.group('phrase').lower()}",
-                "raw_span": match.group(0).strip(),
-            }
+            payload = _explicit_provider_payload(match, source_field=field_name)
+            if payload:
+                return payload
     for field_name, text in texts:
         for match in SUBJECT_PROVIDER_PATTERN.finditer(text):
             provider = _clean_provider_name(match.group("name"))

@@ -31,6 +31,12 @@ Completed:
   amount/date facts, and compact public-facing chips. Provenance, extraction,
   review, period, source-row, and missing-field details remain available in the
   expanded record view.
+- Hardened benefit-provider extraction for small-gift and travel records. The
+  shared House/Senate interests parser now preserves public parenthetical
+  acronyms in provider names, such as `(ASTRA)`, and avoids turning travel
+  class changes, such as "Economy to Business", into invented source entities.
+  Route wording such as "flight from Sydney to Melbourne provided by Qantas"
+  remains supported.
 - Hardened ACT annual-return receipt handling after review. Broad annual
   `act_annual_receipt` rows are now loaded as state source-row context with
   `public_amount_counting_role =
