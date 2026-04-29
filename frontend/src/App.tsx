@@ -81,6 +81,8 @@ type StateLocalFlowFilter =
   | "sa_special_large_gift_return_summary"
   | "sa_third_party_capped_expenditure_return_summary"
   | "sa_third_party_return_summary"
+  | "tas_reportable_donation"
+  | "tas_reportable_loan"
   | "vic_administrative_funding_entitlement"
   | "vic_policy_development_funding_payment"
   | "vic_public_funding_payment"
@@ -117,6 +119,8 @@ const stateLocalFlowFilterOptions: Array<{
   { value: "all", label: "All" },
   { value: "qld_gift", label: "QLD gifts" },
   { value: "wa_political_contribution", label: "WA contributions" },
+  { value: "tas_reportable_donation", label: "TAS donations" },
+  { value: "tas_reportable_loan", label: "TAS loans" },
   { value: "act_gift_of_money", label: "ACT money gifts" },
   { value: "act_gift_in_kind", label: "ACT in-kind gifts" },
   { value: "nt_annual_gift", label: "NT gifts" },
@@ -1414,6 +1418,8 @@ function stateLocalRecordKind(row: StateLocalSummaryRecord): string {
   if (isSaEcsaReturnSummary(row)) return saReturnLabel(row);
   if (row.flow_kind === "qld_electoral_expenditure") return "Campaign spend incurred";
   if (row.flow_kind === "wa_political_contribution") return "WA political contribution";
+  if (row.flow_kind === "tas_reportable_donation") return "TAS reportable donation";
+  if (row.flow_kind === "tas_reportable_loan") return "TAS reportable loan";
   if (row.flow_kind === "act_gift_in_kind") return "Gift-in-kind value";
   if (row.flow_kind === "act_gift_of_money") return "Gift of money";
   if (row.flow_kind === "nt_annual_gift") return "Annual gift over threshold";
@@ -1441,6 +1447,12 @@ function stateLocalRecordHeadline(row: StateLocalSummaryRecord): string {
   }
   if (row.flow_kind === "wa_political_contribution") {
     return `${source} disclosed contribution to ${row.recipient_name || "political entity not identified"}`;
+  }
+  if (row.flow_kind === "tas_reportable_donation") {
+    return `${source} disclosed donation to ${row.recipient_name || "recipient not identified"}`;
+  }
+  if (row.flow_kind === "tas_reportable_loan") {
+    return `${source} disclosed reportable loan to ${row.recipient_name || "recipient not identified"}`;
   }
   if (row.flow_kind === "act_gift_in_kind") {
     return `${source} provided a gift-in-kind to ${row.recipient_name || "recipient not identified"}`;
@@ -1501,6 +1513,12 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
       : null,
     row.flow_kind === "wa_political_contribution"
       ? "Interpretation: WAEC political contribution row from a donor to a political entity. The row is not a personal receipt by an MP or senator, and the date is the disclosure-received date."
+      : null,
+    row.flow_kind === "tas_reportable_donation"
+      ? "Interpretation: Tasmanian TEC reportable political donation row from a donor to a recipient under the current disclosure regime. It is not a personal receipt unless the recipient is independently identified as an individual candidate/member."
+      : null,
+    row.flow_kind === "tas_reportable_loan"
+      ? "Interpretation: Tasmanian TEC reportable loan row. It is a disclosed loan observation, not a gift and not a personal receipt unless the recipient is independently identified as an individual candidate/member."
       : null,
     row.flow_kind === "nt_annual_gift"
       ? "Interpretation: NTEC annual gift received over the threshold; per-row gift date is not published in the source table."

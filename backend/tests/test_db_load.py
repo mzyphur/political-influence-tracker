@@ -37,6 +37,7 @@ from au_politics_money.db.load import (
     qld_ecq_eds_paths_from_pipeline_manifest,
     sa_ecsa_return_summary_path_from_pipeline_manifest,
     senate_api_name_to_canonical,
+    tas_tec_donation_path_from_pipeline_manifest,
     vic_vec_funding_register_path_from_pipeline_manifest,
     waec_political_contribution_path_from_pipeline_manifest,
 )
@@ -1225,6 +1226,93 @@ def test_waec_pipeline_manifest_selects_complete_contribution_artifact(tmp_path)
     source_metadata_path.write_text("tampered\n", encoding="utf-8")
     with pytest.raises(ValueError, match="source metadata hash mismatch"):
         waec_political_contribution_path_from_pipeline_manifest(manifest_path)
+
+
+def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
+    def sha256_path(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    source_ids = (
+        "tas_tec_donations_monthly_table",
+        "tas_tec_donations_seven_day_ha25_table",
+        "tas_tec_donations_seven_day_lc26_table",
+    )
+    jsonl_path = tmp_path / "tas-donations.jsonl"
+    jsonl_path.write_text(
+        "".join(json.dumps({"source_id": source_id}) + "\n" for source_id in source_ids),
+        encoding="utf-8",
+    )
+    source_hashes: dict[str, dict[str, str]] = {}
+    for source_id in source_ids:
+        body_path = tmp_path / f"{source_id}.html"
+        body_path.write_text(f"<table>{source_id}</table>\n", encoding="utf-8")
+        metadata_path = tmp_path / f"{source_id}.metadata.json"
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "source": {"source_id": source_id},
+                    "body_path": str(body_path),
+                    "sha256": sha256_path(body_path),
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        source_hashes[source_id] = {
+            "metadata_path": str(metadata_path),
+            "metadata_sha256": sha256_path(metadata_path),
+            "body_path": str(body_path),
+            "body_sha256": sha256_path(body_path),
+        }
+    summary_path = tmp_path / "tas-donations.summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "normalizer_name": "tas_tec_reportable_donation_table_normalizer",
+                "source_dataset": "tas_tec_donations",
+                "source_ids": list(source_ids),
+                "jsonl_path": str(jsonl_path),
+                "jsonl_sha256": sha256_path(jsonl_path),
+                "source_counts": {source_id: 1 for source_id in source_ids},
+                "source_hashes": source_hashes,
+                "total_count": 3,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "state_local_tas_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "tas_tec_donations",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_tas_tec_donations",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": sha256_path(summary_path),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert tas_tec_donation_path_from_pipeline_manifest(manifest_path) == jsonl_path
+
+    first_body = Path(source_hashes[source_ids[0]]["body_path"])
+    first_body.write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="source body hash mismatch"):
+        tas_tec_donation_path_from_pipeline_manifest(manifest_path)
 
 
 def test_display_geometry_repair_buffer_validates_range() -> None:

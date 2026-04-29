@@ -292,6 +292,27 @@ rules are validated. Smoke runs fetch one grid page and produce incomplete
 artifacts; the manifest loader rejects incomplete WAEC summaries so a partial
 smoke artifact cannot be promoted as current coverage.
 
+Tasmania is wired as a TEC reportable political donation adapter:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction tas)
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli migrate-postgres
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+```
+
+The TAS runner archives the TEC monthly reportable donation table and the 2025
+House of Assembly / 2026 Legislative Council seven-day disclosure table
+fragments. Normalized rows are written under
+`data/processed/tas_tec_donation_money_flows/` and loaded as Tasmanian state
+disclosure rows. `tas_reportable_donation` rows are donor-to-recipient
+reportable political donation observations. `tas_reportable_loan` rows are
+loan observations and should not be counted or worded as gifts. The Tasmanian
+disclosure regime commenced on 2025-07-01, so gaps before that date are a legal
+coverage feature, not evidence of zero influence.
+
 ECQ gift/donation rows are money records. ECQ expenditure rows are
 campaign-support records with event type `state_local_electoral_expenditure`;
 they are campaign activity, not personal receipt by a representative.
@@ -346,8 +367,9 @@ decision-record documents are fetched again instead of being silently reused.
 The weekly federal load also uses
 `--skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns
 --skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
---skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register
---skip-waec-political-contributions`; QLD, NSW, ACT, NT, SA, VIC, and WA
+--skip-sa-ecsa-return-summaries --skip-tas-tec-donations
+--skip-vic-vec-funding-register --skip-waec-political-contributions`;
+QLD, NSW, ACT, NT, SA, TAS, VIC, and WA
 state/local rows should be refreshed by the
 jurisdiction-specific commands above.
 After loading, the script runs `qa-serving-database`. That QA gate fails the

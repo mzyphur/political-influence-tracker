@@ -206,6 +206,17 @@ Notes:
 - Tasmania is important because it is a new disclosure regime. The adapter should
   preserve regime-start dates so gaps before 1 July 2025 are not misread as zero
   influence.
+- Current adapter status: `run-state-local-pipeline --jurisdiction tas` archives
+  the official TEC monthly reportable donation table and the 2025 House of
+  Assembly / 2026 Legislative Council seven-day disclosure table fragments, then
+  normalizes them into `money_flow` rows.
+- The TAS rows are source-backed donor-to-recipient reportable political donation
+  or reportable-loan observations. Loan rows are displayed as loans, not gifts.
+  Rows should not be described as personal receipt unless the source recipient is
+  independently an individual candidate/member.
+- The next Tasmania step is to add electoral expenditure, public funding,
+  participant/agent registers, and return documents when TEC publishes stable
+  machine-readable or safely parseable pages.
 
 ### Northern Territory
 
@@ -340,6 +351,15 @@ parameters or export endpoints and confirm automated access terms. Only after
 that should we normalize granular state/local donation and expenditure rows
 with jurisdiction-specific thresholds, redaction status, and record-retention
 caveats.
+
+2026-04-29 review update: the EFA portal is technically scrapeable but is a
+Salesforce Visualforce/Ajax4JSF session application rather than a stable public
+bulk export. A production adapter should be a separate opt-in
+`nsw_efadisclosures` module, not an expansion of the current heatmap adapter,
+and should wait for a reproducible session client, PDF/download evidence
+capture, and legal/robots review. If implemented, rows parsed from the portal
+without original lodged PDFs must be labelled `official_portal_parsed_pdf_not_checked`
+or equivalent and displayed as verification-pending source context.
 
 ### Victoria Discovery Targets
 

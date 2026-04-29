@@ -80,6 +80,11 @@ from au_politics_money.ingest.sa_ecsa import (
     SOURCE_DATASET as SA_ECSA_SOURCE_DATASET,
     SOURCE_ID as SA_ECSA_RETURN_INDEX_SOURCE_ID,
 )
+from au_politics_money.ingest.tas_tec import (
+    PARSER_NAME as TAS_TEC_PARSER_NAME,
+    SOURCE_DATASET as TAS_TEC_SOURCE_DATASET,
+    SOURCE_IDS as TAS_TEC_SOURCE_IDS,
+)
 from au_politics_money.ingest.they_vote_for_you import latest_they_vote_for_you_divisions_jsonl
 from au_politics_money.ingest.vic_vec import (
     FUNDING_REGISTER_SOURCE_ID as VIC_VEC_FUNDING_REGISTER_SOURCE_ID,
@@ -1958,6 +1963,117 @@ def load_sa_ecsa_return_summary_money_flows(
     )
 
 
+def _tas_tec_jsonl_path_from_summary(
+    summary_path: Path,
+    *,
+    expected_summary_sha256: str = "",
+) -> Path:
+    actual_summary_sha256 = _sha256_path(summary_path)
+    if expected_summary_sha256 and actual_summary_sha256 != expected_summary_sha256:
+        raise ValueError(
+            f"Summary hash mismatch for {summary_path}: "
+            f"manifest={expected_summary_sha256} actual={actual_summary_sha256}"
+        )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("source_dataset") != TAS_TEC_SOURCE_DATASET:
+        raise ValueError(
+            f"Unexpected TAS TEC source_dataset in {summary_path}: "
+            f"{summary.get('source_dataset')!r}"
+        )
+    if set(summary.get("source_ids") or []) != set(TAS_TEC_SOURCE_IDS):
+        raise ValueError(
+            f"Unexpected TAS TEC source_ids in {summary_path}: "
+            f"{summary.get('source_ids')!r}"
+        )
+    total_count = int(summary.get("total_count") or 0)
+    counts = summary.get("source_counts")
+    if not isinstance(counts, dict) or set(counts) != set(TAS_TEC_SOURCE_IDS):
+        raise ValueError(f"TAS TEC summary has unexpected source_counts: {summary_path}")
+    if sum(int(value or 0) for value in counts.values()) != total_count:
+        raise ValueError(
+            f"TAS TEC source_counts do not sum to total_count in {summary_path}"
+        )
+    source_hashes = summary.get("source_hashes")
+    if not isinstance(source_hashes, dict):
+        raise ValueError(f"TAS TEC summary is missing source_hashes: {summary_path}")
+    for source_id in TAS_TEC_SOURCE_IDS:
+        source_hash = source_hashes.get(source_id)
+        if not isinstance(source_hash, dict):
+            raise ValueError(f"TAS TEC summary is missing hashes for {source_id}")
+        source_metadata_path = Path(str(source_hash.get("metadata_path") or ""))
+        source_body_path = Path(str(source_hash.get("body_path") or ""))
+        expected_source_metadata_sha256 = str(source_hash.get("metadata_sha256") or "")
+        expected_source_body_sha256 = str(source_hash.get("body_sha256") or "")
+        if not expected_source_metadata_sha256:
+            raise ValueError(f"TAS TEC summary is missing metadata hash for {source_id}")
+        if not expected_source_body_sha256:
+            raise ValueError(f"TAS TEC summary is missing body hash for {source_id}")
+        actual_source_metadata_sha256 = _sha256_path(source_metadata_path)
+        if actual_source_metadata_sha256 != expected_source_metadata_sha256:
+            raise ValueError(
+                f"TAS TEC source metadata hash mismatch for {source_metadata_path}: "
+                f"summary={expected_source_metadata_sha256} "
+                f"actual={actual_source_metadata_sha256}"
+            )
+        actual_source_body_sha256 = _sha256_path(source_body_path)
+        if actual_source_body_sha256 != expected_source_body_sha256:
+            raise ValueError(
+                f"TAS TEC source body hash mismatch for {source_body_path}: "
+                f"summary={expected_source_body_sha256} actual={actual_source_body_sha256}"
+            )
+        source_metadata = json.loads(source_metadata_path.read_text(encoding="utf-8"))
+        source = source_metadata.get("source")
+        metadata_source_id = source.get("source_id") if isinstance(source, dict) else None
+        if metadata_source_id != source_id:
+            raise ValueError(
+                f"Unexpected TAS TEC source metadata source_id in {source_metadata_path}: "
+                f"{metadata_source_id!r}"
+            )
+        metadata_body_sha256 = str(source_metadata.get("sha256") or "")
+        if metadata_body_sha256 and metadata_body_sha256 != expected_source_body_sha256:
+            raise ValueError(
+                f"TAS TEC metadata/body hash mismatch for {source_metadata_path}: "
+                f"metadata={metadata_body_sha256} summary={expected_source_body_sha256}"
+            )
+    return _jsonl_path_from_summary(
+        summary_path,
+        TAS_TEC_PARSER_NAME,
+        expected_summary_sha256=expected_summary_sha256,
+        expected_source_keys=set(TAS_TEC_SOURCE_IDS),
+        source_count_field="source_counts",
+    )
+
+
+def _latest_tas_tec_donation_jsonl() -> Path:
+    directory = PROCESSED_DIR / "tas_tec_donation_money_flows"
+    candidates = sorted(directory.glob("*.summary.json"), reverse=True)
+    if not candidates:
+        raise FileNotFoundError(f"No TAS TEC donation summary files in {directory}")
+    for summary_path in candidates:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        if int(summary.get("total_count") or 0) > 0:
+            return _tas_tec_jsonl_path_from_summary(summary_path)
+    raise FileNotFoundError(f"No TAS TEC donation summaries with rows in {directory}")
+
+
+def load_tas_tec_donation_money_flows(
+    conn,
+    jsonl_path: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        path = jsonl_path or _latest_tas_tec_donation_jsonl()
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_tas_tec_donation_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(
+        conn,
+        path,
+        default_source_dataset=TAS_TEC_SOURCE_DATASET,
+    )
+
+
 def _waec_jsonl_path_from_complete_summary(
     summary_path: Path,
     *,
@@ -2875,6 +2991,29 @@ def waec_political_contribution_path_from_pipeline_manifest(manifest_path: Path)
     )
 
 
+def tas_tec_donation_path_from_pipeline_manifest(manifest_path: Path) -> Path:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("pipeline_name") != "state_local":
+        raise ValueError("Expected a state_local pipeline manifest")
+    parameters = manifest.get("parameters")
+    if (
+        not isinstance(parameters, dict)
+        or parameters.get("source_family") != TAS_TEC_SOURCE_DATASET
+    ):
+        raise ValueError("Expected a TAS TEC donation state/local manifest")
+    if parameters.get("loads_database") is not False:
+        raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+
+    summary_path, summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_tas_tec_donations",
+    )
+    return _tas_tec_jsonl_path_from_summary(
+        summary_path,
+        expected_summary_sha256=summary_sha256,
+    )
+
+
 def load_qld_ecq_eds_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -3026,6 +3165,26 @@ def load_waec_from_pipeline_manifest(
     return summary
 
 
+def load_tas_tec_from_pipeline_manifest(
+    conn,
+    manifest_path: Path,
+    *,
+    include_influence_events: bool = True,
+) -> dict[str, Any]:
+    path = tas_tec_donation_path_from_pipeline_manifest(manifest_path)
+    summary: dict[str, Any] = {
+        "pipeline_manifest_path": str(manifest_path),
+        "artifact_paths": {"money_flows": str(path)},
+        "tas_tec_donation_money_flows": load_tas_tec_donation_money_flows(
+            conn,
+            jsonl_path=path,
+        ),
+    }
+    if include_influence_events:
+        summary["influence_events"] = load_influence_events(conn)
+    return summary
+
+
 def load_state_local_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -3069,6 +3228,12 @@ def load_state_local_from_pipeline_manifest(
         )
     if source_family == WAEC_SOURCE_DATASET:
         return load_waec_from_pipeline_manifest(
+            conn,
+            manifest_path,
+            include_influence_events=include_influence_events,
+        )
+    if source_family == TAS_TEC_SOURCE_DATASET:
+        return load_tas_tec_from_pipeline_manifest(
             conn,
             manifest_path,
             include_influence_events=include_influence_events,
@@ -7693,6 +7858,7 @@ def load_processed_artifacts(
     include_nt_ntec_annual_returns: bool = True,
     include_nt_ntec_annual_gifts: bool = True,
     include_sa_ecsa_return_summaries: bool = True,
+    include_tas_tec_donations: bool = True,
     include_vic_vec_funding_register: bool = True,
     include_waec_political_contributions: bool = True,
     include_house_interests: bool = True,
@@ -7741,6 +7907,10 @@ def load_processed_artifacts(
             if include_sa_ecsa_return_summaries:
                 summary["sa_ecsa_return_summary_money_flows"] = (
                     load_sa_ecsa_return_summary_money_flows(conn)
+                )
+            if include_tas_tec_donations:
+                summary["tas_tec_donation_money_flows"] = (
+                    load_tas_tec_donation_money_flows(conn)
                 )
             if include_vic_vec_funding_register:
                 summary["vic_vec_funding_register_money_flows"] = (

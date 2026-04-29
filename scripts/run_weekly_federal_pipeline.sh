@@ -25,6 +25,7 @@ LOAD_ARGS=(
   --skip-nt-ntec-annual-returns
   --skip-nt-ntec-annual-gifts
   --skip-sa-ecsa-return-summaries
+  --skip-tas-tec-donations
   --skip-vic-vec-funding-register
   --skip-waec-political-contributions
 )

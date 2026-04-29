@@ -32,6 +32,7 @@ STATE_LOCAL_MONEY_SOURCE_DATASETS = (
     "nt_ntec_annual_returns_gifts",
     "qld_ecq_eds",
     "sa_ecsa_funding_returns",
+    "tas_tec_donations",
     "vic_vec_funding_register",
     "waec_political_contributions",
 )
@@ -57,6 +58,8 @@ STATE_LOCAL_RECORD_FLOW_KINDS = {
     "qld_electoral_expenditure",
     "qld_gift",
     *SA_ECSA_RETURN_SUMMARY_FLOW_KINDS,
+    "tas_reportable_donation",
+    "tas_reportable_loan",
     "vic_administrative_funding_entitlement",
     "vic_policy_development_funding_payment",
     "vic_public_funding_payment",
@@ -67,12 +70,14 @@ STATE_LOCAL_GIFT_FLOW_KINDS = (
     "act_gift_of_money",
     "nt_annual_gift",
     "qld_gift",
+    "tas_reportable_donation",
     "wa_political_contribution",
 )
 STATE_LOCAL_MONEY_GIFT_FLOW_KINDS = (
     "act_gift_of_money",
     "nt_annual_gift",
     "qld_gift",
+    "tas_reportable_donation",
     "wa_political_contribution",
 )
 STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS = (
@@ -2109,7 +2114,9 @@ def get_state_local_records(
                 "gift-return or Commonwealth records until cross-source deduplication "
                 "exists; SA ECSA current funding portal rows are return-level index "
                 "summaries and official report links, not detailed transaction rows "
-                "or personal receipts; WAEC political contribution rows are "
+                "or personal receipts; TAS TEC rows are reportable political donation "
+                "or reportable-loan observations under Tasmania's current disclosure "
+                "regime; WAEC political contribution rows are "
                 "donor-to-political-entity disclosures and use the disclosure-received "
                 "date, not necessarily a contribution transaction date; Queensland "
                 "expenditure is campaign-support context, not personal receipt; VEC funding-register "
@@ -2447,7 +2454,9 @@ def get_state_local_summary(
                 "deduplication exists; ACT gift-in-kind rows are reported non-cash "
                 "values; WAEC political contribution rows are source-backed "
                 "donor-to-political-entity disclosures with disclosure-received dates "
-                "rather than transaction dates; Queensland electoral expenditure rows are campaign-support "
+                "rather than transaction dates; TAS TEC rows are reportable political "
+                "donation and reportable-loan observations under Tasmania's disclosure "
+                "scheme that commenced on 1 July 2025; Queensland electoral expenditure rows are campaign-support "
                 "context and not personal receipt; VEC funding-register rows are public "
                 "funding/admin/policy-funding context, not private donations or personal "
                 "income, and VEC says affected material is under review after Hopper & "

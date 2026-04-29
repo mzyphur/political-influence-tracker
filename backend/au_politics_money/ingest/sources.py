@@ -787,6 +787,66 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="tas_tec_donations_monthly_table",
+        name="TEC Monthly Reportable Political Donations Table",
+        jurisdiction="Tasmania",
+        level="state",
+        source_type="state_financial_disclosure_donation_table",
+        url=(
+            "https://www.tec.tas.gov.au/disclosure-and-funding/registers-and-reports/"
+            "donations/data/table-monthly-disclosures-m.html"
+        ),
+        expected_format="html_table_fragment",
+        update_frequency="regular",
+        priority="high",
+        notes=(
+            "Official TEC table fragment for monthly reportable political donation "
+            "disclosures outside an election period under the disclosure scheme "
+            "commencing 2025-07-01. Rows include donation date, amount, donor, "
+            "recipient, donor ABN/ACN where published, and declaration-document "
+            "status/links."
+        ),
+    ),
+    SourceRecord(
+        source_id="tas_tec_donations_seven_day_ha25_table",
+        name="TEC Seven-Day Reportable Political Donations 2025 State Election",
+        jurisdiction="Tasmania",
+        level="state",
+        source_type="state_financial_disclosure_donation_table",
+        url=(
+            "https://www.tec.tas.gov.au/disclosure-and-funding/registers-and-reports/"
+            "donations/data/table-seven-day-disclosures-ha25-m.html"
+        ),
+        expected_format="html_table_fragment",
+        update_frequency="event_plus_amendments",
+        priority="high",
+        notes=(
+            "Official TEC table fragment for seven-day reportable political donation "
+            "disclosures during the 2025 House of Assembly election campaign period. "
+            "Rows are donation or reportable-loan observations, not personal receipt "
+            "unless the source recipient itself is an independent candidate/member."
+        ),
+    ),
+    SourceRecord(
+        source_id="tas_tec_donations_seven_day_lc26_table",
+        name="TEC Seven-Day Reportable Political Donations 2026 Legislative Council",
+        jurisdiction="Tasmania",
+        level="state",
+        source_type="state_financial_disclosure_donation_table",
+        url=(
+            "https://www.tec.tas.gov.au/disclosure-and-funding/registers-and-reports/"
+            "donations/data/table-seven-day-disclosures-lc26-m.html"
+        ),
+        expected_format="html_table_fragment",
+        update_frequency="event_plus_amendments",
+        priority="high",
+        notes=(
+            "Official TEC table fragment for seven-day reportable political donation "
+            "disclosures during the 2026 Legislative Council campaign period for "
+            "Huon and Rosevears."
+        ),
+    ),
+    SourceRecord(
         source_id="nt_ntec_annual_returns",
         name="Northern Territory Electoral Commission Annual Returns",
         jurisdiction="Northern Territory",

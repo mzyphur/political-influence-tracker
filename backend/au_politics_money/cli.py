@@ -556,6 +556,7 @@ def load_postgres_command(
     skip_nt_ntec_annual_returns: bool,
     skip_nt_ntec_annual_gifts: bool,
     skip_sa_ecsa_return_summaries: bool,
+    skip_tas_tec_donations: bool,
     skip_vic_vec_funding_register: bool,
     skip_waec_political_contributions: bool,
     skip_house_interests: bool,
@@ -582,6 +583,7 @@ def load_postgres_command(
         include_nt_ntec_annual_returns=not skip_nt_ntec_annual_returns,
         include_nt_ntec_annual_gifts=not skip_nt_ntec_annual_gifts,
         include_sa_ecsa_return_summaries=not skip_sa_ecsa_return_summaries,
+        include_tas_tec_donations=not skip_tas_tec_donations,
         include_vic_vec_funding_register=not skip_vic_vec_funding_register,
         include_waec_political_contributions=not skip_waec_political_contributions,
         include_house_interests=not skip_house_interests,
@@ -1138,11 +1140,11 @@ def build_parser() -> argparse.ArgumentParser:
     state_local_pipeline_parser = subparsers.add_parser("run-state-local-pipeline")
     state_local_pipeline_parser.add_argument(
         "--jurisdiction",
-        choices=("act", "qld", "nsw", "nt", "sa", "vic", "wa"),
+        choices=("act", "qld", "nsw", "nt", "sa", "tas", "vic", "wa"),
         default="qld",
         help=(
             "State/local adapter to run. Currently supported: act, qld, nsw, "
-            "nt, sa, vic, wa."
+            "nt, sa, tas, vic, wa."
         ),
     )
     state_local_pipeline_parser.add_argument(
@@ -1206,6 +1208,15 @@ def build_parser() -> argparse.ArgumentParser:
             "Skip ECSA current funding portal return-summary artifacts during this "
             "load. These rows are South Australian return-level index values, not "
             "deduplicated transaction rows."
+        ),
+    )
+    load_parser.add_argument(
+        "--skip-tas-tec-donations",
+        action="store_true",
+        help=(
+            "Skip Tasmanian TEC reportable political donation table artifacts during "
+            "this load. These rows are donor-to-recipient donation and reportable-loan "
+            "records under Tasmania's current disclosure regime."
         ),
     )
     load_parser.add_argument(
@@ -1432,6 +1443,7 @@ def main() -> int:
             args.skip_nt_ntec_annual_returns,
             args.skip_nt_ntec_annual_gifts,
             args.skip_sa_ecsa_return_summaries,
+            args.skip_tas_tec_donations,
             args.skip_vic_vec_funding_register,
             args.skip_waec_political_contributions,
             args.skip_house_interests,

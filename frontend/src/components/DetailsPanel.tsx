@@ -587,6 +587,13 @@ export function DetailsPanel({
         )}
         {representativeProfileStatus === "ready" && representativeProfile && (
           <>
+            {totalRepresentativeEvents > 0 && (
+              <p className="scope-caption">
+                Most parliamentary register rows publish a category and source wording,
+                but not a dollar value. Missing value means not disclosed in the loaded
+                source, not zero.
+              </p>
+            )}
             <div className="event-family-grid">
               {representativeProfile.event_summary.length ? (
                 representativeProfile.event_summary.map((summary) => (
@@ -722,10 +729,96 @@ export function DetailsPanel({
   );
 }
 
-function eventTimeLabel(event: { event_date: string | null; reporting_period: string | null }) {
-  if (event.event_date) return event.event_date;
-  if (event.reporting_period) return `Reporting period ${event.reporting_period}`;
-  return null;
+function eventSummaryMeta(event: RepresentativeEvent): string {
+  return [
+    event.amount === null ? null : formatMoney(event.amount),
+    event.event_date
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(" · ");
+}
+
+function registerPeriodLabel(value: string): string {
+  const cleaned = value.trim();
+  if (!cleaned) return "";
+  if (/^\d+$/.test(cleaned)) {
+    const periodNumber = Number(cleaned);
+    return `${periodNumber}${ordinalSuffix(periodNumber)} Parliament`;
+  }
+  return cleaned;
+}
+
+function ordinalSuffix(value: number): string {
+  const mod100 = value % 100;
+  if (mod100 >= 11 && mod100 <= 13) return "th";
+  switch (value % 10) {
+    case 1:
+      return "st";
+    case 2:
+      return "nd";
+    case 3:
+      return "rd";
+    default:
+      return "th";
+  }
+}
+
+function humanize(value: string | null | undefined): string {
+  if (!value) return "";
+  return value
+    .replaceAll("_", " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/^\w/, (match) => match.toUpperCase());
+}
+
+function eventTypeLabel(event: RepresentativeEvent): string {
+  const normalized = event.event_type.toLowerCase();
+  const labels: Record<string, string> = {
+    gift: "Gift or benefit",
+    gift_in_kind: "Gift in kind",
+    membership: "Membership or role",
+    organisational_role: "Organisation role",
+    sponsored_travel_or_hospitality: "Sponsored travel or hospitality",
+    travel_or_hospitality: "Travel or hospitality"
+  };
+  return labels[normalized] ?? humanize(event.event_type);
+}
+
+function eventFamilyLabel(value: string): string {
+  const labels: Record<string, string> = {
+    benefit: "Benefit",
+    money: "Money",
+    organisational_role: "Role or membership",
+    private_interest: "Private interest",
+    access: "Access context"
+  };
+  return labels[value] ?? humanize(value);
+}
+
+function eventSourceLabel(event: RepresentativeEvent): string {
+  return (
+    event.source_entity_name ||
+    event.source_raw_name ||
+    (event.event_family === "benefit" ? "Provider not named" : "Source not named")
+  );
+}
+
+function eventDetailMeta(event: RepresentativeEvent): string[] {
+  return [
+    event.reporting_period ? registerPeriodLabel(event.reporting_period) : null,
+    event.amount_status !== "reported" ? humanize(event.amount_status) : null,
+    event.date_reported ? `Reported ${event.date_reported}` : null
+  ].filter((value): value is string => Boolean(value));
+}
+
+function eventChips(event: RepresentativeEvent): string[] {
+  return [
+    eventFamilyLabel(event.event_family),
+    event.amount !== null ? "Dollar value disclosed" : null,
+    event.evidence_status !== "official_record_parsed" ? humanize(event.evidence_status) : null,
+    event.review_status !== "needs_review" ? humanize(event.review_status) : null
+  ].filter((value): value is string => Boolean(value));
 }
 
 function EventRow({
@@ -740,6 +833,9 @@ function EventRow({
   const sourceHref = safeSourceHref(event.source_final_url || event.source_url);
   const sourceName = event.source_name || event.source_id || "Source document";
   const tooltip = eventBackendTooltip(event);
+  const summaryMeta = eventSummaryMeta(event);
+  const detailMeta = eventDetailMeta(event);
+  const chips = eventChips(event);
   return (
     <article className="event-row" data-expanded={expanded} title={tooltip}>
       <button
@@ -749,21 +845,20 @@ function EventRow({
         onClick={onToggle}
       >
         <div>
-          <strong>{event.event_type.replaceAll("_", " ")}</strong>
-          <span>{event.source_entity_name || event.source_raw_name || "Source not identified"}</span>
+          <strong>{eventTypeLabel(event)}</strong>
+          <span>{eventSourceLabel(event)}</span>
         </div>
-        <small>
-          {[eventTimeLabel(event), formatMoney(event.amount)]
-            .filter(Boolean)
-            .join(" · ")}
-        </small>
+        {summaryMeta && <small>{summaryMeta}</small>}
       </button>
+      {detailMeta.length > 0 && <small className="event-meta-line">{detailMeta.join(" · ")}</small>}
       <p>{event.description}</p>
-      <div className="event-chip-row">
-        <span>{event.event_family.replaceAll("_", " ")}</span>
-        <span>{event.evidence_status.replaceAll("_", " ")}</span>
-        <span>{event.review_status.replaceAll("_", " ")}</span>
-      </div>
+      {chips.length > 0 && (
+        <div className="event-chip-row">
+          {chips.map((chip) => (
+            <span key={chip}>{chip}</span>
+          ))}
+        </div>
+      )}
       {expanded && (
         <div className="event-detail">
           <DetailLine label="Backend family">{event.event_family}</DetailLine>
@@ -782,6 +877,11 @@ function EventRow({
             )}
           </DetailLine>
           <DetailLine label="Source ref">{event.source_ref || "Not recorded"}</DetailLine>
+          {event.reporting_period && (
+            <DetailLine label="Register period">
+              {registerPeriodLabel(event.reporting_period)}
+            </DetailLine>
+          )}
           <DetailLine label="Amount status">
             {[event.amount_status.replaceAll("_", " "), event.currency].filter(Boolean).join(" · ")}
           </DetailLine>

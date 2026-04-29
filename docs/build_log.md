@@ -4,6 +4,23 @@
 
 Completed:
 
+- Added `run-state-local-pipeline --jurisdiction tas` for the first Tasmania
+  TEC row-level adapter. It archives the monthly reportable donation table and
+  the 2025 House of Assembly / 2026 Legislative Council seven-day disclosure
+  table fragments, normalizes donor-to-recipient reportable political donation
+  and reportable-loan observations into
+  `data/processed/tas_tec_donation_money_flows/`, validates source/summary/JSONL
+  hashes in manifest loading, and exposes `tas_reportable_donation` /
+  `tas_reportable_loan` rows through the state/local API and UI. The adapter
+  preserves the 2025-07-01 disclosure-regime start caveat and keeps loans
+  distinct from gifts. The 2026-04-29 implementation run extracted 216 TEC
+  rows: 215 donation rows and 1 reportable-loan row.
+- Simplified representative record cards in the right-side panel: invariant
+  backend provenance chips such as `official_record_parsed` and `needs_review`
+  are now kept in detail/tooltips rather than repeated on every card; the card
+  emphasizes human-readable record type, named source/provider, source wording,
+  useful date/amount metadata, and a section-level caveat for missing dollar
+  values.
 - Added `run-state-local-pipeline --jurisdiction wa` for the first Western
   Australia WAEC state-level adapter. It archives the official Online
   Disclosure System public dashboard, token response, and Power Pages

@@ -60,8 +60,8 @@ http://127.0.0.1:8008/docs
   party/entity link edges with `evidence_status="candidate_requires_review"`.
 - `GET /api/state-local/summary` - first state/local summary surface. It
   returns QLD ECQ, ACT Elections, NT NTEC annual-return/annual-gift, and VEC
-  funding-register source-family totals, SA ECSA return-summary totals, and
-  WAEC Online Disclosure System political contribution totals,
+  funding-register source-family totals, SA ECSA return-summary totals, TAS TEC
+  reportable donation/loan totals, and WAEC Online Disclosure System political contribution totals,
   identifier-backed counts where available, top gift/gift-in-kind/contribution
   donors and recipients, top campaign-spend actors, top public-funding
   recipients, and top return-summary sources/recipients. It also returns NSW donor-location
@@ -69,7 +69,7 @@ http://127.0.0.1:8008/docs
   State/council maps and representative joins remain under construction.
 - `GET /api/state-local/records` - paginated state/local source-row feed for
   the summary panel. It accepts `level=state|council|local`,
-  `flow_kind=act_gift_of_money|act_gift_in_kind|nt_annual_gift|nt_annual_receipt|nt_donor_return_donation|nt_annual_debt|qld_gift|qld_electoral_expenditure|wa_political_contribution|vic_public_funding_payment|vic_administrative_funding_entitlement|vic_policy_development_funding_payment|sa_*_return_summary`,
+  `flow_kind=act_gift_of_money|act_gift_in_kind|nt_annual_gift|nt_annual_receipt|nt_donor_return_donation|nt_annual_debt|qld_gift|qld_electoral_expenditure|tas_reportable_donation|tas_reportable_loan|wa_political_contribution|vic_public_funding_payment|vic_administrative_funding_entitlement|vic_policy_development_funding_payment|sa_*_return_summary`,
   `limit`, and an opaque `cursor`; cursors are bound to the current level and
   flow-kind filters so rows are not skipped if a UI changes slices. NT rows
   expose annual-return and annual gift-return caveats because the NTEC source
@@ -77,7 +77,9 @@ http://127.0.0.1:8008/docs
   and the annual gift tables do not publish per-row gift dates. VEC rows expose
   public-funding context and date caveats; they are not private donations,
   gifts, or personal income. SA ECSA rows expose return-level index summaries,
-  not detailed transaction rows or personal receipt. WAEC rows expose
+  not detailed transaction rows or personal receipt. TAS TEC rows expose
+  reportable political donation and reportable-loan observations from the
+  current Tasmanian disclosure regime. WAEC rows expose
   donor-to-political-entity contribution disclosures; the parsed grid date is
   the disclosure-received date, not necessarily the contribution transaction
   date, and non-original version rows are preserved pending deduplication.

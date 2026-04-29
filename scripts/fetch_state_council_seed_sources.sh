@@ -17,6 +17,9 @@ SOURCE_IDS=(
   waec_ods_public_dashboard
   waec_ods_political_contributions
   tas_tec_disclosure_funding
+  tas_tec_donations_monthly_table
+  tas_tec_donations_seven_day_ha25_table
+  tas_tec_donations_seven_day_lc26_table
   nt_ntec_annual_returns
   act_elections_funding_disclosure
 )

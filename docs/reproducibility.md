@@ -43,8 +43,9 @@ The active state/local adapters are deliberately separate from the federal
 foundation command while the state/council framework is being generalized.
 Queensland ECQ EDS, NSW aggregate donor-location context, ACT gift returns,
 Northern Territory NTEC annual returns/annual gift returns, South Australia
-ECSA return-record summaries, the Victoria VEC funding register, and WAEC
-Online Disclosure System political contributions now have
+ECSA return-record summaries, Tasmania TEC reportable donation tables, the
+Victoria VEC funding register, and WAEC Online Disclosure System political
+contributions now have
 manifest-producing runners:
 
 ```bash
@@ -59,6 +60,9 @@ MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --
 .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 
 MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction sa)
+.venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction tas)
 .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 
 MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction vic)
@@ -80,6 +84,9 @@ claims about personal receipt by an MP, senator, state MP, or councillor. WAEC
 political contribution rows are donor-to-political-entity disclosure rows; the
 parsed date is WAEC's disclosure-received date, and non-original versions are
 preserved but excluded from reported totals pending amendment deduplication.
+TAS TEC rows are reportable political donation or reportable-loan observations
+from the current Tasmanian disclosure regime; the scheme commenced on
+2025-07-01, so pre-regime gaps are not evidence of zero influence.
 Loading remains explicit through
 `load-state-local-pipeline-manifest` or a source-specific loader. The runner
 passes the exact fetched page, export, lookup, or document metadata paths into
@@ -87,7 +94,7 @@ downstream normalizers so the normalized artifacts can be traced to the same
 run instead of an unrelated "latest" file.
 The manifest loader reads the referenced normalizer summaries, checks that the
 manifest still matches the summary files, verifies the JSONL artifact hashes and
-expected QLD source scopes, and then loads those exact JSONL artifacts into
+expected jurisdiction source scopes, and then loads those exact JSONL artifacts into
 Postgres.
 Manifests and summaries produced from 2026-04-29 onward include SHA-256 hashes
 for the referenced output files. Older QLD manifests remain replayable when the
@@ -154,6 +161,17 @@ and manifest replay refuses to load rows if those hashes no longer match.
 The source page caveat about unmapped donor locations and NSWEC Creative
 Commons Attribution 4.0 requirements must be preserved in public displays and
 derived data documentation.
+
+The TAS adapter archives the official TEC monthly reportable political donation
+table and the 2025 House of Assembly / 2026 Legislative Council seven-day
+disclosure table fragments. It validates the exact table headers and preserves
+donation date, amount, donor, recipient, recipient type, donor ABN/ACN where
+published, declaration status, declaration document URLs, and source snapshot
+hashes. `tas_reportable_donation` rows count as gift/donation state-local rows.
+`tas_reportable_loan` rows remain source-backed loan observations and are not
+merged into gift totals. Both are disclosure observations, not claims of
+wrongdoing, causation, or personal receipt unless another source supports that
+person-level attribution.
 
 The ACT adapter archives the official Elections ACT 2025-2026 gift-return page
 and normalizes the current HTML tables into

@@ -98,6 +98,8 @@ export async function fetchStateLocalRecords(options: {
     | "sa_special_large_gift_return_summary"
     | "sa_third_party_capped_expenditure_return_summary"
     | "sa_third_party_return_summary"
+    | "tas_reportable_donation"
+    | "tas_reportable_loan"
     | "vic_administrative_funding_entitlement"
     | "vic_policy_development_funding_payment"
     | "vic_public_funding_payment"

@@ -561,6 +561,55 @@ def test_state_local_wa_pipeline_records_contribution_steps(monkeypatch) -> None
     }
 
 
+def test_state_local_tas_pipeline_records_donation_steps(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+    metadata_paths = {
+        "tas_tec_donations_monthly_table": "tas-monthly-metadata",
+        "tas_tec_donations_seven_day_ha25_table": "tas-ha25-metadata",
+        "tas_tec_donations_seven_day_lc26_table": "tas-lc26-metadata",
+    }
+
+    monkeypatch.setattr("au_politics_money.pipeline._git_commit", lambda: "tas123")
+    monkeypatch.setattr("au_politics_money.pipeline._dependency_versions", lambda: {})
+
+    def fake_write_manifest(manifest):
+        calls["manifest"] = manifest
+        return "manifest.json"
+
+    def fake_fetch_tas():
+        return metadata_paths
+
+    def fake_normalize_tas(*, metadata_paths):
+        calls["metadata_paths"] = {key: str(value) for key, value in metadata_paths.items()}
+        return "tas-donation-summary"
+
+    monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_tas_tec_donation_tables",
+        fake_fetch_tas,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_tas_tec_donations",
+        fake_normalize_tas,
+    )
+
+    assert run_state_local_pipeline(jurisdiction="tas", smoke=True) == "manifest.json"
+
+    manifest = calls["manifest"]
+    assert manifest.pipeline_name == "state_local"
+    assert manifest.git_commit == "tas123"
+    assert manifest.parameters["jurisdiction"] == "tas"
+    assert manifest.parameters["source_family"] == "tas_tec_donations"
+    assert manifest.parameters["loads_database"] is False
+    assert "not claims of wrongdoing" in manifest.parameters["claim_boundary"]
+    assert [step.name for step in manifest.steps] == [
+        "fetch_tas_tec_donation_table_sources",
+        "normalize_tas_tec_donations",
+    ]
+    assert manifest.steps[0].output["metadata_paths"] == metadata_paths
+    assert calls["metadata_paths"] == metadata_paths
+
+
 def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:
     with pytest.raises(ValueError, match="Unsupported state/local jurisdiction"):
-        run_state_local_pipeline(jurisdiction="tas")
+        run_state_local_pipeline(jurisdiction="nz")

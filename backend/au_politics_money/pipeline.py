@@ -96,6 +96,11 @@ from au_politics_money.ingest.senate_interests import (
     fetch_senate_interest_statements,
 )
 from au_politics_money.ingest.sources import get_source
+from au_politics_money.ingest.tas_tec import (
+    SOURCE_DATASET as TAS_TEC_SOURCE_DATASET,
+    fetch_tas_tec_donation_tables,
+    normalize_tas_tec_donations,
+)
 from au_politics_money.ingest.they_vote_for_you import (
     extract_they_vote_for_you_divisions,
     fetch_they_vote_for_you_divisions,
@@ -556,6 +561,8 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         "northern territory",
         "sa",
         "south australia",
+        "tas",
+        "tasmania",
         "vic",
         "victoria",
         "wa",
@@ -563,7 +570,7 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
     }:
         raise ValueError(
             "Unsupported state/local jurisdiction. Currently supported: "
-            "act, qld, nsw, nt, sa, vic, wa."
+            "act, qld, nsw, nt, sa, tas, vic, wa."
         )
     if normalized_jurisdiction in {"act", "australian capital territory"}:
         return _run_act_state_local_pipeline(smoke=smoke)
@@ -573,6 +580,8 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         return _run_nt_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"sa", "south australia"}:
         return _run_sa_state_local_pipeline(smoke=smoke)
+    if normalized_jurisdiction in {"tas", "tasmania"}:
+        return _run_tas_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"vic", "victoria"}:
         return _run_vic_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"wa", "western australia"}:
@@ -866,6 +875,69 @@ def _run_vic_state_local_pipeline(*, smoke: bool = False) -> Path:
             lambda: normalize_vic_vec_funding_registers(
                 document_summary_path=vic_artifacts["document_summary_path"],
             ),
+        ),
+    ]
+
+    try:
+        for name, func in steps:
+            manifest.steps.append(_run_step(name, func))
+        manifest.status = "succeeded"
+    except PipelineStepError as exc:
+        manifest.steps.append(exc.result)
+        manifest.status = "failed"
+    finally:
+        finished = utc_now()
+        manifest.finished_at = finished.isoformat()
+        manifest.duration_seconds = (finished - started).total_seconds()
+
+    manifest_path = _write_manifest(manifest)
+    if manifest.status == "failed":
+        raise RuntimeError(f"Pipeline failed. Manifest: {manifest_path}")
+    return manifest_path
+
+
+def _run_tas_state_local_pipeline(*, smoke: bool = False) -> Path:
+    started = utc_now()
+    tas_artifacts: dict[str, Path] = {}
+
+    def fetch_tas_sources() -> dict[str, Any]:
+        metadata_paths = fetch_tas_tec_donation_tables()
+        tas_artifacts.update({source_id: Path(path) for source_id, path in metadata_paths.items()})
+        return {
+            "source_count": len(metadata_paths),
+            "metadata_paths": {
+                source_id: str(path)
+                for source_id, path in sorted(metadata_paths.items())
+            },
+        }
+
+    manifest = PipelineManifest(
+        pipeline_name="state_local",
+        run_id=f"state_local_tas_{timestamp(started)}",
+        status="running",
+        started_at=started.isoformat(),
+        git_commit=_git_commit(),
+        dependency_versions=_dependency_versions(),
+        parameters={
+            "jurisdiction": "tas",
+            "source_family": TAS_TEC_SOURCE_DATASET,
+            "smoke": smoke,
+            "loads_database": False,
+            "claim_boundary": (
+                "Fetch and normalize Tasmanian Electoral Commission reportable "
+                "political donation tables. Rows are source-backed donation or "
+                "reportable-loan observations under the disclosure scheme that "
+                "commenced on 1 July 2025; they are not claims of wrongdoing, "
+                "causation, quid pro quo, or improper influence."
+            ),
+        },
+    )
+
+    steps: list[tuple[str, Callable[[], Any]]] = [
+        ("fetch_tas_tec_donation_table_sources", fetch_tas_sources),
+        (
+            "normalize_tas_tec_donations",
+            lambda: normalize_tas_tec_donations(metadata_paths=tas_artifacts),
         ),
     ]
 
