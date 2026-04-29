@@ -17,8 +17,8 @@ Loaded source families:
 - AEC Member of the House of Representatives and Senator returns are present in
   the annual disclosure data and individual return pages. Official source:
   <https://transparency.aec.gov.au/MemberOfParliament>.
-- House Register of Members' Interests: 5,853 structured records from current
-  House PDFs. Official source:
+- House Register of Members' Interests: 5,844 current structured records from
+  current House PDFs after filtering known form/OCR artifacts. Official source:
   <https://www.aph.gov.au/Senators_and_Members/Members/Register>.
 - Senate interests: 1,752 structured records from 76 official Senate statements.
   Official source:
@@ -37,7 +37,7 @@ Loaded source families:
   and
   <https://www.aph.gov.au/About_Parliament/Senate/Powers_practice_n_procedures/~/~/link.aspx?_id=732F8182C02D4B3699E417F33843A933>.
 
-Current local `influence_event` coverage after the 2026-04-28 reload:
+Current local `influence_event` coverage after the 2026-04-29 reload:
 
 - Money: 192,201 events; 50 now person-linked; AUD 12,433,325,687 reported
   across all loaded AEC money events.

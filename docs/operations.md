@@ -817,20 +817,24 @@ House-interest artifact cleanup:
   index rows: 53 House Votes and Proceedings records and 19 Senate Journal
   records, all dated, with Senate PDF/HTML ParlInfo alternatives retained as
   representations on one canonical row per sitting day.
-- `official_parliamentary_decision_record_document`: 91 linked ParlInfo raw
-  snapshots: 72 HTML representations and 19 Senate PDF representations, linked
-  to all 72 APH current decision-record rows through `source_document`.
-- `vote_division`: 335 official APH Senate divisions parsed from Senate
-  Journals PDFs across 19 sitting dates from 2026-01-19 to 2026-04-01.
-- `person_vote`: 18,715 official APH senator-vote rows, all matched to current
-  senator records.
+- `official_parliamentary_decision_record_document`: 144 linked ParlInfo raw
+  snapshots: 72 HTML representations and 72 PDF representations, linked to all
+  72 APH current decision-record rows through `source_document`.
+- `vote_division`: 482 official APH divisions parsed from current House Votes
+  and Proceedings plus Senate Journals PDFs: 147 House divisions and 335 Senate
+  divisions across 19 sitting dates from 2026-01-19 to 2026-04-01, with zero
+  vote-count mismatches.
+- `person_vote`: 36,234 current official APH person-vote rows: 17,519 House
+  rows and 18,715 Senate rows. Eleven official House vote names remain
+  unmatched to the current roster and are retained as raw unmatched names rather
+  than guessed.
 - They Vote For You civic-source load after adding
   `THEY_VOTE_FOR_YOU_API_KEY`: 399 divisions for 2026-01-01 through
   2026-04-28, including 55 House divisions, 24 TVFY-only Senate divisions, and
   TVFY enrichment attached to 320 official APH Senate divisions. Person-vote
   context from TVFY is attached to 17,263 official APH senator-vote rows, with
-  8,084 TVFY-only person-vote rows retained mainly for House divisions pending
-  official House person-vote parsing.
+  TVFY-only person-vote rows retained as civic-source observations where no
+  official-source match has been established.
 - Current review queue exports should include the official identifier match
   candidates, QLD ECQ participant match candidates, 1,342 cleaned benefit events
   with extraction or missing-data review flags, and inferred entity
@@ -893,9 +897,9 @@ After each scheduled run, check:
   source of record. The importer preserves that caveat and should later be
   cross-checked against official Hansard, Votes and Proceedings, and Senate
   Journals data.
-- Current APH official vote parsing covers Senate Journals PDF division blocks.
-  House Votes and Proceedings parsing is not yet person-vote complete, and
-  voice votes/party-room decisions remain outside division-level data.
+- Current APH official vote parsing covers Senate Journals and House Votes and
+  Proceedings PDF division blocks. Voice votes, paired votes, party-room
+  decisions, and non-division proceedings remain outside division-level data.
 - Current APH decision-record discovery covers the present House/Senate index
   pages. Historical House parliament pages and Senate year pages still need
   date-range-aware discovery before older vote backfills can be fully checked

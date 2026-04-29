@@ -78,6 +78,13 @@ Completed:
   non-rejected influence events, 7,829 person-linked influence events, 303,230
   current money-flow rows, 7,596 current gift-interest rows, 150 current House
   office terms, and 76 current Senate office terms.
+- Regenerated and loaded the current official APH division artifact from House
+  Votes and Proceedings plus Senate Journals PDF snapshots. The parser produced
+  482 official divisions: 147 House divisions and 335 Senate divisions, with
+  zero vote-count mismatches. The loader inserted/updated 36,234 current
+  official APH person-vote rows: 17,519 House rows and 18,715 Senate rows. The
+  11 unmatched official vote names are retained as raw unmatched names rather
+  than guessed roster matches.
 - Hardened ACT annual-return receipt handling after review. Broad annual
   `act_annual_receipt` rows are now loaded as state source-row context with
   `public_amount_counting_role =
