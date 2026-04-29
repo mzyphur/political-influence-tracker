@@ -509,21 +509,21 @@ docker compose exec -T postgres psql -U au_politics -d au_politics \
   -c "select count(*) from money_flow;"
 ```
 
-Current local baseline after the 2026-04-28 federal load:
+Current local baseline after the 2026-04-29 federal/state-local load:
 
 - `person`: 226, including one House-register-derived fallback person for Sussan Ley/Farrer because the APH contact CSV omitted that seat.
 - `office_term`: 226.
-- `money_flow`: 212,195 rows: 192,201 AEC annual rows plus 19,994 AEC
-  election disclosure observations.
+- `money_flow`: 294,707 rows: AEC annual/election/public-funding records plus
+  active QLD ECQ state/local disclosure rows.
 - `gift_interest`: 7,605 total rows: 5,853 House and 1,752 Senate.
 - `gift_interest` gift/travel subset: House gifts 538, House sponsored travel/hospitality 317, Senate gifts 227, Senate sponsored travel/hospitality 263.
 - `electorate_boundary`: 150 current federal House boundaries in `aec_federal_2025_current`; all canonical source geometries are SRID 4326, valid, and non-empty.
 - `electorate_boundary_display_geometry`: 150 `land_clipped_display` rows for web-map use.
-- `influence_event`: 219,800 derived rows: 212,191 money events, 1,394 benefit events, 4,700 private-interest events, 1,413 organisational-role events, and 102 other declared interests.
-- `influence_event` benefit subtypes include 389 membership/lounge access rows, 225 event ticket/pass rows, 67 private-aircraft/flight rows, 43 meal/reception rows, 24 accommodation rows, and 83 subscription/service rows; most benefit records do not disclose value.
+- `influence_event`: 302,312 non-rejected derived rows: 217,531 money events, 77,176 campaign-support events, 1,421 benefit events, 4,700 private-interest events, 1,384 organisational-role events, and 100 other declared interests.
+- `influence_event` benefit subtypes include 386 membership/lounge access rows, 288 event ticket/pass rows, 69 private-aircraft/flight rows, 42 meal/reception rows, 24 accommodation rows, and 83 subscription/service rows; most benefit records do not disclose value.
 - `entity_industry_classification`: 35,874 generated rows from `public_interest_sector_rules_v1`.
 - `official_identifier_observation`: 3,591 unique official observations: 3,590 current lobbyist-register observations from 3,602 parsed rows plus one ABN Lookup web-service smoke record for BHP Group Limited.
-- `entity_match_candidate`: 393 exact-name candidates needing manual review; no official identifiers are attached by name alone.
+- `entity_match_candidate`: 2,092 match candidates across official identifiers and QLD ECQ participant lookups; no official identifiers are attached by name alone.
 - `official_parliamentary_decision_record`: 72 APH current decision-record
   index rows: 53 House Votes and Proceedings records and 19 Senate Journal
   records, all dated, with Senate PDF/HTML ParlInfo alternatives retained as
@@ -542,7 +542,11 @@ Current local baseline after the 2026-04-28 federal load:
   context from TVFY is attached to 17,263 official APH senator-vote rows, with
   8,084 TVFY-only person-vote rows retained mainly for House divisions pending
   official House person-vote parsing.
-- Current review queue exports: 393 official match candidates, 1,390 benefit events with extraction or missing-data review flags, and 27,059 inferred entity classifications recommended for review.
+- Current review queue exports should include the official identifier match
+  candidates, QLD ECQ participant match candidates, benefit events with
+  extraction or missing-data review flags, and inferred entity classifications
+  recommended for review. QLD ECQ lookup hits are still review candidates unless
+  an importer has explicitly accepted the match.
 - Current classifier sector totals include 14,833 `individual_uncoded`, 1,482 `unions`, 1,017 `finance`, 904 `political_entity`, 582 `property_development`, 278 `mining`, and 205 `fossil_fuels`.
 - They Vote For You list requests are recursively split when the API returns
   its 100-record cap; a one-day capped response still fails closed unless
