@@ -59,16 +59,19 @@ http://127.0.0.1:8008/docs
   `party_entity_link` rows only; `include_candidates=true` adds candidate
   party/entity link edges with `evidence_status="candidate_requires_review"`.
 - `GET /api/state-local/summary` - first state/local summary surface. It
-  returns QLD ECQ and ACT Elections source-family totals, identifier-backed
-  counts where available, top gift/gift-in-kind donors and recipients, and top
-  campaign-spend actors. It also returns NSW donor-location aggregate context
-  from the official 2023 State Election heatmap when loaded. State/council maps
-  and representative joins remain under construction.
+  returns QLD ECQ, ACT Elections, and VEC funding-register source-family
+  totals, identifier-backed counts where available, top gift/gift-in-kind donors
+  and recipients, top campaign-spend actors, and top public-funding recipients.
+  It also returns NSW donor-location aggregate context from the official 2023
+  State Election heatmap when loaded. State/council maps and representative
+  joins remain under construction.
 - `GET /api/state-local/records` - paginated state/local source-row feed for
   the summary panel. It accepts `level=state|council|local`,
-  `flow_kind=act_gift_of_money|act_gift_in_kind|qld_gift|qld_electoral_expenditure`,
+  `flow_kind=act_gift_of_money|act_gift_in_kind|qld_gift|qld_electoral_expenditure|vic_public_funding_payment|vic_administrative_funding_entitlement|vic_policy_development_funding_payment`,
   `limit`, and an opaque `cursor`; cursors are bound to the current level and
-  flow-kind filters so rows are not skipped if a UI changes slices.
+  flow-kind filters so rows are not skipped if a UI changes slices. VEC rows
+  expose public-funding context and date caveats; they are not private donations,
+  gifts, or personal income.
 
 ## Search Behaviour
 

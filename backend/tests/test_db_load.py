@@ -14,7 +14,9 @@ from au_politics_money.db.load import (
     apply_schema,
     classify_interest_event,
     classify_money_event_type,
+    is_campaign_support_money_flow,
     is_direct_representative_return_type,
+    is_public_funding_context_money_flow,
     load_official_aph_divisions,
     load_official_parliamentary_decision_record_documents,
     load_official_parliamentary_decision_records,
@@ -31,6 +33,7 @@ from au_politics_money.db.load import (
     parse_financial_year_bounds,
     qld_ecq_eds_paths_from_pipeline_manifest,
     senate_api_name_to_canonical,
+    vic_vec_funding_register_path_from_pipeline_manifest,
 )
 
 
@@ -698,6 +701,108 @@ def test_act_pipeline_manifest_selects_gift_return_artifact(tmp_path) -> None:
         act_gift_return_path_from_pipeline_manifest(manifest_path)
 
 
+def test_vic_pipeline_manifest_selects_funding_register_artifact(tmp_path) -> None:
+    def sha256_path(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    doc_body_path = tmp_path / "vec-funding.docx"
+    doc_body_path.write_bytes(b"docx bytes")
+    doc_metadata_path = tmp_path / "metadata.json"
+    doc_metadata_path.write_text(
+        json.dumps(
+            {
+                "body_path": str(doc_body_path),
+                "sha256": sha256_path(doc_body_path),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    document_summary_path = tmp_path / "documents.summary.json"
+    document_summary_path.write_text(
+        json.dumps(
+            {
+                "source_dataset": "vic_vec_funding_register",
+                "documents": [
+                    {
+                        "title": "VEC funding register fixture",
+                        "source_id": "vic_vec_funding_register__fixture",
+                        "metadata_path": str(doc_metadata_path),
+                        "metadata_sha256": sha256_path(doc_metadata_path),
+                        "body_path": str(doc_body_path),
+                        "body_sha256": sha256_path(doc_body_path),
+                    }
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    jsonl_path = tmp_path / "vic-funding.jsonl"
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "source_id": "vic_vec_funding_register__fixture",
+                "source_dataset": "vic_vec_funding_register",
+                "normalizer_name": "vic_vec_funding_register_docx_normalizer",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary_path = tmp_path / "vic-funding.summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "normalizer_name": "vic_vec_funding_register_docx_normalizer",
+                "source_dataset": "vic_vec_funding_register",
+                "source_id": "vic_vec_funding_register",
+                "jsonl_path": str(jsonl_path),
+                "jsonl_sha256": sha256_path(jsonl_path),
+                "document_summary_path": str(document_summary_path),
+                "document_summary_sha256": sha256_path(document_summary_path),
+                "source_counts": {"vic_vec_funding_register__fixture": 1},
+                "total_count": 1,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "state_local_vic_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "vic_vec_funding_register",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_vic_vec_funding_registers",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": sha256_path(summary_path),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert vic_vec_funding_register_path_from_pipeline_manifest(manifest_path) == jsonl_path
+
+    doc_body_path.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="Source body hash mismatch"):
+        vic_vec_funding_register_path_from_pipeline_manifest(manifest_path)
+
+
 def test_display_geometry_repair_buffer_validates_range() -> None:
     with pytest.raises(ValueError, match="non-negative"):
         load_electorate_boundary_display_geometries(
@@ -719,6 +824,15 @@ def test_money_event_classifier_keeps_donations_visible() -> None:
     )
     assert classify_money_event_type("", "Discretionary Benefit") == "discretionary_benefit"
     assert classify_money_event_type("act_gift_in_kind", "Gift in kind") == "gift_in_kind"
+    assert classify_money_event_type("vic_public_funding_payment", "") == (
+        "vic_public_funding_payment"
+    )
+    assert is_public_funding_context_money_flow(
+        {"source_dataset": "vic_vec_funding_register", "flow_kind": "vic_public_funding_payment"}
+    )
+    assert not is_campaign_support_money_flow(
+        {"source_dataset": "vic_vec_funding_register", "flow_kind": "vic_public_funding_payment"}
+    )
     assert classify_money_event_type("loan", "") == "loan"
     assert classify_money_event_type("", "") == "money_flow"
 

@@ -178,6 +178,28 @@ validates manifest summary hashes, JSONL hashes, source metadata hashes, source
 body hashes, source ID, source dataset, non-zero counts, and row counts before
 inserting rows.
 
+Victoria is wired as a VEC funding-register state adapter:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction vic)
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli migrate-postgres
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+```
+
+The VEC runner archives the official funding-register page, fetches the linked
+DOCX files, and normalizes public funding, administrative expenditure funding,
+and policy development funding into
+`data/processed/vic_vec_funding_register_money_flows/`. These rows are
+state-level public-funding context. They are not private donations, gifts,
+personal income, or evidence of improper conduct. Date fields may be
+election-day or calendar-period context dates; the normalized rows retain
+`date_caveat` values and the API exposes those caveats. On the 2026-04-29
+implementation run, the VEC public-donation portal redirected to the VEC
+maintenance page, so Victoria private-donation parsing remains pending.
+
 ECQ gift/donation rows are money records. ECQ expenditure rows are
 campaign-support records with event type `state_local_electoral_expenditure`;
 they are campaign activity, not personal receipt by a representative.
@@ -230,9 +252,9 @@ runs with `--refresh-existing-sources`, so update-sensitive cached sources such
 as AEC postcode lookups, current AEC boundaries, and official APH
 decision-record documents are fetched again instead of being silently reused.
 The weekly federal load also uses
-`--skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns`; QLD, NSW, and
-ACT state/local rows should be refreshed by the jurisdiction-specific commands
-above.
+`--skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns
+--skip-vic-vec-funding-register`; QLD, NSW, ACT, and VIC state/local rows
+should be refreshed by the jurisdiction-specific commands above.
 After loading, the script runs `qa-serving-database`. That QA gate fails the
 weekly run before the database is treated as releasable if core serving
 invariants break, including missing House boundaries, active events pointing at

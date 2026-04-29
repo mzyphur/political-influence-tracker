@@ -49,6 +49,7 @@ under `data/processed/discovered_links/`.
 | `nsw_2023_state_election_pre_election_donations` | NSW | 2023 State Election pre-election donations page | https://elections.nsw.gov.au/electoral-funding/disclosures/pre-election-period-donation-disclosure/2023-nsw-state-election-donations | Official explanatory page for the 1 Oct 2022 to 25 Mar 2023 pre-election-period reportable donation window and linked disclosure surfaces. |
 | `nsw_2023_state_election_donation_heatmap` | NSW | 2023 State Election donation heatmap | https://elections.nsw.gov.au/getmedia/2ea29d95-d8a4-45ee-b45b-f9f9150a8446/FDC-heat-map.html | Static official aggregate heatmap of reportable donations by donor-location district. Aggregate context only; not donor-recipient money flow or representative attribution. Preserve source caveats that the map does not show recipient locations and may exclude donor locations that cannot be mapped, plus NSWEC CC BY 4.0 attribution/no-endorsement requirements. |
 | `vic_vec_disclosures` | Victoria | VEC Disclosures | https://www.vec.vic.gov.au/disclosures/ | State political donations and annual returns for candidates, elected members, parties, associated entities, nominated entities, and third-party campaigners. Council donations need a separate local-government adapter. |
+| `vic_vec_funding_register` | Victoria | VEC funding register | https://www.vec.vic.gov.au/candidates-and-parties/funding/funding-register | Active reproducible DOCX adapter for public funding, administrative expenditure funding, and policy development funding. These rows are public-funding context, not private donations, gifts, personal income, or evidence of improper conduct. The VEC states affected funding/disclosure material may be under review after Hopper & Anor v State of Victoria [2026] HCA 11. |
 | `qld_ecq_disclosures` | Queensland | ECQ disclosure system | https://www.ecq.qld.gov.au/donations-and-expenditure-disclosure/disclosure-of-political-donations-and-electoral-expenditure | State and local government donations, gifts, loans, and expenditure through ECQ's Electronic Disclosure System. |
 | `qld_ecq_eds_public_map` | Queensland | ECQ EDS public map | https://disclosures.ecq.qld.gov.au/Map | Current state/local gift and donation map surface. The adapter archives the page, extracts current form fields, and posts those fields to the official CSV export endpoint. |
 | `qld_ecq_eds_expenditures` | Queensland | ECQ EDS expenditure search | https://disclosures.ecq.qld.gov.au/Expenditures | Current state/local electoral expenditure surface. Expenditure rows are normalized as campaign-support activity, not personal receipt. |
@@ -89,3 +90,7 @@ under `data/processed/discovered_links/`.
   withdrawn. Public data-release procedures must support deletion of affected
   raw and derived records if that occurs.
 - State regimes differ materially and change over time.
+- VEC public-donation disclosure pages were redirecting to the VEC maintenance
+  page during the 2026-04-29 build, while the funding register remained
+  available. Victoria private-donation rows therefore remain pending and should
+  not be inferred from public-funding records.

@@ -79,7 +79,14 @@ export async function fetchStateLocalSummary(options: {
 
 export async function fetchStateLocalRecords(options: {
   level?: "state" | "council" | "local";
-  flowKind?: "act_gift_in_kind" | "act_gift_of_money" | "qld_gift" | "qld_electoral_expenditure";
+  flowKind?:
+    | "act_gift_in_kind"
+    | "act_gift_of_money"
+    | "qld_gift"
+    | "qld_electoral_expenditure"
+    | "vic_administrative_funding_entitlement"
+    | "vic_policy_development_funding_payment"
+    | "vic_public_funding_payment";
   cursor?: string;
   limit?: number;
   signal?: AbortSignal;

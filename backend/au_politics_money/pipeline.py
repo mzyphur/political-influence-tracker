@@ -89,6 +89,11 @@ from au_politics_money.ingest.they_vote_for_you import (
     extract_they_vote_for_you_divisions,
     fetch_they_vote_for_you_divisions,
 )
+from au_politics_money.ingest.vic_vec import (
+    FUNDING_REGISTER_SOURCE_ID as VIC_VEC_FUNDING_REGISTER_SOURCE_ID,
+    fetch_vic_vec_funding_register_documents,
+    normalize_vic_vec_funding_registers,
+)
 
 DEPENDENCY_DISTRIBUTIONS = (
     "beautifulsoup4",
@@ -531,14 +536,18 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         "queensland",
         "nsw",
         "new south wales",
+        "vic",
+        "victoria",
     }:
         raise ValueError(
-            "Unsupported state/local jurisdiction. Currently supported: act, qld, nsw."
+            "Unsupported state/local jurisdiction. Currently supported: act, qld, nsw, vic."
         )
     if normalized_jurisdiction in {"act", "australian capital territory"}:
         return _run_act_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"nsw", "new south wales"}:
         return _run_nsw_state_local_pipeline(smoke=smoke)
+    if normalized_jurisdiction in {"vic", "victoria"}:
+        return _run_vic_state_local_pipeline(smoke=smoke)
 
     started = utc_now()
     page_source_ids = {spec.page_source_id for spec in QLD_ECQ_EDS_EXPORTS}
@@ -760,6 +769,73 @@ def _run_nsw_state_local_pipeline(*, smoke: bool = False) -> Path:
             lambda: normalize_nsw_pre_election_donor_location_heatmap(
                 metadata_path=nsw_artifacts["heatmap_metadata_path"],
                 source_page_link_context=nsw_context.get("heatmap_link_context"),
+            ),
+        ),
+    ]
+
+    try:
+        for name, func in steps:
+            manifest.steps.append(_run_step(name, func))
+        manifest.status = "succeeded"
+    except PipelineStepError as exc:
+        manifest.steps.append(exc.result)
+        manifest.status = "failed"
+    finally:
+        finished = utc_now()
+        manifest.finished_at = finished.isoformat()
+        manifest.duration_seconds = (finished - started).total_seconds()
+
+    manifest_path = _write_manifest(manifest)
+    if manifest.status == "failed":
+        raise RuntimeError(f"Pipeline failed. Manifest: {manifest_path}")
+    return manifest_path
+
+
+def _run_vic_state_local_pipeline(*, smoke: bool = False) -> Path:
+    started = utc_now()
+    vic_artifacts: dict[str, Path] = {}
+
+    def fetch_vic_sources() -> dict[str, Any]:
+        page_metadata_path = fetch_source(get_source(VIC_VEC_FUNDING_REGISTER_SOURCE_ID))
+        document_summary_path = fetch_vic_vec_funding_register_documents(
+            page_metadata_path=Path(page_metadata_path),
+        )
+        vic_artifacts["document_summary_path"] = Path(document_summary_path)
+        return {
+            "source_count": 1,
+            "metadata_paths": {VIC_VEC_FUNDING_REGISTER_SOURCE_ID: str(page_metadata_path)},
+            "document_summary_path": str(document_summary_path),
+        }
+
+    manifest = PipelineManifest(
+        pipeline_name="state_local",
+        run_id=f"state_local_vic_{timestamp(started)}",
+        status="running",
+        started_at=started.isoformat(),
+        git_commit=_git_commit(),
+        dependency_versions=_dependency_versions(),
+        parameters={
+            "jurisdiction": "vic",
+            "source_family": "vic_vec_funding_register",
+            "smoke": smoke,
+            "loads_database": False,
+            "claim_boundary": (
+                "Fetch and normalize VEC funding-register DOCX records. Rows are "
+                "Victorian public funding, administrative expenditure funding, and "
+                "policy development funding context; they are not private donations, "
+                "personal income, or evidence of improper conduct. VEC says affected "
+                "funding/disclosure material is under review after Hopper & Anor v "
+                "State of Victoria [2026] HCA 11."
+            ),
+        },
+    )
+
+    steps: list[tuple[str, Callable[[], Any]]] = [
+        ("fetch_vic_vec_funding_register_sources", fetch_vic_sources),
+        (
+            "normalize_vic_vec_funding_registers",
+            lambda: normalize_vic_vec_funding_registers(
+                document_summary_path=vic_artifacts["document_summary_path"],
             ),
         ),
     ]

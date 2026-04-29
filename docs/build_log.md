@@ -4,6 +4,16 @@
 
 Completed:
 
+- Added `run-state-local-pipeline --jurisdiction vic` for the first Victoria
+  state-level adapter. It archives the official VEC funding-register page,
+  fetches the linked DOCX files, validates source/document hashes, and
+  normalizes 202 rows into `data/processed/vic_vec_funding_register_money_flows/`:
+  149 public-funding payments, 44 administrative expenditure funding
+  entitlements, and 9 policy development funding payments, with $45,447,717.13
+  in reported public-funding/admin/policy amounts. These rows are shown as
+  public-funding context, not private donations, gifts, personal income, or
+  improper conduct. Date caveats are preserved for election-day/calendar-period
+  context dates.
 - Added `run-state-local-pipeline --jurisdiction act` for the first ACT
   state-level money/gift adapter. It archives the official Elections ACT
   2025-2026 gift-return page, validates the current table headers, normalizes

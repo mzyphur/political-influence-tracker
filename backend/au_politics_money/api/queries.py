@@ -29,12 +29,16 @@ SEARCH_TYPES = {
 STATE_LOCAL_MONEY_SOURCE_DATASETS = (
     "act_elections_gift_returns",
     "qld_ecq_eds",
+    "vic_vec_funding_register",
 )
 STATE_LOCAL_RECORD_FLOW_KINDS = {
     "act_gift_in_kind",
     "act_gift_of_money",
     "qld_electoral_expenditure",
     "qld_gift",
+    "vic_administrative_funding_entitlement",
+    "vic_policy_development_funding_payment",
+    "vic_public_funding_payment",
 }
 STATE_LOCAL_GIFT_FLOW_KINDS = (
     "act_gift_in_kind",
@@ -44,6 +48,11 @@ STATE_LOCAL_GIFT_FLOW_KINDS = (
 STATE_LOCAL_MONEY_GIFT_FLOW_KINDS = (
     "act_gift_of_money",
     "qld_gift",
+)
+STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS = (
+    "vic_administrative_funding_entitlement",
+    "vic_policy_development_funding_payment",
+    "vic_public_funding_payment",
 )
 
 PARTY_PUBLIC_LABELS = {
@@ -1399,6 +1408,9 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
                 count(*) FILTER (
                     WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
                 ) AS electoral_expenditure_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
+                ) AS public_funding_count,
                 count(*) FILTER (WHERE money_flow.amount IS NOT NULL)
                     AS reported_amount_event_count,
                 sum(money_flow.amount) FILTER (WHERE money_flow.amount IS NOT NULL)
@@ -1415,6 +1427,7 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             """,
             (
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
+                list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
                 list(STATE_LOCAL_MONEY_SOURCE_DATASETS),
             ),
         )
@@ -1957,8 +1970,12 @@ def get_state_local_records(
                 money_flow.metadata->>'purpose_of_expenditure' AS purpose_of_expenditure,
                 money_flow.metadata->>'public_amount_counting_role'
                     AS public_amount_counting_role,
+                money_flow.metadata->>'date_caveat' AS date_caveat,
+                money_flow.metadata->>'caveat' AS record_caveat,
                 money_flow.metadata->'campaign_support_attribution'
                     AS campaign_support_attribution,
+                money_flow.metadata->'public_funding_context'
+                    AS public_funding_context,
                 EXISTS (
                     SELECT 1
                     FROM entity_identifier
@@ -2023,12 +2040,16 @@ def get_state_local_records(
             "next_cursor": records[-1]["pagination_cursor"] if has_more and records else None,
             "caveat": (
                 "State/local record pages expose current source rows only. Gift, "
-                "gift-in-kind, and expenditure rows are different evidence families. "
-                "ACT gift-in-kind amounts are reported non-cash values; Queensland "
-                "expenditure is campaign-support context, not personal receipt. "
-                "Context labels are disclosure metadata, not candidate/councillor "
-                "attribution unless another source supports that link. Records are "
-                "not claims of wrongdoing, causation, quid pro quo, or improper influence."
+                "gift-in-kind, expenditure, and public-funding rows are different "
+                "evidence families. ACT gift-in-kind amounts are reported non-cash "
+                "values; Queensland expenditure is campaign-support context, not "
+                "personal receipt; VEC funding-register rows are public "
+                "funding/admin/policy context, not private donations or personal "
+                "income, and some VEC dates are election-day or calendar-period "
+                "context dates rather than transaction dates. Context labels are "
+                "disclosure metadata, not candidate/councillor attribution unless "
+                "another source supports that link. Records are not claims of "
+                "wrongdoing, causation, quid pro quo, or improper influence."
             ),
         }
     )
@@ -2065,6 +2086,9 @@ def get_state_local_summary(
                 count(*) FILTER (
                     WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
                 ) AS electoral_expenditure_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
+                ) AS public_funding_count,
                 CASE
                     WHEN count(*) FILTER (
                         WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
@@ -2083,6 +2107,15 @@ def get_state_local_summary(
                           AND money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
                     )
                 END AS electoral_expenditure_reported_amount_total,
+                CASE
+                    WHEN count(*) FILTER (
+                        WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
+                    ) = 0 THEN 0
+                    ELSE sum(money_flow.amount) FILTER (
+                        WHERE money_flow.amount IS NOT NULL
+                          AND money_flow.metadata->>'flow_kind' = ANY(%s)
+                    )
+                END AS public_funding_reported_amount_total,
                 count(*) FILTER (
                     WHERE EXISTS (
                         SELECT 1
@@ -2115,8 +2148,11 @@ def get_state_local_summary(
             """,
             (
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
+                list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
+                list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
+                list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
                 list(STATE_LOCAL_MONEY_SOURCE_DATASETS),
                 *params,
             ),
@@ -2156,6 +2192,13 @@ def get_state_local_summary(
             conn,
             role="source",
             flow_kind="qld_electoral_expenditure",
+            db_level=db_level,
+            limit=limit,
+        )
+        top_public_funding_recipients = _qld_summary_rows(
+            conn,
+            role="recipient",
+            flow_kind=STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS,
             db_level=db_level,
             limit=limit,
         )
@@ -2275,6 +2318,7 @@ def get_state_local_summary(
             "top_gift_donors": top_gift_donors,
             "top_gift_recipients": top_gift_recipients,
             "top_expenditure_actors": top_expenditure_actors,
+            "top_public_funding_recipients": top_public_funding_recipients,
             "top_events": top_events,
             "top_local_electorates": top_local_electorates,
             "recent_records": recent_records,
@@ -2294,10 +2338,13 @@ def get_state_local_summary(
                 "adapters. Queensland gift/donation rows and ACT gift-of-money rows are "
                 "source-backed money records; ACT gift-in-kind rows are reported non-cash "
                 "values; Queensland electoral expenditure rows are campaign-support "
-                "context and not personal receipt. Event, local-electorate, candidate, "
-                "or party labels are disclosure metadata and do not attribute money or "
-                "campaign expenditure to a candidate, councillor, or MP unless a separate "
-                "source supports that link."
+                "context and not personal receipt; VEC funding-register rows are public "
+                "funding/admin/policy-funding context, not private donations or personal "
+                "income, and VEC says affected material is under review after Hopper & "
+                "Anor v State of Victoria [2026] HCA 11. Event, local-electorate, "
+                "candidate, or party labels are disclosure metadata and do not attribute "
+                "money or campaign expenditure to a candidate, councillor, or MP unless "
+                "a separate source supports that link."
             ),
         }
     )

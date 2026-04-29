@@ -800,6 +800,24 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="vic_vec_funding_register",
+        name="VEC Funding Register",
+        jurisdiction="Victoria",
+        level="state",
+        source_type="state_public_funding_register",
+        url="https://www.vec.vic.gov.au/candidates-and-parties/funding/funding-register",
+        expected_format="html_plus_docx",
+        update_frequency="quarterly_or_as_updated",
+        priority="high",
+        notes=(
+            "Official VEC register of public money paid to eligible political parties, "
+            "independent members, and candidates. The source is public funding/admin/"
+            "policy funding context, not private donations or personal receipt. The "
+            "VEC says affected funding/disclosure pages are under review after Hopper "
+            "& Anor v State of Victoria [2026] HCA 11 and may not be accurate."
+        ),
+    ),
+    SourceRecord(
         source_id="nacc_corrupt_conduct",
         name="NACC What is Corrupt Conduct",
         jurisdiction="Commonwealth",

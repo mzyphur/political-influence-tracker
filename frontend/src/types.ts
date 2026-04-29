@@ -153,8 +153,10 @@ export type StateLocalSummaryTotalRow = {
   gift_or_donation_count: number;
   gift_in_kind_count: number;
   electoral_expenditure_count: number;
+  public_funding_count: number;
   gift_or_donation_reported_amount_total: number | null;
   electoral_expenditure_reported_amount_total: number | null;
+  public_funding_reported_amount_total: number | null;
   source_identifier_backed_count: number;
   recipient_identifier_backed_count: number;
   event_context_backed_count: number;
@@ -224,7 +226,10 @@ export type StateLocalSummaryRecord = {
   description_of_goods_or_services: string | null;
   purpose_of_expenditure: string | null;
   public_amount_counting_role: string | null;
+  date_caveat: string | null;
+  record_caveat: string | null;
   campaign_support_attribution: Record<string, unknown> | null;
+  public_funding_context: Record<string, unknown> | null;
   source_identifier_backed: boolean | null;
   recipient_identifier_backed: boolean | null;
   event_external_id: string | null;
@@ -270,6 +275,7 @@ export type StateLocalSummaryResponse = {
   top_gift_donors: StateLocalSummaryEntityRow[];
   top_gift_recipients: StateLocalSummaryEntityRow[];
   top_expenditure_actors: StateLocalSummaryEntityRow[];
+  top_public_funding_recipients: StateLocalSummaryEntityRow[];
   top_events: StateLocalSummaryContextRow[];
   top_local_electorates: StateLocalSummaryContextRow[];
   recent_records: StateLocalSummaryRecord[];

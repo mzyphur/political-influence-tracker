@@ -82,10 +82,20 @@ Priority data families:
 - state candidates, elected members, parties, associated entities, nominated
   entities, and third-party campaigners;
 - annual returns covering donations, expenditure, and debts;
+- VEC funding-register DOCX files covering public funding, administrative
+  expenditure funding, and policy development funding;
 - indexed thresholds and caps.
 
 Notes:
 
+- The first active Victoria adapter is the VEC funding-register adapter. It
+  gives useful party/participant public-funding context, but it is not a
+  substitute for the unavailable donations portal and must never be displayed as
+  private donations, gifts, personal income, or improper conduct.
+- On 2026-04-29, the VEC public-donations pages redirected to the VEC
+  maintenance page. The VEC funding pages state that material may be affected by
+  Hopper & Anor v State of Victoria [2026] HCA 11 and may not be accurate while
+  the VEC reviews affected information.
 - The VEC states that local council election donations are administered through
   a separate local-government process rather than the state VEC disclosure
   surface. Council-level Victoria therefore needs a separate adapter strategy.
@@ -291,10 +301,15 @@ are:
   entities, independents/groups, and third-party campaigners;
 - glossary anchors for gifts, electoral expenditure, and political expenditure.
 
-Next adapter task: inspect the VEC disclosure portal for export/API behaviour
-and implement a state-level parser first. Victorian council donations require a
-separate local-government adapter because the VEC page points council donation
-returns away from the state disclosure surface.
+Current adapter status: `run-state-local-pipeline --jurisdiction vic` archives
+the VEC funding-register landing page, fetches the linked DOCX files, validates
+document/source hashes, and normalizes public-funding/admin/policy rows into
+state-level public-funding context. Next Victoria adapter task: re-check the VEC
+public-donation portal once it is no longer redirecting to maintenance, inspect
+its export/API behaviour, and implement private donation/annual-return parsing
+with the same claim boundaries. Victorian council donations require a separate
+local-government adapter because the VEC page points council donation returns
+away from the state disclosure surface.
 
 ### Queensland Discovery Targets
 

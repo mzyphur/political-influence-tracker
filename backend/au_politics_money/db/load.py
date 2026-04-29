@@ -68,6 +68,12 @@ from au_politics_money.ingest.qld_ecq_eds import (
     QLD_ECQ_EDS_PARTICIPANT_LOOKUPS,
 )
 from au_politics_money.ingest.they_vote_for_you import latest_they_vote_for_you_divisions_jsonl
+from au_politics_money.ingest.vic_vec import (
+    FUNDING_REGISTER_SOURCE_ID as VIC_VEC_FUNDING_REGISTER_SOURCE_ID,
+    PARSER_NAME as VIC_VEC_FUNDING_REGISTER_PARSER_NAME,
+    SOURCE_DATASET as VIC_VEC_SOURCE_DATASET,
+    VIC_VEC_PUBLIC_FUNDING_FLOW_KINDS,
+)
 
 STATE_CODES = {
     "Australian Capital Territory": "ACT",
@@ -102,6 +108,7 @@ CAMPAIGN_SUPPORT_FLOW_KINDS = {
     "election_third_party_campaign_expenditure",
     "qld_electoral_expenditure",
 }
+PUBLIC_FUNDING_CONTEXT_FLOW_KINDS = {*VIC_VEC_PUBLIC_FUNDING_FLOW_KINDS}
 QLD_ECQ_AUTO_ACCEPT_PARTICIPANT_ENTITY_TYPES = {
     "associated_entity",
     "local_group",
@@ -433,9 +440,44 @@ def classify_money_event_type(disclosure_category: str, receipt_type: str) -> st
 
 def is_campaign_support_money_flow(metadata: dict[str, Any]) -> bool:
     return (
-        metadata.get("source_dataset") in {"aec_election", "aec_public_funding", "qld_ecq_eds"}
+        metadata.get("source_dataset")
+        in {"aec_election", "aec_public_funding", "qld_ecq_eds"}
         and metadata.get("flow_kind") in CAMPAIGN_SUPPORT_FLOW_KINDS
     )
+
+
+def is_public_funding_context_money_flow(metadata: dict[str, Any]) -> bool:
+    return (
+        metadata.get("source_dataset") == VIC_VEC_SOURCE_DATASET
+        and metadata.get("flow_kind") in PUBLIC_FUNDING_CONTEXT_FLOW_KINDS
+    )
+
+
+def public_funding_context_event_type(metadata: dict[str, Any]) -> str:
+    flow_kind = metadata.get("flow_kind")
+    if flow_kind == "vic_administrative_funding_entitlement":
+        return "vic_administrative_funding_entitlement"
+    if flow_kind == "vic_policy_development_funding_payment":
+        return "vic_policy_development_funding_payment"
+    if flow_kind == "vic_public_funding_payment":
+        return "vic_public_funding_payment"
+    return "public_funding_context"
+
+
+def public_funding_context_attribution(metadata: dict[str, Any]) -> dict[str, Any]:
+    public_context = metadata.get("public_funding_context")
+    if isinstance(public_context, dict):
+        return public_context
+    attribution = metadata.get("campaign_support_attribution")
+    if isinstance(attribution, dict):
+        return attribution
+    return {
+        "tier": "source_backed_public_funding_context",
+        "not_personal_receipt": True,
+        "notes": [
+            "Official public-funding register row; not a private donation, gift, or personal receipt."
+        ],
+    }
 
 
 def campaign_support_event_type(metadata: dict[str, Any], fallback_event_type: str) -> str:
@@ -470,7 +512,7 @@ def campaign_support_attribution(metadata: dict[str, Any]) -> dict[str, Any]:
         "tier": metadata.get("attribution_tier") or "source_backed_campaign_support_record",
         "not_personal_receipt": True,
         "notes": [
-            "AEC election disclosure row connected to campaign support; not treated as money personally received by a representative."
+            "Election or state funding disclosure row connected to campaign/public support; not treated as money personally received by a representative."
         ],
     }
 
@@ -1719,6 +1761,27 @@ def load_act_gift_return_money_flows(conn, jsonl_path: Path | None = None) -> di
     )
 
 
+def load_vic_vec_funding_register_money_flows(
+    conn,
+    jsonl_path: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(
+            PROCESSED_DIR / "vic_vec_funding_register_money_flows",
+            "*.jsonl",
+        )
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_vic_vec_funding_register_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(
+        conn,
+        path,
+        default_source_dataset=VIC_VEC_SOURCE_DATASET,
+    )
+
+
 def _validate_nsw_aggregate_source_hashes(record: dict[str, Any]) -> None:
     metadata_path_value = str(record.get("source_metadata_path") or "")
     body_path_value = str(record.get("source_body_path") or "")
@@ -2239,6 +2302,88 @@ def act_gift_return_path_from_pipeline_manifest(manifest_path: Path) -> Path:
     return path
 
 
+def vic_vec_funding_register_path_from_pipeline_manifest(manifest_path: Path) -> Path:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("pipeline_name") != "state_local":
+        raise ValueError("Expected a state_local pipeline manifest")
+    parameters = manifest.get("parameters")
+    if not isinstance(parameters, dict) or parameters.get("source_family") != VIC_VEC_SOURCE_DATASET:
+        raise ValueError("Expected a VEC funding-register state/local manifest")
+    if parameters.get("loads_database") is not False:
+        raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+
+    summary_path, summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_vic_vec_funding_registers",
+    )
+    actual_summary_sha256 = _sha256_path(summary_path)
+    if summary_sha256 and actual_summary_sha256 != summary_sha256:
+        raise ValueError(
+            f"Summary hash mismatch for {summary_path}: "
+            f"manifest={summary_sha256} actual={actual_summary_sha256}"
+        )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("normalizer_name") != VIC_VEC_FUNDING_REGISTER_PARSER_NAME:
+        raise ValueError(
+            f"Unexpected normalizer in {summary_path}: {summary.get('normalizer_name')!r}"
+        )
+    if summary.get("source_dataset") != VIC_VEC_SOURCE_DATASET:
+        raise ValueError(
+            f"Unexpected source_dataset in {summary_path}: {summary.get('source_dataset')!r}"
+        )
+    if summary.get("source_id") != VIC_VEC_FUNDING_REGISTER_SOURCE_ID:
+        raise ValueError(f"Unexpected source_id in {summary_path}: {summary.get('source_id')!r}")
+
+    document_summary_path = Path(str(summary.get("document_summary_path") or ""))
+    expected_document_summary_sha256 = str(summary.get("document_summary_sha256") or "")
+    if not expected_document_summary_sha256:
+        raise ValueError(f"Summary is missing document_summary_sha256: {summary_path}")
+    actual_document_summary_sha256 = _sha256_path(document_summary_path)
+    if actual_document_summary_sha256 != expected_document_summary_sha256:
+        raise ValueError(
+            f"Document summary hash mismatch for {document_summary_path}: "
+            f"summary={expected_document_summary_sha256} "
+            f"actual={actual_document_summary_sha256}"
+        )
+    document_summary = json.loads(document_summary_path.read_text(encoding="utf-8"))
+    documents = document_summary.get("documents")
+    if not isinstance(documents, list) or not documents:
+        raise ValueError(f"Document summary has no documents: {document_summary_path}")
+    for document in documents:
+        body_path = Path(str(document.get("body_path") or ""))
+        expected_body_sha256 = str(document.get("body_sha256") or "")
+        if not expected_body_sha256:
+            raise ValueError(f"Document entry is missing body_sha256: {document!r}")
+        actual_body_sha256 = _sha256_path(body_path)
+        if actual_body_sha256 != expected_body_sha256:
+            raise ValueError(
+                f"Source body hash mismatch for {body_path}: "
+                f"summary={expected_body_sha256} actual={actual_body_sha256}"
+            )
+
+    jsonl_path = summary.get("jsonl_path")
+    if not jsonl_path:
+        raise ValueError(f"Summary is missing jsonl_path: {summary_path}")
+    path = Path(str(jsonl_path))
+    expected_jsonl_sha256 = str(summary.get("jsonl_sha256") or "")
+    actual_jsonl_sha256 = _sha256_path(path)
+    if expected_jsonl_sha256 and actual_jsonl_sha256 != expected_jsonl_sha256:
+        raise ValueError(
+            f"JSONL hash mismatch for {path}: "
+            f"summary={expected_jsonl_sha256} actual={actual_jsonl_sha256}"
+        )
+    total_count = int(summary.get("total_count") or 0)
+    if total_count <= 0:
+        raise ValueError(f"Summary has no records: {summary_path}")
+    counted_records = _jsonl_line_count(path)
+    if counted_records != total_count:
+        raise ValueError(
+            f"Summary total_count does not match JSONL rows for {path}: "
+            f"summary={total_count} rows={counted_records}"
+        )
+    return path
+
+
 def load_qld_ecq_eds_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2299,6 +2444,26 @@ def load_act_elections_from_pipeline_manifest(
     return summary
 
 
+def load_vic_vec_from_pipeline_manifest(
+    conn,
+    manifest_path: Path,
+    *,
+    include_influence_events: bool = True,
+) -> dict[str, Any]:
+    path = vic_vec_funding_register_path_from_pipeline_manifest(manifest_path)
+    summary: dict[str, Any] = {
+        "pipeline_manifest_path": str(manifest_path),
+        "artifact_paths": {"money_flows": str(path)},
+        "vic_vec_funding_register_money_flows": load_vic_vec_funding_register_money_flows(
+            conn,
+            jsonl_path=path,
+        ),
+    }
+    if include_influence_events:
+        summary["influence_events"] = load_influence_events(conn)
+    return summary
+
+
 def load_state_local_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2318,6 +2483,12 @@ def load_state_local_from_pipeline_manifest(
         return load_nsw_electoral_from_pipeline_manifest(conn, manifest_path)
     if source_family == ACT_GIFT_RETURN_SOURCE_DATASET:
         return load_act_elections_from_pipeline_manifest(
+            conn,
+            manifest_path,
+            include_influence_events=include_influence_events,
+        )
+    if source_family == VIC_VEC_SOURCE_DATASET:
+        return load_vic_vec_from_pipeline_manifest(
             conn,
             manifest_path,
             include_influence_events=include_influence_events,
@@ -4281,17 +4452,24 @@ def load_influence_events(conn) -> dict[str, Any]:
         base_metadata = metadata or {}
         event_type = classify_money_event_type(disclosure_category or "", receipt_type or "")
         campaign_support_record = is_campaign_support_money_flow(base_metadata)
+        public_funding_context_record = is_public_funding_context_money_flow(base_metadata)
         if campaign_support_record:
             event_family = "campaign_support"
             event_type = campaign_support_event_type(base_metadata, event_type)
+        elif public_funding_context_record:
+            event_family = "grant"
+            event_type = public_funding_context_event_type(base_metadata)
         else:
             event_family = (
                 "benefit"
                 if event_type in {"discretionary_benefit", "gift_in_kind"}
                 else "money"
             )
-        attribution = (
-            campaign_support_attribution(base_metadata) if campaign_support_record else None
+        attribution = campaign_support_attribution(base_metadata) if campaign_support_record else None
+        public_funding_context = (
+            public_funding_context_attribution(base_metadata)
+            if public_funding_context_record
+            else None
         )
         public_amount_counting_role = base_metadata.get("public_amount_counting_role")
         duplicate_observation = public_amount_counting_role == "duplicate_observation"
@@ -4310,6 +4488,9 @@ def load_influence_events(conn) -> dict[str, Any]:
                 flags.append("campaign_support_amount_not_direct_personal_receipt")
             if attribution and attribution.get("tier") == "candidate_nil_return_with_party_branch_context":
                 flags.append("candidate_nil_return_with_party_branch_context")
+        elif public_funding_context_record:
+            flags.append("public_funding_context_not_private_donation")
+            flags.append("public_funding_context_not_personal_receipt")
         elif campaign_expenditure:
             flags.append("campaign_expenditure_not_counted_in_reported_total")
         description_amount = f"{amount} {currency}" if amount is not None else "amount not disclosed"
@@ -4345,6 +4526,12 @@ def load_influence_events(conn) -> dict[str, Any]:
                     f"{context_label}: {description_amount}; campaign-support record, not a "
                     "personal receipt."
                 )
+        elif public_funding_context_record:
+            description = (
+                f"{source_raw_name or 'Unknown'} public funding context for "
+                f"{recipient_raw_name or 'Unknown'}: {description_amount}; not a private "
+                "donation, gift, or personal income."
+            )
         else:
             description = (
                 f"{source_raw_name or 'Unknown'} to {recipient_raw_name or 'Unknown'}: "
@@ -4360,6 +4547,8 @@ def load_influence_events(conn) -> dict[str, Any]:
         }:
             amount_status = "not_applicable"
         elif amount is not None and campaign_support_record:
+            amount_status = "reported"
+        elif amount is not None and public_funding_context_record:
             amount_status = "reported"
         elif amount is not None and campaign_expenditure:
             amount_status = "not_applicable"
@@ -4413,6 +4602,7 @@ def load_influence_events(conn) -> dict[str, Any]:
                     "disclosure_category": disclosure_category,
                     "source_confidence": confidence,
                     "campaign_support_attribution": attribution,
+                    "public_funding_context": public_funding_context,
                     "base_metadata": base_metadata,
                 }
             ),
@@ -6886,6 +7076,7 @@ def load_processed_artifacts(
     include_qld_ecq: bool = True,
     include_nsw_aggregates: bool = True,
     include_act_gift_returns: bool = True,
+    include_vic_vec_funding_register: bool = True,
     include_house_interests: bool = True,
     include_senate_interests: bool = True,
     include_electorate_boundaries: bool = True,
@@ -6921,6 +7112,10 @@ def load_processed_artifacts(
                 summary["qld_ecq_eds_contexts"] = load_qld_ecq_eds_contexts(conn)
             if include_act_gift_returns:
                 summary["act_gift_return_money_flows"] = load_act_gift_return_money_flows(conn)
+            if include_vic_vec_funding_register:
+                summary["vic_vec_funding_register_money_flows"] = (
+                    load_vic_vec_funding_register_money_flows(conn)
+                )
         if include_nsw_aggregates:
             summary["nsw_aggregate_context_observations"] = (
                 load_nsw_aggregate_context_observations(conn)

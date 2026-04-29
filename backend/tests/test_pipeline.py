@@ -357,6 +357,58 @@ def test_state_local_act_pipeline_records_gift_return_steps(monkeypatch) -> None
     assert calls["metadata_path"] == "fetch:act_gift_returns_2025_2026"
 
 
+def test_state_local_vic_pipeline_records_funding_register_steps(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr("au_politics_money.pipeline._git_commit", lambda: "vic123")
+    monkeypatch.setattr("au_politics_money.pipeline._dependency_versions", lambda: {})
+
+    def fake_write_manifest(manifest):
+        calls["manifest"] = manifest
+        return "manifest.json"
+
+    def fake_fetch_source(source):
+        return f"fetch:{source.source_id}"
+
+    def fake_fetch_documents(*, page_metadata_path):
+        calls["page_metadata_path"] = str(page_metadata_path)
+        return "vic-documents-summary"
+
+    def fake_normalize_vic(*, document_summary_path):
+        calls["document_summary_path"] = str(document_summary_path)
+        return "vic-money-flow-summary"
+
+    monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
+    monkeypatch.setattr("au_politics_money.pipeline.fetch_source", fake_fetch_source)
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_vic_vec_funding_register_documents",
+        fake_fetch_documents,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_vic_vec_funding_registers",
+        fake_normalize_vic,
+    )
+
+    assert run_state_local_pipeline(jurisdiction="vic", smoke=True) == "manifest.json"
+
+    manifest = calls["manifest"]
+    assert manifest.pipeline_name == "state_local"
+    assert manifest.git_commit == "vic123"
+    assert manifest.parameters["jurisdiction"] == "vic"
+    assert manifest.parameters["source_family"] == "vic_vec_funding_register"
+    assert manifest.parameters["loads_database"] is False
+    assert "not private donations" in manifest.parameters["claim_boundary"]
+    assert [step.name for step in manifest.steps] == [
+        "fetch_vic_vec_funding_register_sources",
+        "normalize_vic_vec_funding_registers",
+    ]
+    assert manifest.steps[0].output["metadata_paths"] == {
+        "vic_vec_funding_register": "fetch:vic_vec_funding_register"
+    }
+    assert calls["page_metadata_path"] == "fetch:vic_vec_funding_register"
+    assert calls["document_summary_path"] == "vic-documents-summary"
+
+
 def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:
     with pytest.raises(ValueError, match="Unsupported state/local jurisdiction"):
         run_state_local_pipeline(jurisdiction="wa")
