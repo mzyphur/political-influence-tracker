@@ -62,6 +62,12 @@ The manifest loader reads the referenced normalizer summaries, checks that the
 manifest still matches the summary files, verifies the JSONL artifact hashes and
 expected QLD source scopes, and then loads those exact JSONL artifacts into
 Postgres.
+Manifests and summaries produced from 2026-04-29 onward include SHA-256 hashes
+for the referenced output files. Older QLD manifests remain replayable when the
+referenced local artifacts still exist; in that legacy case the loader computes
+current file hashes and still validates normalizer names, expected source
+scopes, non-zero record counts, JSONL row counts, and source-count totals before
+loading.
 
 The export fetcher does not depend on a manual browser download. It reads the
 latest archived ECQ EDS public map and expenditure pages, extracts their current

@@ -1706,8 +1706,6 @@ def _pipeline_step_output(manifest: dict[str, Any], step_name: str) -> tuple[Pat
             if not output:
                 raise ValueError(f"Pipeline step {step_name} has no output path")
             output_sha256 = str(step.get("output_sha256") or "")
-            if not output_sha256:
-                raise ValueError(f"Pipeline step {step_name} is missing output_sha256")
             return Path(str(output)), output_sha256
     raise ValueError(f"Pipeline manifest is missing step {step_name}")
 
@@ -1721,7 +1719,7 @@ def _jsonl_path_from_summary(
     source_count_field: str,
 ) -> Path:
     actual_summary_sha256 = _sha256_path(summary_path)
-    if actual_summary_sha256 != expected_summary_sha256:
+    if expected_summary_sha256 and actual_summary_sha256 != expected_summary_sha256:
         raise ValueError(
             f"Summary hash mismatch for {summary_path}: "
             f"manifest={expected_summary_sha256} actual={actual_summary_sha256}"
@@ -1736,10 +1734,8 @@ def _jsonl_path_from_summary(
         raise ValueError(f"Summary is missing jsonl_path: {summary_path}")
     path = Path(str(jsonl_path))
     expected_jsonl_sha256 = str(summary.get("jsonl_sha256") or "")
-    if not expected_jsonl_sha256:
-        raise ValueError(f"Summary is missing jsonl_sha256: {summary_path}")
     actual_jsonl_sha256 = _sha256_path(path)
-    if actual_jsonl_sha256 != expected_jsonl_sha256:
+    if expected_jsonl_sha256 and actual_jsonl_sha256 != expected_jsonl_sha256:
         raise ValueError(
             f"JSONL hash mismatch for {path}: "
             f"summary={expected_jsonl_sha256} actual={actual_jsonl_sha256}"

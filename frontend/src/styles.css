@@ -1941,6 +1941,10 @@ a:focus-visible {
     margin: 12px;
   }
 
+  .map-stage[data-details-collapsed="true"] .influence-graph-panel {
+    right: auto;
+  }
+
   .map-topbar {
     position: absolute;
     top: 0;

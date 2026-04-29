@@ -320,6 +320,120 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
     }
 
 
+def test_qld_pipeline_manifest_replays_legacy_unhashed_artifacts(tmp_path) -> None:
+    money_jsonl = tmp_path / "money.jsonl"
+    participants_jsonl = tmp_path / "participants.jsonl"
+    contexts_jsonl = tmp_path / "contexts.jsonl"
+    money_jsonl.write_text(
+        json.dumps({"source_id": "qld_ecq_eds_map_export_csv"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_expenditure_export_csv"}) + "\n",
+        encoding="utf-8",
+    )
+    participants_jsonl.write_text(
+        json.dumps({"source_id": "qld_ecq_eds_api_political_electors"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_api_political_parties"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_api_associated_entities"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_api_local_groups"}) + "\n",
+        encoding="utf-8",
+    )
+    contexts_jsonl.write_text(
+        json.dumps({"source_id": "qld_ecq_eds_api_political_events"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_api_local_electorates"}) + "\n",
+        encoding="utf-8",
+    )
+
+    def write_legacy_summary(
+        name: str,
+        jsonl_path: Path,
+        *,
+        count_field: str,
+        counts: dict[str, int],
+    ) -> Path:
+        summary_path = tmp_path / f"{name}.summary.json"
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "normalizer_name": name,
+                    "jsonl_path": str(jsonl_path),
+                    "total_count": sum(counts.values()),
+                    count_field: counts,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return summary_path
+
+    money_summary = write_legacy_summary(
+        "qld_ecq_eds_money_flow_normalizer",
+        money_jsonl,
+        count_field="table_counts",
+        counts={
+            "qld_ecq_eds_map_export_csv": 1,
+            "qld_ecq_eds_expenditure_export_csv": 1,
+        },
+    )
+    participants_summary = write_legacy_summary(
+        "qld_ecq_eds_participant_normalizer",
+        participants_jsonl,
+        count_field="source_counts",
+        counts={
+            "qld_ecq_eds_api_political_electors": 1,
+            "qld_ecq_eds_api_political_parties": 1,
+            "qld_ecq_eds_api_associated_entities": 1,
+            "qld_ecq_eds_api_local_groups": 1,
+        },
+    )
+    contexts_summary = write_legacy_summary(
+        "qld_ecq_eds_context_normalizer",
+        contexts_jsonl,
+        count_field="source_counts",
+        counts={
+            "qld_ecq_eds_api_political_events": 1,
+            "qld_ecq_eds_api_local_electorates": 1,
+        },
+    )
+    manifest_path = tmp_path / "state_local_qld_legacy_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "qld_ecq_eds",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_qld_ecq_eds_money_flows",
+                        "status": "succeeded",
+                        "output": str(money_summary),
+                    },
+                    {
+                        "name": "normalize_qld_ecq_eds_participants",
+                        "status": "succeeded",
+                        "output": str(participants_summary),
+                    },
+                    {
+                        "name": "normalize_qld_ecq_eds_contexts",
+                        "status": "succeeded",
+                        "output": str(contexts_summary),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert qld_ecq_eds_paths_from_pipeline_manifest(manifest_path) == {
+        "money_flows": money_jsonl,
+        "participants": participants_jsonl,
+        "contexts": contexts_jsonl,
+    }
+
+
 def test_qld_pipeline_manifest_rejects_tampered_summary(tmp_path) -> None:
     jsonl_path = tmp_path / "money.jsonl"
     jsonl_path.write_text(json.dumps({"source_id": "qld_ecq_eds_map_export_csv"}) + "\n", encoding="utf-8")
