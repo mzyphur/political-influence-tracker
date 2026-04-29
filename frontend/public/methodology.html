@@ -215,7 +215,9 @@
 
       .mechanism-list,
       .claim-list,
-      .data-family-grid {
+      .data-family-grid,
+      .term-grid,
+      .pathway-grid {
         display: grid;
         gap: 12px;
         margin: 18px 0 0;
@@ -226,6 +228,8 @@
       .mechanism-list li,
       .claim-list li,
       .data-family-card,
+      .term-card,
+      .pathway-card,
       .tier {
         border: 1px solid var(--line);
         border-radius: 9px;
@@ -236,14 +240,21 @@
       .mechanism-list strong,
       .claim-list strong,
       .data-family-card strong,
+      .term-card strong,
+      .pathway-card strong,
       .tier strong {
         display: block;
         margin-bottom: 4px;
         color: var(--ink);
       }
 
-      .data-family-grid {
+      .data-family-grid,
+      .pathway-grid {
         grid-template-columns: repeat(4, minmax(0, 1fr));
+      }
+
+      .term-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
       }
 
       .data-family-card span {
@@ -256,6 +267,49 @@
         font-size: 12px;
         font-weight: 900;
         text-transform: uppercase;
+      }
+
+      .term-card span,
+      .pathway-card span {
+        display: inline-flex;
+        width: fit-content;
+        margin-bottom: 8px;
+        border-radius: 999px;
+        padding: 4px 9px;
+        color: #114d56;
+        background: var(--teal-soft);
+        font-size: 12px;
+        font-weight: 900;
+        text-transform: uppercase;
+      }
+
+      .term-card,
+      .pathway-card {
+        color: var(--muted);
+        line-height: 1.42;
+      }
+
+      .pathway-card:nth-child(2) span {
+        color: #6c3514;
+        background: var(--orange-soft);
+      }
+
+      .pathway-card:nth-child(3) span {
+        color: #2a4c88;
+        background: var(--blue-soft);
+      }
+
+      .method-note {
+        margin-top: 16px;
+        border: 1px solid rgba(22, 115, 124, 0.22);
+        border-left: 5px solid var(--teal);
+        border-radius: 9px;
+        padding: 14px 16px;
+        background: rgba(225, 243, 241, 0.62);
+      }
+
+      .method-note p {
+        margin: 0;
       }
 
       .tier-stack {
@@ -350,6 +404,11 @@
         .data-family-grid {
           grid-template-columns: repeat(2, minmax(0, 1fr));
         }
+
+        .term-grid,
+        .pathway-grid {
+          grid-template-columns: 1fr;
+        }
       }
 
       @media (max-width: 600px) {
@@ -363,6 +422,8 @@
         }
 
         .data-family-grid,
+        .pathway-grid,
+        .term-grid,
         .tier {
           grid-template-columns: 1fr;
         }
@@ -379,6 +440,7 @@
         <strong>Political Influence Explorer</strong>
         <div class="nav-links">
           <a href="/">Explorer</a>
+          <a href="#read-network">How to read it</a>
           <a href="#mechanisms">Mechanisms</a>
           <a href="#network">Network model</a>
           <a href="#claims">Claim discipline</a>
@@ -418,7 +480,7 @@
 
             <rect x="20" y="18" width="740" height="502" rx="24" fill="#fbfcf8" stroke="#d8e1de"></rect>
             <text x="54" y="64" fill="#14242b" font-size="25" font-weight="850">Typed influence network</text>
-            <text x="54" y="92" fill="#5a6a70" font-size="15">Every edge stores evidence type, confidence, source, and claim limits.</text>
+            <text x="54" y="92" fill="#5a6a70" font-size="15">Every connection stores evidence type, confidence, source, and claim limits.</text>
 
             <g stroke="#31535b" stroke-width="3.2" stroke-linecap="round" marker-end="url(#arrow)" fill="none">
               <path d="M230 156 C270 130, 310 128, 350 153"></path>
@@ -512,6 +574,43 @@
       </section>
 
       <section class="section-grid">
+        <article class="panel wide" id="read-network">
+          <h2>How to Read the Network</h2>
+          <p>
+            The public app uses ordinary language first. In formal network theory,
+            people and organisations are nodes, and relationships between them are
+            edges. In the interface we usually call them actors and connections, then
+            reserve technical terms for tooltips, data exports, and methodology notes.
+          </p>
+          <div class="term-grid">
+            <div class="term-card">
+              <span>Actor</span>
+              <strong>Network term: node</strong>
+              A person, company, union, party branch, associated entity, donor,
+              lobbyist, candidate, electorate, Senate ticket, or policy topic.
+            </div>
+            <div class="term-card">
+              <span>Connection</span>
+              <strong>Network term: edge</strong>
+              A source-backed relationship such as a donation, gift, office role,
+              lobbying registration, party support link, or reviewed entity match.
+            </div>
+            <div class="term-card">
+              <span>Pathway</span>
+              <strong>Network term: path</strong>
+              A chain of connections, such as source entity to party branch to
+              electorate campaign. Pathways are labelled by evidence strength.
+            </div>
+          </div>
+          <div class="method-note">
+            <p>
+              Every connection should answer five questions: what happened, who or
+              what it connects, which public source supports it, how strong the
+              evidence is, and what claim limits apply.
+            </p>
+          </div>
+        </article>
+
         <article class="panel wide" id="mechanisms">
           <h2>Influence Mechanisms</h2>
           <p>
@@ -562,7 +661,7 @@
             </div>
             <div class="tier">
               <strong>Reviewed</strong>
-              <p>Human review accepts an entity match, classification, or network edge with source support.</p>
+              <p>Human review accepts an entity match, classification, or network connection with source support.</p>
             </div>
             <div class="tier">
               <strong>Context</strong>
@@ -578,9 +677,10 @@
         <article class="panel" id="network">
           <h2>Network Logic</h2>
           <p>
-            The graph model makes indirect paths visible while preserving evidence
+            The network model makes indirect pathways visible while preserving evidence
             boundaries. For example, Commonwealth Bank to ALP to an MP can be shown
-            as a party-mediated exposure path only when the records support each edge.
+            as a party-mediated exposure pathway only when the records support each
+            connection.
           </p>
           <svg class="flow-diagram" viewBox="0 0 700 360" role="img" aria-labelledby="flow-title flow-desc">
             <title id="flow-title">Direct and indirect influence paths</title>
@@ -628,10 +728,51 @@
             <g fill="#5a6a70" font-size="12" font-weight="800">
               <text x="242" y="100">donation</text>
               <text x="451" y="100">party path</text>
-              <text x="217" y="217">context edge</text>
+              <text x="217" y="217">context link</text>
               <text x="438" y="326">not personal receipt</text>
             </g>
           </svg>
+        </article>
+
+        <article class="panel wide">
+          <h2>Party Money and Indirect Pathways</h2>
+          <p>
+            Australian disclosure data often records money at party, branch,
+            associated-entity, candidate, Senate-group, or campaign-committee levels
+            rather than as a clean payment to one representative. The app keeps those
+            levels separate so users can see useful context without mistaking party
+            resources for personal income.
+          </p>
+          <div class="pathway-grid">
+            <div class="pathway-card">
+              <span>Disclosed direct</span>
+              <strong>Shown as a direct record</strong>
+              The public record names the representative, candidate, Senate group,
+              party, or entity as the recipient or source. This is the strongest
+              person-or-campaign-level evidence.
+            </div>
+            <div class="pathway-card">
+              <span>Party mediated</span>
+              <strong>Shown as campaign support or party pathway</strong>
+              Money reported by a party or branch can be connected to a seat,
+              campaign, ticket, or representative only when the source record or a
+              conservative matching rule supports that context.
+            </div>
+            <div class="pathway-card">
+              <span>Modelled</span>
+              <strong>Shown as an estimate</strong>
+              If aggregate party resources are allocated analytically, the result is
+              labelled as inferred exposure. It is never merged into direct receipts
+              or presented as money received by the MP or senator.
+            </div>
+            <div class="pathway-card">
+              <span>Missingness</span>
+              <strong>Shown as a data condition</strong>
+              Nil returns, missing dollar values, and legally aggregated reporting are
+              treated as disclosure-system facts. They are not treated as evidence
+              that nothing happened or that hidden values were high.
+            </div>
+          </div>
         </article>
 
         <article class="panel wide">
@@ -680,7 +821,7 @@
               <h3>We can show</h3>
               <ul class="claim-list allowed">
                 <li><strong>Source-backed flows</strong> Who disclosed what, from whom, to whom, when, and in which source.</li>
-                <li><strong>Network paths</strong> Direct, party-mediated, reviewed, and modelled paths with evidence tiers.</li>
+                <li><strong>Network pathways</strong> Direct, party-mediated, reviewed, and modelled pathways with evidence tiers.</li>
                 <li><strong>Patterns worth scrutiny</strong> Concentrations, repeated access, temporal overlap, missingness, and anomalies.</li>
               </ul>
             </div>
