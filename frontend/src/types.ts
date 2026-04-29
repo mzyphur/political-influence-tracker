@@ -94,6 +94,7 @@ export type CoverageResponse = {
   status: string;
   active_country: string;
   active_levels: string[];
+  partial_levels?: string[];
   planned_levels: string[];
   coverage_layers: CoverageLayer[];
   display_land_masks?: Array<{

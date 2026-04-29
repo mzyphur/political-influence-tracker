@@ -95,6 +95,10 @@ Completed:
   expenditure rows from the expenditure export. Expenditure rows are loaded as
   `campaign_support` / `state_local_electoral_expenditure`, not as personal
   receipt by a representative.
+- Updated `/api/coverage` and the frontend coverage panel so State and Council
+  now show partial active coverage when QLD ECQ EDS rows are loaded. The map
+  remains federal-only for now and tells users that state/local map drilldown is
+  still being built rather than implying there are no state/local records.
 
 Verification:
 

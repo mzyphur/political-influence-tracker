@@ -155,10 +155,14 @@ than a single MP/electorate.
 ## Coverage
 
 `/api/coverage` reports source-family coverage for the frontend and public QA.
-It separates active federal/Commonwealth coverage from planned state and council
-layers, and exposes whole-database counts alongside attribution caveats. This is
-the endpoint the UI uses to show why the map-linked record counts are narrower
-than the total disclosed-money database.
+It separates active federal/Commonwealth coverage from partial state/council
+coverage and planned layers, and exposes whole-database counts alongside
+attribution caveats. This is the endpoint the UI uses to show why the
+map-linked record counts are narrower than the total disclosed-money database.
+Queensland ECQ EDS rows currently make state and council/local coverage
+`partial` via `partial_levels`; `active_levels` remains federal until
+state/local boundaries, representatives, and attribution joins are loaded for
+public drilldown.
 
 The endpoint also exposes `display_land_masks` when a display-only land mask is
 loaded for interactive boundary clipping. These rows identify the source key,

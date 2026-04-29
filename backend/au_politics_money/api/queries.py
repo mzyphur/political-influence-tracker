@@ -1124,6 +1124,35 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             """,
             (),
         )
+        qld_ecq_rows = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                jurisdiction.name AS jurisdiction_name,
+                jurisdiction.level AS jurisdiction_level,
+                jurisdiction.code AS jurisdiction_code,
+                count(*) AS money_flow_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = 'qld_gift'
+                ) AS gift_or_donation_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                ) AS electoral_expenditure_count,
+                count(*) FILTER (WHERE money_flow.amount IS NOT NULL)
+                    AS reported_amount_event_count,
+                sum(money_flow.amount) FILTER (WHERE money_flow.amount IS NOT NULL)
+                    AS reported_amount_total,
+                min(money_flow.date_received) AS first_event_date,
+                max(money_flow.date_received) AS last_event_date
+            FROM money_flow
+            JOIN jurisdiction
+              ON jurisdiction.id = money_flow.jurisdiction_id
+            WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+            GROUP BY jurisdiction.name, jurisdiction.level, jurisdiction.code
+            ORDER BY jurisdiction.level, jurisdiction.name
+            """,
+            (),
+        )
         vote_rows = _fetch_dicts(
             conn,
             """
@@ -1140,9 +1169,17 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
         )
 
     totals = influence_total_rows[0] if influence_total_rows else {}
+    qld_state = next(
+        (row for row in qld_ecq_rows if row.get("jurisdiction_level") == "state"),
+        {},
+    )
+    qld_local = next(
+        (row for row in qld_ecq_rows if row.get("jurisdiction_level") == "local"),
+        {},
+    )
     federal_status = "active"
-    state_status = "planned"
-    council_status = "planned"
+    state_status = "partial" if qld_state else "planned"
+    council_status = "partial" if qld_local else "planned"
     layers = [
         {
             "id": "federal_representatives",
@@ -1211,17 +1248,46 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             "label": "State and territory money/gift/lobbying records",
             "level": "state",
             "status": state_status,
-            "attribution": "adapter-ready, not yet ingested",
-            "counts": {},
+            "jurisdiction": "QLD" if qld_state else None,
+            "attribution": (
+                "Queensland ECQ EDS active; other state/territory adapters planned. "
+                "Expenditure rows are campaign support, not personal receipt."
+                if qld_state
+                else "adapter-ready, not yet ingested"
+            ),
+            "counts": {
+                "money_flow_rows": qld_state.get("money_flow_count") or 0,
+                "gift_or_donation_rows": qld_state.get("gift_or_donation_count") or 0,
+                "electoral_expenditure_rows": qld_state.get("electoral_expenditure_count") or 0,
+                "reported_amount_events": qld_state.get("reported_amount_event_count") or 0,
+                "reported_amount_total": qld_state.get("reported_amount_total"),
+            },
         },
         {
             "id": "local_council_disclosures",
             "label": "Council/local disclosures and meeting records",
             "level": "council",
             "status": council_status,
-            "attribution": "adapter-ready, not yet ingested",
-            "counts": {},
+            "jurisdiction": "QLD-LOCAL" if qld_local else None,
+            "attribution": (
+                "Queensland ECQ EDS local-government disclosure rows active; "
+                "meeting/register adapters planned."
+                if qld_local
+                else "adapter-ready, not yet ingested"
+            ),
+            "counts": {
+                "money_flow_rows": qld_local.get("money_flow_count") or 0,
+                "gift_or_donation_rows": qld_local.get("gift_or_donation_count") or 0,
+                "electoral_expenditure_rows": qld_local.get("electoral_expenditure_count") or 0,
+                "reported_amount_events": qld_local.get("reported_amount_event_count") or 0,
+                "reported_amount_total": qld_local.get("reported_amount_total"),
+            },
         },
+    ]
+    partial_levels = [
+        level
+        for level, status in (("state", state_status), ("council", council_status))
+        if status == "partial"
     ]
 
     return _jsonable(
@@ -1229,7 +1295,12 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             "status": "ok",
             "active_country": "AU",
             "active_levels": ["federal"],
-            "planned_levels": ["state", "council"],
+            "partial_levels": partial_levels,
+            "planned_levels": [
+                level
+                for level, status in (("state", state_status), ("council", council_status))
+                if status == "planned"
+            ],
             "coverage_layers": layers,
             "source_documents": source_rows,
             "display_land_masks": display_land_mask_rows,

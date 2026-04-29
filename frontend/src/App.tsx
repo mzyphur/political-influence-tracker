@@ -108,13 +108,16 @@ function App() {
 
   useEffect(() => {
     if (dataLevel !== "federal") {
+      const layer = coverage?.coverage_layers.find((item) => item.level === dataLevel);
+      const rowCount = numberValue(layer?.counts.money_flow_rows);
+      const activeText = rowCount
+        ? `${levelLabels[dataLevel]} source data is partially active (${rowCount.toLocaleString("en-AU")} QLD disclosure rows loaded). Map drilldown for this level is still being built.`
+        : `${levelLabels[dataLevel]} data is part of the planned expansion. The current map is Commonwealth/federal.`;
       setFeatures([]);
       setSelectedFeature(null);
       setMapStatus("ready");
       setMapError("");
-      setMapCaveat(
-        `${levelLabels[dataLevel]} data is part of the planned expansion. The current loaded dataset is Commonwealth/federal.`
-      );
+      setMapCaveat(activeText);
       return;
     }
     const controller = new AbortController();
@@ -141,7 +144,7 @@ function App() {
         setMapError(error.message);
       });
     return () => controller.abort();
-  }, [chamber, dataLevel, stateFilter]);
+  }, [chamber, coverage, dataLevel, stateFilter]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -740,12 +743,18 @@ function CoveragePanel({
   const displayLandMaskLabel = displayLandMask
     ? displayLandMask.source_name || displayLandMask.source_key
     : "not loaded";
+  const partialLevels = coverage.partial_levels?.length
+    ? ` · partial: ${coverage.partial_levels.join(", ")}`
+    : "";
 
   return (
     <div className="coverage-panel" aria-label="Database coverage">
       <div className="coverage-header">
         <strong>Database coverage</strong>
-        <span>{coverage.active_country} · {coverage.active_levels.join(", ")}</span>
+        <span>
+          {coverage.active_country} · active: {coverage.active_levels.join(", ")}
+          {partialLevels}
+        </span>
       </div>
       <div className="coverage-grid">
         <span>
@@ -766,8 +775,8 @@ function CoveragePanel({
         </span>
       </div>
       <div className="coverage-status-row">
-        <span>State: {stateLayer?.status || "planned"}</span>
-        <span>Council: {councilLayer?.status || "planned"}</span>
+        <span>State: {coverageLayerSummary(stateLayer)}</span>
+        <span>Council: {coverageLayerSummary(councilLayer)}</span>
       </div>
       <div className="coverage-status-row">
         <span title={displayLandMaskTooltip(displayLandMask)}>
@@ -780,6 +789,13 @@ function CoveragePanel({
       </details>
     </div>
   );
+}
+
+function coverageLayerSummary(layer: CoverageResponse["coverage_layers"][number] | undefined): string {
+  if (!layer) return "planned";
+  const rows = numberValue(layer.counts.money_flow_rows);
+  const base = layer.status || "planned";
+  return rows ? `${base} · ${rows.toLocaleString("en-AU")} rows` : base;
 }
 
 function numberValue(value: number | string | null | undefined): number {
