@@ -640,6 +640,21 @@ def prepare_review_bundle_command(limit: int | None, limit_per_party: int | None
             conn,
             limit_per_party=limit_per_party,
         )
+        official_match_queue_summary_path = export_review_queue(
+            conn,
+            "official-match-candidates",
+            limit=limit,
+        )
+        benefit_event_queue_summary_path = export_review_queue(
+            conn,
+            "benefit-events",
+            limit=limit,
+        )
+        entity_classification_queue_summary_path = export_review_queue(
+            conn,
+            "entity-classifications",
+            limit=limit,
+        )
         party_entity_queue_summary_path = export_review_queue(
             conn,
             "party-entity-links",
@@ -655,23 +670,30 @@ def prepare_review_bundle_command(limit: int | None, limit_per_party: int | None
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     target_dir = AUDIT_DIR / "review_bundles"
     target_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = target_dir / f"party_entity_sector_policy_review_bundle_{timestamp}.summary.json"
+    manifest_path = target_dir / f"federal_review_bundle_{timestamp}.summary.json"
     manifest = {
         "generated_at": timestamp,
         "schema_version": "review_bundle_manifest_v1",
         "description": (
-            "Reproducible review bundle for indirect party/entity paths and "
-            "sector-policy topic links. These files are review inputs only; "
-            "public network claims require accepted review decisions with "
-            "supporting sources."
+            "Reproducible federal review bundle for official identifier matches, "
+            "disclosed benefit events, entity-sector classifications, indirect "
+            "party/entity paths, and sector-policy topic links. These files are "
+            "review inputs only; public claims require accepted review decisions "
+            "with supporting sources where required."
         ),
         "limit": limit,
         "limit_per_party": limit_per_party,
         "party_entity_materialize_summary": party_entity_materialize_summary,
+        "official_match_queue_summary_path": str(official_match_queue_summary_path),
+        "benefit_event_queue_summary_path": str(benefit_event_queue_summary_path),
+        "entity_classification_queue_summary_path": str(entity_classification_queue_summary_path),
         "party_entity_queue_summary_path": str(party_entity_queue_summary_path),
         "sector_policy_queue_summary_path": str(sector_policy_queue_summary_path),
         "sector_policy_suggestions_summary_path": str(sector_policy_suggestions_summary_path),
         "review_rules": [
+            "official_match_candidate accept/revise decisions attach official identifiers only through the allowlisted importer.",
+            "benefit-events review confirms source text, missing provider/date/value labels, and whether extraction should be accepted, revised, rejected, or deferred.",
+            "entity-classifications review creates manual classification rows rather than overwriting generated classifications.",
             "party_entity_link accept/revise decisions require supporting_sources with evidence_role='party_entity_relationship'.",
             "sector_policy_topic_link accept/revise decisions require supporting_sources with topic_scope and sector_material_interest evidence roles.",
             "Generated candidates do not mutate reviewed public graph claims until accepted decisions are imported.",

@@ -428,7 +428,7 @@ Suggestions do not mutate the database and do not create
 reviewer must add independent sector-interest evidence before importing an
 accepted/revised decision.
 
-Indirect network review bundle:
+Federal release review bundle:
 
 ```bash
 cd backend
@@ -436,12 +436,14 @@ cd backend
 ```
 
 This materializes current `party_entity_link` candidates, exports the
-`party-entity-links` and `sector-policy-links` queues, runs sector-policy
+`official-match-candidates`, `benefit-events`, `entity-classifications`,
+`party-entity-links`, and `sector-policy-links` queues, runs sector-policy
 suggestions, and writes a manifest under `data/audit/review_bundles/`. Use
 `--limit` for smaller working files and `--limit-per-party` to restrict
 party/entity candidate generation. The bundle is review input only: public
-network paths still require imported accepted/revised decisions with the
-supporting-source roles enforced by the importer.
+benefit, identifier, classification, and network claims still require imported
+accepted/revised decisions with the supporting-source roles enforced by the
+importer where those roles are required.
 
 Reviewed decision import:
 
