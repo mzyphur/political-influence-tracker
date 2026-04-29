@@ -124,7 +124,16 @@ def state_local_records(
                 "^(act_gift_in_kind|act_gift_of_money|nt_annual_debt|nt_annual_gift|"
                 "nt_annual_receipt|nt_donor_return_donation|qld_gift|"
                 "qld_electoral_expenditure|vic_administrative_funding_entitlement|"
-                "vic_policy_development_funding_payment|vic_public_funding_payment)$"
+                "vic_policy_development_funding_payment|vic_public_funding_payment|"
+                "sa_annual_political_expenditure_return_summary|"
+                "sa_associated_entity_return_summary|"
+                "sa_candidate_campaign_donations_return_summary|"
+                "sa_capped_expenditure_return_summary|sa_donor_return_summary|"
+                "sa_political_party_return_summary|"
+                "sa_prescribed_expenditure_return_summary|"
+                "sa_special_large_gift_return_summary|"
+                "sa_third_party_capped_expenditure_return_summary|"
+                "sa_third_party_return_summary)$"
             )
         ),
     ] = None,

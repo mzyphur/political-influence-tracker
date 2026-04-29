@@ -86,6 +86,11 @@ from au_politics_money.ingest.qld_ecq_eds import (
     normalize_qld_ecq_eds_money_flows,
     normalize_qld_ecq_eds_participants,
 )
+from au_politics_money.ingest.sa_ecsa import (
+    SOURCE_DATASET as SA_ECSA_SOURCE_DATASET,
+    fetch_sa_ecsa_return_index_pages,
+    normalize_sa_ecsa_return_index,
+)
 from au_politics_money.ingest.senate_interests import (
     extract_senate_interest_records,
     fetch_senate_interest_statements,
@@ -544,11 +549,14 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         "new south wales",
         "nt",
         "northern territory",
+        "sa",
+        "south australia",
         "vic",
         "victoria",
     }:
         raise ValueError(
-            "Unsupported state/local jurisdiction. Currently supported: act, qld, nsw, nt, vic."
+            "Unsupported state/local jurisdiction. Currently supported: "
+            "act, qld, nsw, nt, sa, vic."
         )
     if normalized_jurisdiction in {"act", "australian capital territory"}:
         return _run_act_state_local_pipeline(smoke=smoke)
@@ -556,6 +564,8 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         return _run_nsw_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"nt", "northern territory"}:
         return _run_nt_state_local_pipeline(smoke=smoke)
+    if normalized_jurisdiction in {"sa", "south australia"}:
+        return _run_sa_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"vic", "victoria"}:
         return _run_vic_state_local_pipeline(smoke=smoke)
 
@@ -922,6 +932,71 @@ def _run_nt_state_local_pipeline(*, smoke: bool = False) -> Path:
             "normalize_nt_ntec_annual_gifts",
             lambda: normalize_nt_ntec_annual_gifts(
                 metadata_path=nt_artifacts["annual_gifts_metadata_path"],
+            ),
+        ),
+    ]
+
+    try:
+        for name, func in steps:
+            manifest.steps.append(_run_step(name, func))
+        manifest.status = "succeeded"
+    except PipelineStepError as exc:
+        manifest.steps.append(exc.result)
+        manifest.status = "failed"
+    finally:
+        finished = utc_now()
+        manifest.finished_at = finished.isoformat()
+        manifest.duration_seconds = (finished - started).total_seconds()
+
+    manifest_path = _write_manifest(manifest)
+    if manifest.status == "failed":
+        raise RuntimeError(f"Pipeline failed. Manifest: {manifest_path}")
+    return manifest_path
+
+
+def _run_sa_state_local_pipeline(*, smoke: bool = False) -> Path:
+    started = utc_now()
+    sa_artifacts: dict[str, Path] = {}
+
+    def fetch_sa_sources() -> dict[str, Any]:
+        metadata_path = fetch_sa_ecsa_return_index_pages(max_pages=1 if smoke else None)
+        sa_artifacts["return_index_metadata_path"] = Path(metadata_path)
+        return {
+            "source_count": 1,
+            "metadata_paths": {
+                "sa_ecsa_funding2024_return_records": str(metadata_path),
+            },
+            "smoke_max_pages": 1 if smoke else None,
+        }
+
+    manifest = PipelineManifest(
+        pipeline_name="state_local",
+        run_id=f"state_local_sa_{timestamp(started)}",
+        status="running",
+        started_at=started.isoformat(),
+        git_commit=_git_commit(),
+        dependency_versions=_dependency_versions(),
+        parameters={
+            "jurisdiction": "sa",
+            "source_family": SA_ECSA_SOURCE_DATASET,
+            "smoke": smoke,
+            "loads_database": False,
+            "claim_boundary": (
+                "Fetch and normalize Electoral Commission SA current funding "
+                "portal return-index rows. Rows are return-level source-backed "
+                "summary records and official report links, not individual "
+                "donor-to-recipient transactions, not personal receipt by a "
+                "representative, and not causal claims."
+            ),
+        },
+    )
+
+    steps: list[tuple[str, Callable[[], Any]]] = [
+        ("fetch_sa_ecsa_return_index_pages", fetch_sa_sources),
+        (
+            "normalize_sa_ecsa_return_index",
+            lambda: normalize_sa_ecsa_return_index(
+                metadata_path=sa_artifacts["return_index_metadata_path"],
             ),
         ),
     ]

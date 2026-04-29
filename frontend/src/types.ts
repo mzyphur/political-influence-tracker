@@ -154,9 +154,11 @@ export type StateLocalSummaryTotalRow = {
   gift_in_kind_count: number;
   electoral_expenditure_count: number;
   public_funding_count: number;
+  return_summary_count: number;
   gift_or_donation_reported_amount_total: number | null;
   electoral_expenditure_reported_amount_total: number | null;
   public_funding_reported_amount_total: number | null;
+  return_summary_reported_amount_total: number | null;
   source_identifier_backed_count: number;
   recipient_identifier_backed_count: number;
   event_context_backed_count: number;
@@ -220,6 +222,7 @@ export type StateLocalSummaryRecord = {
   date_received: string | null;
   date_reported: string | null;
   source_row_ref: string | null;
+  report_url: string | null;
   original_text: string | null;
   confidence: string | null;
   transaction_kind: string | null;
@@ -276,6 +279,8 @@ export type StateLocalSummaryResponse = {
   top_gift_recipients: StateLocalSummaryEntityRow[];
   top_expenditure_actors: StateLocalSummaryEntityRow[];
   top_public_funding_recipients: StateLocalSummaryEntityRow[];
+  top_return_summary_sources: StateLocalSummaryEntityRow[];
+  top_return_summary_recipients: StateLocalSummaryEntityRow[];
   top_events: StateLocalSummaryContextRow[];
   top_local_electorates: StateLocalSummaryContextRow[];
   recent_records: StateLocalSummaryRecord[];

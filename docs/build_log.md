@@ -4,6 +4,19 @@
 
 Completed:
 
+- Added `run-state-local-pipeline --jurisdiction sa` for the first South
+  Australia ECSA state-level adapter. It archives the official disclosure
+  landing page, fetches the current ECSA return-record portal by partitioning
+  the portal over official `For` filter values, and normalizes 696 unique
+  return-level index rows into
+  `data/processed/sa_ecsa_return_summary_money_flows/`, matching the
+  portal-reported row count. Current local coverage is $472,688,444.90 in
+  source-row return-summary value across candidate campaign donations returns,
+  political party returns, associated-entity returns, third-party returns,
+  donor returns, large-gift returns, capped-expenditure returns, and annual
+  political expenditure returns. These rows are shown as return-summary
+  context, not detailed transaction rows, not personal receipt, and not
+  consolidated influence totals.
 - Added `run-state-local-pipeline --jurisdiction nt` for the first Northern
   Territory state-level disclosure adapter. It archives the official NTEC
   2024-2025 annual-return page plus the annual return gifts page, validates

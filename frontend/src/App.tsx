@@ -71,6 +71,16 @@ type StateLocalFlowFilter =
   | "nt_donor_return_donation"
   | "qld_gift"
   | "qld_electoral_expenditure"
+  | "sa_annual_political_expenditure_return_summary"
+  | "sa_associated_entity_return_summary"
+  | "sa_candidate_campaign_donations_return_summary"
+  | "sa_capped_expenditure_return_summary"
+  | "sa_donor_return_summary"
+  | "sa_political_party_return_summary"
+  | "sa_prescribed_expenditure_return_summary"
+  | "sa_special_large_gift_return_summary"
+  | "sa_third_party_capped_expenditure_return_summary"
+  | "sa_third_party_return_summary"
   | "vic_administrative_funding_entitlement"
   | "vic_policy_development_funding_payment"
   | "vic_public_funding_payment";
@@ -111,6 +121,22 @@ const stateLocalFlowFilterOptions: Array<{
   { value: "nt_annual_receipt", label: "NT receipts" },
   { value: "nt_donor_return_donation", label: "NT donor returns" },
   { value: "nt_annual_debt", label: "NT debts" },
+  { value: "sa_candidate_campaign_donations_return_summary", label: "SA candidate returns" },
+  { value: "sa_political_party_return_summary", label: "SA party returns" },
+  { value: "sa_donor_return_summary", label: "SA donor returns" },
+  { value: "sa_associated_entity_return_summary", label: "SA associated entities" },
+  { value: "sa_special_large_gift_return_summary", label: "SA large gifts" },
+  { value: "sa_capped_expenditure_return_summary", label: "SA capped spend" },
+  {
+    value: "sa_third_party_capped_expenditure_return_summary",
+    label: "SA third-party spend"
+  },
+  { value: "sa_third_party_return_summary", label: "SA third parties" },
+  { value: "sa_prescribed_expenditure_return_summary", label: "SA prescribed spend" },
+  {
+    value: "sa_annual_political_expenditure_return_summary",
+    label: "SA annual political spend"
+  },
   { value: "qld_electoral_expenditure", label: "QLD spend" },
   { value: "vic_public_funding_payment", label: "VIC public funding" },
   { value: "vic_administrative_funding_entitlement", label: "VIC admin funding" },
@@ -1069,6 +1095,11 @@ function StateLocalSummaryPanel({
               value={totals.publicFundingCount.toLocaleString("en-AU")}
             />
             <Metric
+              icon={<ReceiptText size={16} />}
+              label="Return summaries"
+              value={totals.returnSummaryCount.toLocaleString("en-AU")}
+            />
+            <Metric
               icon={<BadgeCheck size={16} />}
               label="ID-backed sides"
               value={identifierBackedRowSides.toLocaleString("en-AU")}
@@ -1091,6 +1122,8 @@ function StateLocalSummaryPanel({
             <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
             <span>Public funding context</span>
             <strong>{formatMoney(totals.publicFundingReportedAmountTotal)}</strong>
+            <span>Return-summary values</span>
+            <strong>{formatMoney(totals.returnSummaryReportedAmountTotal)}</strong>
             <span>Source snapshots</span>
             <strong>{summary.source_document_count.toLocaleString("en-AU")}</strong>
           </div>
@@ -1098,8 +1131,9 @@ function StateLocalSummaryPanel({
             State/local gift rows are source-backed disclosure records. ACT gift-in-kind
             rows are reported non-cash values. Expenditure rows are campaign activity
             incurred by an actor, not money personally received by an MP, councillor, or
-            candidate. VEC funding rows are public money context, not private donations
-            or personal income.
+            candidate. SA ECSA rows are return-level summaries and official report
+            links, not detailed transaction rows. VEC funding rows are public money
+            context, not private donations or personal income.
           </p>
         </>
       ) : null}
@@ -1138,6 +1172,16 @@ function StateLocalSummaryPanel({
           <StateLocalRankList
             title="Top public funding recipients"
             rows={summary.top_public_funding_recipients}
+            onOpenEntityProfile={onOpenEntityProfile}
+          />
+          <StateLocalRankList
+            title="Top return-summary submitters"
+            rows={summary.top_return_summary_sources}
+            onOpenEntityProfile={onOpenEntityProfile}
+          />
+          <StateLocalRankList
+            title="Top return-summary subjects"
+            rows={summary.top_return_summary_recipients}
             onOpenEntityProfile={onOpenEntityProfile}
           />
           <StateLocalContextList title="Top ECQ election events" rows={summary.top_events} />
@@ -1263,6 +1307,7 @@ function StateLocalRecentRecords({
         </p>
       ) : (
         rows.map((row) => {
+          const reportHref = safeSourceHref(row.report_url);
           const sourceHref = safeSourceHref(row.source_final_url || row.source_url);
           const context = stateLocalRecordContext(row);
           const idSignals = [
@@ -1289,6 +1334,14 @@ function StateLocalRecentRecords({
                     {" · "}
                     <a href={sourceHref} target="_blank" rel="noreferrer">
                       source
+                    </a>
+                  </>
+                ) : null}
+                {reportHref ? (
+                  <>
+                    {" · "}
+                    <a href={reportHref} target="_blank" rel="noreferrer">
+                      report
                     </a>
                   </>
                 ) : null}
@@ -1345,7 +1398,16 @@ function mergeStateLocalRecords(
   return merged;
 }
 
+function isSaEcsaReturnSummary(row: StateLocalSummaryRecord): boolean {
+  return Boolean(row.flow_kind?.startsWith("sa_") && row.flow_kind.endsWith("_summary"));
+}
+
+function saReturnLabel(row: StateLocalSummaryRecord): string {
+  return row.receipt_type || row.disclosure_category || "ECSA return summary";
+}
+
 function stateLocalRecordKind(row: StateLocalSummaryRecord): string {
+  if (isSaEcsaReturnSummary(row)) return saReturnLabel(row);
   if (row.flow_kind === "qld_electoral_expenditure") return "Campaign spend incurred";
   if (row.flow_kind === "act_gift_in_kind") return "Gift-in-kind value";
   if (row.flow_kind === "act_gift_of_money") return "Gift of money";
@@ -1365,6 +1427,10 @@ function stateLocalRecordKind(row: StateLocalSummaryRecord): string {
 
 function stateLocalRecordHeadline(row: StateLocalSummaryRecord): string {
   const source = row.source_name || "Source not identified";
+  if (isSaEcsaReturnSummary(row)) {
+    const subject = row.recipient_name || "return subject not identified";
+    return `${subject} return lodged by ${source}`;
+  }
   if (row.flow_kind === "qld_electoral_expenditure") {
     return `${source} incurred electoral expenditure`;
   }
@@ -1435,6 +1501,9 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
       : null,
     row.flow_kind?.startsWith("vic_")
       ? "Interpretation: VEC public funding/admin/policy-funding context, not private donation or personal income."
+      : null,
+    isSaEcsaReturnSummary(row)
+      ? "Interpretation: ECSA current funding portal return-level index row. The value is a return summary, not an individual transaction or personal receipt."
       : null,
     row.date_caveat ? `Date caveat: ${row.date_caveat}` : null,
     row.record_caveat ? `Record caveat: ${row.record_caveat}` : null
@@ -1556,6 +1625,7 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
   giftInKindCount: number;
   electoralExpenditureCount: number;
   publicFundingCount: number;
+  returnSummaryCount: number;
   sourceIdentifierBacked: number;
   recipientIdentifierBacked: number;
   eventContextBacked: number;
@@ -1563,6 +1633,7 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
   giftOrDonationReportedAmountTotal: number | null;
   electoralExpenditureReportedAmountTotal: number | null;
   publicFundingReportedAmountTotal: number | null;
+  returnSummaryReportedAmountTotal: number | null;
 } {
   return summary.totals_by_level.reduce(
     (acc, row) => {
@@ -1571,6 +1642,7 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
       acc.giftInKindCount += numberValue(row.gift_in_kind_count);
       acc.electoralExpenditureCount += numberValue(row.electoral_expenditure_count);
       acc.publicFundingCount += numberValue(row.public_funding_count);
+      acc.returnSummaryCount += numberValue(row.return_summary_count);
       acc.sourceIdentifierBacked += numberValue(row.source_identifier_backed_count);
       acc.recipientIdentifierBacked += numberValue(row.recipient_identifier_backed_count);
       acc.eventContextBacked += numberValue(row.event_context_backed_count);
@@ -1606,6 +1678,16 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
             : acc.publicFundingReportedAmountTotal + row.public_funding_reported_amount_total
         );
       }
+      if (
+        row.return_summary_reported_amount_total !== null &&
+        row.return_summary_reported_amount_total !== undefined
+      ) {
+        acc.returnSummaryReportedAmountTotal = (
+          acc.returnSummaryReportedAmountTotal === null
+            ? row.return_summary_reported_amount_total
+            : acc.returnSummaryReportedAmountTotal + row.return_summary_reported_amount_total
+        );
+      }
       return acc;
     },
     {
@@ -1614,13 +1696,15 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
       giftInKindCount: 0,
       electoralExpenditureCount: 0,
       publicFundingCount: 0,
+      returnSummaryCount: 0,
       sourceIdentifierBacked: 0,
       recipientIdentifierBacked: 0,
       eventContextBacked: 0,
       localElectorateContextBacked: 0,
       giftOrDonationReportedAmountTotal: null as number | null,
       electoralExpenditureReportedAmountTotal: null as number | null,
-      publicFundingReportedAmountTotal: null as number | null
+      publicFundingReportedAmountTotal: null as number | null,
+      returnSummaryReportedAmountTotal: null as number | null
     }
   );
 }

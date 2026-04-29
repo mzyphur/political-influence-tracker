@@ -689,20 +689,34 @@ SOURCES: tuple[SourceRecord, ...] = (
         jurisdiction="South Australia",
         level="state",
         source_type="state_financial_disclosure_reference",
-        url=(
-            "https://www.ecsa.sa.gov.au/parties-and-candidates/"
-            "funding-and-disclosure-all-participants/"
-            "funding-and-disclosure-political-parties"
-            "?catid=13%3Aparties-and-candidates"
-            "&id=1116%3Areporting-obligations-political-parties&view=article"
-        ),
-        expected_format="html_plus_forms_downloads",
-        update_frequency="periodic_election",
-        priority="medium",
+        url="https://www.ecsa.sa.gov.au/parties-and-candidates/disclosure-returns",
+        expected_format="html_plus_portal_links",
+        update_frequency="ongoing",
+        priority="high",
         notes=(
-            "Official ECSA funding and disclosure obligations for political parties, "
-            "candidates, associated entities, and third parties. Adapter should "
-            "discover concrete return downloads/forms before parsing."
+            "Official ECSA disclosure-return landing page for political parties, "
+            "candidates, associated entities, third parties, donors, and campaign "
+            "expenditure returns. Current machine-readable index parsing uses the "
+            "sa_ecsa_funding2024_return_records source."
+        ),
+    ),
+    SourceRecord(
+        source_id="sa_ecsa_funding2024_return_records",
+        name="ECSA Political Participant Return Records 2023 onwards",
+        jurisdiction="South Australia",
+        level="state",
+        source_type="state_financial_disclosure_return_index",
+        url="https://www.ecsa.sa.gov.au/html/funding2024/index.php",
+        expected_format="paginated_html_return_index",
+        update_frequency="ongoing",
+        priority="high",
+        notes=(
+            "Official ECSA current funding portal index. Rows are return-level "
+            "summary records with lodged dates, submitters/agents, return subjects, "
+            "reporting periods, values, and official report-view links. They are "
+            "not individual donor-to-recipient transactions and require detailed "
+            "return/PDF parsing plus cross-source deduplication before inclusion in "
+            "consolidated reported money totals."
         ),
     ),
     SourceRecord(

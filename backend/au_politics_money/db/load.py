@@ -75,6 +75,11 @@ from au_politics_money.ingest.qld_ecq_eds import (
     PARTICIPANT_PARSER_NAME as QLD_ECQ_PARTICIPANT_PARSER_NAME,
     QLD_ECQ_EDS_PARTICIPANT_LOOKUPS,
 )
+from au_politics_money.ingest.sa_ecsa import (
+    PARSER_NAME as SA_ECSA_RETURN_INDEX_PARSER_NAME,
+    SOURCE_DATASET as SA_ECSA_SOURCE_DATASET,
+    SOURCE_ID as SA_ECSA_RETURN_INDEX_SOURCE_ID,
+)
 from au_politics_money.ingest.they_vote_for_you import latest_they_vote_for_you_divisions_jsonl
 from au_politics_money.ingest.vic_vec import (
     FUNDING_REGISTER_SOURCE_ID as VIC_VEC_FUNDING_REGISTER_SOURCE_ID,
@@ -459,6 +464,17 @@ def is_public_funding_context_money_flow(metadata: dict[str, Any]) -> bool:
         metadata.get("source_dataset") == VIC_VEC_SOURCE_DATASET
         and metadata.get("flow_kind") in PUBLIC_FUNDING_CONTEXT_FLOW_KINDS
     )
+
+
+def is_state_return_summary_money_flow(metadata: dict[str, Any]) -> bool:
+    return (
+        metadata.get("source_dataset") == SA_ECSA_SOURCE_DATASET
+        and metadata.get("transaction_kind") == "return_summary"
+    )
+
+
+def state_return_summary_event_type(metadata: dict[str, Any]) -> str:
+    return str(metadata.get("flow_kind") or "state_local_return_summary")
 
 
 def public_funding_context_event_type(metadata: dict[str, Any]) -> str:
@@ -1832,6 +1848,111 @@ def load_nt_ntec_annual_return_money_flows(
     )
 
 
+def _sa_ecsa_jsonl_path_from_complete_summary(
+    summary_path: Path,
+    *,
+    expected_summary_sha256: str = "",
+) -> Path:
+    actual_summary_sha256 = _sha256_path(summary_path)
+    if expected_summary_sha256 and actual_summary_sha256 != expected_summary_sha256:
+        raise ValueError(
+            f"Summary hash mismatch for {summary_path}: "
+            f"manifest={expected_summary_sha256} actual={actual_summary_sha256}"
+        )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("source_dataset") != SA_ECSA_SOURCE_DATASET:
+        raise ValueError(
+            f"Unexpected SA ECSA source_dataset in {summary_path}: "
+            f"{summary.get('source_dataset')!r}"
+        )
+    if summary.get("source_id") != SA_ECSA_RETURN_INDEX_SOURCE_ID:
+        raise ValueError(
+            f"Unexpected SA ECSA source_id in {summary_path}: {summary.get('source_id')!r}"
+        )
+    total_count = int(summary.get("total_count") or 0)
+    reported_total = int(summary.get("portal_record_count_reported") or 0)
+    if not summary.get("complete_page_coverage"):
+        raise ValueError(f"SA ECSA summary is not complete: {summary_path}")
+    if reported_total <= 0 or total_count != reported_total:
+        raise ValueError(
+            f"SA ECSA summary row count mismatch for {summary_path}: "
+            f"reported={reported_total} total={total_count}"
+        )
+    source_metadata_path = Path(str(summary.get("source_metadata_path") or ""))
+    source_body_path = Path(str(summary.get("source_body_path") or ""))
+    expected_source_metadata_sha256 = str(summary.get("source_metadata_sha256") or "")
+    expected_source_body_sha256 = str(summary.get("source_body_sha256") or "")
+    if not expected_source_metadata_sha256:
+        raise ValueError(f"SA ECSA summary is missing source_metadata_sha256: {summary_path}")
+    if not expected_source_body_sha256:
+        raise ValueError(f"SA ECSA summary is missing source_body_sha256: {summary_path}")
+    actual_source_metadata_sha256 = _sha256_path(source_metadata_path)
+    if actual_source_metadata_sha256 != expected_source_metadata_sha256:
+        raise ValueError(
+            f"SA ECSA source metadata hash mismatch for {source_metadata_path}: "
+            f"summary={expected_source_metadata_sha256} actual={actual_source_metadata_sha256}"
+        )
+    actual_source_body_sha256 = _sha256_path(source_body_path)
+    if actual_source_body_sha256 != expected_source_body_sha256:
+        raise ValueError(
+            f"SA ECSA source body hash mismatch for {source_body_path}: "
+            f"summary={expected_source_body_sha256} actual={actual_source_body_sha256}"
+        )
+    source_metadata = json.loads(source_metadata_path.read_text(encoding="utf-8"))
+    source = source_metadata.get("source")
+    source_id = source.get("source_id") if isinstance(source, dict) else None
+    if source_id != SA_ECSA_RETURN_INDEX_SOURCE_ID:
+        raise ValueError(
+            f"Unexpected SA ECSA source metadata source_id in {source_metadata_path}: "
+            f"{source_id!r}"
+        )
+    metadata_body_sha256 = str(source_metadata.get("sha256") or "")
+    if metadata_body_sha256 and metadata_body_sha256 != expected_source_body_sha256:
+        raise ValueError(
+            f"SA ECSA metadata/body hash mismatch for {source_metadata_path}: "
+            f"metadata={metadata_body_sha256} summary={expected_source_body_sha256}"
+        )
+    return _jsonl_path_from_summary(
+        summary_path,
+        SA_ECSA_RETURN_INDEX_PARSER_NAME,
+        expected_summary_sha256=expected_summary_sha256,
+        expected_source_keys={SA_ECSA_RETURN_INDEX_SOURCE_ID},
+        source_count_field="source_counts",
+    )
+
+
+def _latest_complete_sa_ecsa_return_summary_jsonl() -> Path:
+    directory = PROCESSED_DIR / "sa_ecsa_return_summary_money_flows"
+    candidates = sorted(directory.glob("*.summary.json"), reverse=True)
+    if not candidates:
+        raise FileNotFoundError(f"No SA ECSA summary files in {directory}")
+    for summary_path in candidates:
+        summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        total_count = int(summary.get("total_count") or 0)
+        reported_total = int(summary.get("portal_record_count_reported") or 0)
+        if summary.get("complete_page_coverage") and total_count == reported_total:
+            return _sa_ecsa_jsonl_path_from_complete_summary(summary_path)
+    raise FileNotFoundError(f"No complete SA ECSA summary files in {directory}")
+
+
+def load_sa_ecsa_return_summary_money_flows(
+    conn,
+    jsonl_path: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        path = jsonl_path or _latest_complete_sa_ecsa_return_summary_jsonl()
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_sa_ecsa_return_summary_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(
+        conn,
+        path,
+        default_source_dataset=SA_ECSA_SOURCE_DATASET,
+    )
+
+
 def _validate_nsw_aggregate_source_hashes(record: dict[str, Any]) -> None:
     metadata_path_value = str(record.get("source_metadata_path") or "")
     body_path_value = str(record.get("source_body_path") or "")
@@ -2601,6 +2722,29 @@ def nt_ntec_annual_returns_path_from_pipeline_manifest(manifest_path: Path) -> P
     return path
 
 
+def sa_ecsa_return_summary_path_from_pipeline_manifest(manifest_path: Path) -> Path:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("pipeline_name") != "state_local":
+        raise ValueError("Expected a state_local pipeline manifest")
+    parameters = manifest.get("parameters")
+    if (
+        not isinstance(parameters, dict)
+        or parameters.get("source_family") != SA_ECSA_SOURCE_DATASET
+    ):
+        raise ValueError("Expected an ECSA funding-return state/local manifest")
+    if parameters.get("loads_database") is not False:
+        raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+
+    summary_path, summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_sa_ecsa_return_index",
+    )
+    return _sa_ecsa_jsonl_path_from_complete_summary(
+        summary_path,
+        expected_summary_sha256=summary_sha256,
+    )
+
+
 def load_qld_ecq_eds_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2710,6 +2854,26 @@ def load_nt_ntec_from_pipeline_manifest(
     return summary
 
 
+def load_sa_ecsa_from_pipeline_manifest(
+    conn,
+    manifest_path: Path,
+    *,
+    include_influence_events: bool = True,
+) -> dict[str, Any]:
+    path = sa_ecsa_return_summary_path_from_pipeline_manifest(manifest_path)
+    summary: dict[str, Any] = {
+        "pipeline_manifest_path": str(manifest_path),
+        "artifact_paths": {"money_flows": str(path)},
+        "sa_ecsa_return_summary_money_flows": load_sa_ecsa_return_summary_money_flows(
+            conn,
+            jsonl_path=path,
+        ),
+    }
+    if include_influence_events:
+        summary["influence_events"] = load_influence_events(conn)
+    return summary
+
+
 def load_state_local_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2735,6 +2899,12 @@ def load_state_local_from_pipeline_manifest(
         )
     if source_family in {NT_NTEC_SOURCE_DATASET, NT_NTEC_ANNUAL_RETURNS_SOURCE_DATASET}:
         return load_nt_ntec_from_pipeline_manifest(
+            conn,
+            manifest_path,
+            include_influence_events=include_influence_events,
+        )
+    if source_family == SA_ECSA_SOURCE_DATASET:
+        return load_sa_ecsa_from_pipeline_manifest(
             conn,
             manifest_path,
             include_influence_events=include_influence_events,
@@ -4705,12 +4875,16 @@ def load_influence_events(conn) -> dict[str, Any]:
         event_type = classify_money_event_type(disclosure_category or "", receipt_type or "")
         campaign_support_record = is_campaign_support_money_flow(base_metadata)
         public_funding_context_record = is_public_funding_context_money_flow(base_metadata)
+        state_return_summary_record = is_state_return_summary_money_flow(base_metadata)
         if campaign_support_record:
             event_family = "campaign_support"
             event_type = campaign_support_event_type(base_metadata, event_type)
         elif public_funding_context_record:
             event_family = "grant"
             event_type = public_funding_context_event_type(base_metadata)
+        elif state_return_summary_record:
+            event_family = "money"
+            event_type = state_return_summary_event_type(base_metadata)
         else:
             event_family = (
                 "benefit"
@@ -4748,6 +4922,9 @@ def load_influence_events(conn) -> dict[str, Any]:
         elif public_funding_context_record:
             flags.append("public_funding_context_not_private_donation")
             flags.append("public_funding_context_not_personal_receipt")
+        elif state_return_summary_record:
+            flags.append("state_return_summary_not_transaction_row")
+            flags.append("state_return_summary_not_personal_receipt")
         elif campaign_expenditure:
             flags.append("campaign_expenditure_not_counted_in_reported_total")
         description_amount = f"{amount} {currency}" if amount is not None else "amount not disclosed"
@@ -4788,6 +4965,13 @@ def load_influence_events(conn) -> dict[str, Any]:
                 f"{source_raw_name or 'Unknown'} public funding context for "
                 f"{recipient_raw_name or 'Unknown'}: {description_amount}; not a private "
                 "donation, gift, or personal income."
+            )
+        elif state_return_summary_record:
+            description = (
+                f"{source_raw_name or 'Unknown'} lodged "
+                f"{receipt_type or 'ECSA return'} for {recipient_raw_name or 'Unknown'}: "
+                f"{description_amount}; return-level state disclosure summary, not an "
+                "individual transaction row or personal receipt."
             )
         elif jurisdictional_cross_disclosure_observation:
             description = (
@@ -7341,6 +7525,7 @@ def load_processed_artifacts(
     include_act_gift_returns: bool = True,
     include_nt_ntec_annual_returns: bool = True,
     include_nt_ntec_annual_gifts: bool = True,
+    include_sa_ecsa_return_summaries: bool = True,
     include_vic_vec_funding_register: bool = True,
     include_house_interests: bool = True,
     include_senate_interests: bool = True,
@@ -7384,6 +7569,10 @@ def load_processed_artifacts(
             if include_nt_ntec_annual_gifts:
                 summary["nt_ntec_annual_gift_money_flows"] = (
                     load_nt_ntec_annual_gift_money_flows(conn)
+                )
+            if include_sa_ecsa_return_summaries:
+                summary["sa_ecsa_return_summary_money_flows"] = (
+                    load_sa_ecsa_return_summary_money_flows(conn)
                 )
             if include_vic_vec_funding_register:
                 summary["vic_vec_funding_register_money_flows"] = (

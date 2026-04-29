@@ -127,7 +127,7 @@ Notes:
 ### South Australia
 
 Official source:
-https://www.ecsa.sa.gov.au/parties-and-candidates/funding-and-disclosure-all-participants/funding-and-disclosure-political-parties?catid=13%3Aparties-and-candidates&id=1116%3Areporting-obligations-political-parties&view=article
+https://www.ecsa.sa.gov.au/parties-and-candidates/disclosure-returns
 
 Priority data families:
 
@@ -137,8 +137,25 @@ Priority data families:
 
 Notes:
 
-- Build the adapter around the published forms/downloads and then normalize into
-  the same `influence_event` families.
+- First implemented adapter:
+  `run-state-local-pipeline --jurisdiction sa` archives the ECSA disclosure
+  landing page and the current `funding2024` return-record portal, then
+  normalizes 696 portal index rows into
+  `data/processed/sa_ecsa_return_summary_money_flows/`. The source-row reported
+  return-summary value is $472,688,444.90.
+- The ECSA portal index is return-level, not transaction-level. The implemented
+  row families include candidate campaign donations returns, political party
+  returns, associated-entity returns, third-party returns, donor returns,
+  special large-gift returns, capped-expenditure returns, prescribed
+  expenditure returns, and annual political expenditure returns. These are
+  useful public disclosure context, but they must not be displayed as detailed
+  donor-recipient transactions or personal receipt by a candidate or MP.
+- The fetcher partitions by official `For` filter values because unfiltered
+  pagination can repeat or omit rows. Future SA work should parse linked return
+  reports/PDFs where legally/publicly available, add ECSA-backed actor
+  identifiers where the portal supports them, and deduplicate return-level
+  summaries against detailed transactions before any consolidated amount totals
+  are published.
 
 ### Western Australia
 
@@ -259,8 +276,8 @@ Notes:
 4. Continue ACT/NT coverage beyond the first gift adapters, and add WA next
    because its party/candidate expenditure and reimbursement records are
    theoretically valuable for party-channelled campaign support.
-5. Add South Australia, Tasmania, and Northern Territory with careful regime-date
-   caveats and source-specific parsers.
+5. Add South Australia, Tasmania, and Northern Territory with careful
+   return-level/regime-date caveats and source-specific parsers.
 6. Begin council-level coverage where the state electoral commission provides a
    common disclosure system first, then add council-by-council adapters for
    registers of interests, gifts, meeting minutes, and procurement where needed.

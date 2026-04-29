@@ -63,7 +63,8 @@ under `data/processed/discovered_links/`.
 | `qld_ecq_eds_api_local_groups` | Queensland | ECQ EDS local groups API | https://disclosures.ecq.qld.gov.au/api/political/local-groups | Archived lookup API snapshot used for ECQ-backed local government group identifiers. |
 | `qld_ecq_eds_api_local_electorates` | Queensland | ECQ EDS local electorates API | https://disclosures.ecq.qld.gov.au/api/political/local-electorates | Archived lookup API snapshot for local electorate names and identifiers. |
 | `qld_ecq_disclosure_return_archives` | Queensland | ECQ historical disclosure return archives | https://www.ecq.qld.gov.au/disclosurereturnarchives | Historical archive target. The first reproducible fetch returned HTTP 401, so this remains blocked/pending until a public access path is confirmed. |
-| `sa_ecsa_funding_disclosure` | South Australia | ECSA funding and disclosure | https://www.ecsa.sa.gov.au/parties-and-candidates/funding-and-disclosure-all-participants/funding-and-disclosure-political-parties?catid=13%3Aparties-and-candidates&id=1116%3Areporting-obligations-political-parties&view=article | Party, candidate, associated-entity, and third-party return obligations. Discover concrete return downloads/forms before parsing. |
+| `sa_ecsa_funding_disclosure` | South Australia | ECSA funding and disclosure | https://www.ecsa.sa.gov.au/parties-and-candidates/disclosure-returns | Current ECSA disclosure-return landing page. Use as the stable source-family entry point before fetching the live return-record portal. |
+| `sa_ecsa_funding2024_return_records` | South Australia | ECSA current funding return records portal | https://www.ecsa.sa.gov.au/html/funding2024/index.php | Active reproducible index adapter. Current artifact has 696 return-level index rows and $472,688,444.90 in source-row reported return-summary value. Rows include political party, candidate campaign donations, associated entity, third party, donor, large-gift, capped-expenditure, prescribed-expenditure, and annual political expenditure return summaries. These are return-level index records, not detailed transaction rows, not personal receipt, and not consolidated influence totals. |
 | `waec_returns_reports` | Western Australia | WAEC returns and reports | https://www.elections.wa.gov.au/returns-and-reports | Annual and election returns for gifts, income, expenditure, and reimbursements. Council records may require local CEO/council handling. |
 | `tas_tec_disclosure_funding` | Tasmania | TEC disclosure and funding | https://www.tec.tas.gov.au/disclosure-and-funding/ | New disclosure and funding regime from 2025-07-01; preserve regime-start date in coverage caveats. |
 | `nt_ntec_annual_returns` | Northern Territory | NTEC annual returns | https://ntec.nt.gov.au/about-us/media-and-publications/media-releases/2025/20242025-annual-returns | Annual gift returns, annual returns, candidate returns, donor returns, and election expenditure context. |
@@ -105,3 +106,10 @@ under `data/processed/discovered_links/`.
   page during the 2026-04-29 build, while the funding register remained
   available. Victoria private-donation rows therefore remain pending and should
   not be inferred from public-funding records.
+- SA ECSA current portal rows are return-level index summaries. They are
+  useful coverage for South Australian disclosure activity and return values,
+  but they are not detailed donor-recipient transactions and must not be
+  described as money personally received by candidates or MPs. The fetcher
+  partitions the portal by official `For` filter values because unfiltered
+  pagination repeats/misses rows; replay must validate the portal-reported row
+  count and complete partition coverage.

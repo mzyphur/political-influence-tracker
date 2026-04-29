@@ -129,7 +129,7 @@ also loads QLD ECQ EDS rows and participant identifiers by default, but
 federal-only scheduled runs use `load-postgres --skip-qld-ecq
 --skip-nsw-aggregates --skip-act-gift-returns
 --skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
---skip-vic-vec-funding-register` so stale state/local artifacts are not
+--skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register` so stale state/local artifacts are not
 promoted when the state/local fetch/normalize steps did not run. Public
 state/local API summaries read only current rows.
 
@@ -213,6 +213,34 @@ Commonwealth records is available. Raw artifacts preserve the official public
 address text, while the generic state/local records API does not echo
 address-bearing `original_text` by default.
 
+South Australia is wired as a current ECSA funding-return index adapter:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction sa)
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli migrate-postgres
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+```
+
+The SA runner archives the official ECSA disclosure-return landing page, fetches
+the current return-record portal, and normalizes the portal index into
+`data/processed/sa_ecsa_return_summary_money_flows/`. The fetcher uses
+`filter_for_partitioned_pages`: it first reads the portal's official `For`
+filter values and then pages each partition separately, because unfiltered
+portal pagination can repeat rows and miss other rows. The 2026-04-29
+implementation run extracted 696 unique rows, matching the portal-reported row
+count, with $472,688,444.90 in source-row return-summary value. The rows cover
+candidate campaign donations returns, political party returns, associated
+entity returns, third-party returns, donor returns, large-gift returns, capped
+expenditure returns, and annual political expenditure returns. These are
+return-level index summaries, not detailed transaction rows, not personal
+receipt, and not evidence of wrongdoing. The loader exposes them as state/local
+return-summary context and marks their amounts `not_applicable` for
+consolidated influence totals until detailed SA transaction parsing and
+cross-source deduplication exist.
+
 Victoria is wired as a VEC funding-register state adapter:
 
 ```bash
@@ -289,9 +317,9 @@ decision-record documents are fetched again instead of being silently reused.
 The weekly federal load also uses
 `--skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns
 --skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
---skip-vic-vec-funding-register`; QLD, NSW, ACT,
-NT, and VIC state/local rows should be refreshed by the jurisdiction-specific
-commands above.
+--skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register`; QLD, NSW,
+ACT, NT, SA, and VIC state/local rows should be refreshed by the
+jurisdiction-specific commands above.
 After loading, the script runs `qa-serving-database`. That QA gate fails the
 weekly run before the database is treated as releasable if core serving
 invariants break, including missing House boundaries, active events pointing at

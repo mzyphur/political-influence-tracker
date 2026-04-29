@@ -17,6 +17,7 @@ from au_politics_money.db.load import (
     is_campaign_support_money_flow,
     is_direct_representative_return_type,
     is_public_funding_context_money_flow,
+    is_state_return_summary_money_flow,
     load_official_aph_divisions,
     load_official_parliamentary_decision_record_documents,
     load_official_parliamentary_decision_records,
@@ -34,6 +35,7 @@ from au_politics_money.db.load import (
     parse_datetime,
     parse_financial_year_bounds,
     qld_ecq_eds_paths_from_pipeline_manifest,
+    sa_ecsa_return_summary_path_from_pipeline_manifest,
     senate_api_name_to_canonical,
     vic_vec_funding_register_path_from_pipeline_manifest,
 )
@@ -983,6 +985,131 @@ def test_nt_pipeline_manifest_selects_annual_return_artifact(tmp_path) -> None:
         nt_ntec_annual_returns_path_from_pipeline_manifest(manifest_path)
 
 
+def test_sa_pipeline_manifest_selects_return_summary_artifact(tmp_path) -> None:
+    def sha256_path(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    jsonl_path = tmp_path / "sa-return-summaries.jsonl"
+    jsonl_path.write_text(
+        json.dumps({"source_id": "sa_ecsa_funding2024_return_records"}) + "\n",
+        encoding="utf-8",
+    )
+    source_body_path = tmp_path / "sa-body.json"
+    source_body_path.write_text(
+        json.dumps(
+            {
+                "source_id": "sa_ecsa_funding2024_return_records",
+                "complete_page_coverage": True,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    source_metadata_path = tmp_path / "sa-metadata.json"
+    source_metadata_path.write_text(
+        json.dumps(
+            {
+                "source": {"source_id": "sa_ecsa_funding2024_return_records"},
+                "body_path": str(source_body_path),
+                "sha256": sha256_path(source_body_path),
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary_data = {
+        "normalizer_name": "sa_ecsa_funding_return_index_normalizer",
+        "source_dataset": "sa_ecsa_funding_returns",
+        "source_id": "sa_ecsa_funding2024_return_records",
+        "jsonl_path": str(jsonl_path),
+        "jsonl_sha256": sha256_path(jsonl_path),
+        "source_metadata_path": str(source_metadata_path),
+        "source_metadata_sha256": sha256_path(source_metadata_path),
+        "source_body_path": str(source_body_path),
+        "source_body_sha256": sha256_path(source_body_path),
+        "portal_record_count_reported": 1,
+        "complete_page_coverage": True,
+        "source_counts": {"sa_ecsa_funding2024_return_records": 1},
+        "total_count": 1,
+    }
+    summary_path = tmp_path / "sa-return-summaries.summary.json"
+    summary_path.write_text(
+        json.dumps(summary_data, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "state_local_sa_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "sa_ecsa_funding_returns",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_sa_ecsa_return_index",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": sha256_path(summary_path),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert sa_ecsa_return_summary_path_from_pipeline_manifest(manifest_path) == jsonl_path
+
+    incomplete_summary_path = tmp_path / "sa-return-summaries-incomplete.summary.json"
+    incomplete_summary_path.write_text(
+        json.dumps({**summary_data, "complete_page_coverage": False}, sort_keys=True)
+        + "\n",
+        encoding="utf-8",
+    )
+    incomplete_manifest_path = tmp_path / "state_local_sa_incomplete_manifest.json"
+    incomplete_manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "sa_ecsa_funding_returns",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_sa_ecsa_return_index",
+                        "status": "succeeded",
+                        "output": str(incomplete_summary_path),
+                        "output_sha256": sha256_path(incomplete_summary_path),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="not complete"):
+        sa_ecsa_return_summary_path_from_pipeline_manifest(incomplete_manifest_path)
+
+    jsonl_path.write_text("", encoding="utf-8")
+    with pytest.raises(ValueError, match="JSONL hash mismatch"):
+        sa_ecsa_return_summary_path_from_pipeline_manifest(manifest_path)
+    jsonl_path.write_text(
+        json.dumps({"source_id": "sa_ecsa_funding2024_return_records"}) + "\n",
+        encoding="utf-8",
+    )
+
+    source_body_path.write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="source body hash mismatch"):
+        sa_ecsa_return_summary_path_from_pipeline_manifest(manifest_path)
+
+
 def test_display_geometry_repair_buffer_validates_range() -> None:
     with pytest.raises(ValueError, match="non-negative"):
         load_electorate_boundary_display_geometries(
@@ -1012,6 +1139,13 @@ def test_money_event_classifier_keeps_donations_visible() -> None:
     )
     assert not is_campaign_support_money_flow(
         {"source_dataset": "vic_vec_funding_register", "flow_kind": "vic_public_funding_payment"}
+    )
+    assert is_state_return_summary_money_flow(
+        {
+            "source_dataset": "sa_ecsa_funding_returns",
+            "transaction_kind": "return_summary",
+            "flow_kind": "sa_political_party_return_summary",
+        }
     )
     assert classify_money_event_type("loan", "") == "loan"
     assert classify_money_event_type("", "") == "money_flow"

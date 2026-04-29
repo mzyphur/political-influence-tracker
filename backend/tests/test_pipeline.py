@@ -465,6 +465,54 @@ def test_state_local_nt_pipeline_records_annual_return_steps(monkeypatch) -> Non
     assert calls["gift_metadata_path"] == "fetch:nt_ntec_annual_returns_gifts_2024_2025"
 
 
+def test_state_local_sa_pipeline_records_return_index_steps(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr("au_politics_money.pipeline._git_commit", lambda: "sa123")
+    monkeypatch.setattr("au_politics_money.pipeline._dependency_versions", lambda: {})
+
+    def fake_write_manifest(manifest):
+        calls["manifest"] = manifest
+        return "manifest.json"
+
+    def fake_fetch_sa(*, max_pages=None):
+        calls["max_pages"] = max_pages
+        return "sa-return-index-metadata"
+
+    def fake_normalize_sa(*, metadata_path):
+        calls["metadata_path"] = str(metadata_path)
+        return "sa-return-summary"
+
+    monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_sa_ecsa_return_index_pages",
+        fake_fetch_sa,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_sa_ecsa_return_index",
+        fake_normalize_sa,
+    )
+
+    assert run_state_local_pipeline(jurisdiction="sa", smoke=True) == "manifest.json"
+
+    manifest = calls["manifest"]
+    assert manifest.pipeline_name == "state_local"
+    assert manifest.git_commit == "sa123"
+    assert manifest.parameters["jurisdiction"] == "sa"
+    assert manifest.parameters["source_family"] == "sa_ecsa_funding_returns"
+    assert manifest.parameters["loads_database"] is False
+    assert "return-level" in manifest.parameters["claim_boundary"]
+    assert [step.name for step in manifest.steps] == [
+        "fetch_sa_ecsa_return_index_pages",
+        "normalize_sa_ecsa_return_index",
+    ]
+    assert calls["max_pages"] == 1
+    assert calls["metadata_path"] == "sa-return-index-metadata"
+    assert manifest.steps[0].output["metadata_paths"] == {
+        "sa_ecsa_funding2024_return_records": "sa-return-index-metadata"
+    }
+
+
 def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:
     with pytest.raises(ValueError, match="Unsupported state/local jurisdiction"):
         run_state_local_pipeline(jurisdiction="wa")

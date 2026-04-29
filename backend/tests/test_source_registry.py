@@ -46,6 +46,7 @@ def test_subnational_seed_sources_exist() -> None:
         "qld_ecq_eds_api_local_electorates",
         "qld_ecq_disclosure_return_archives",
         "sa_ecsa_funding_disclosure",
+        "sa_ecsa_funding2024_return_records",
         "waec_returns_reports",
         "tas_tec_disclosure_funding",
         "nt_ntec_annual_returns",
@@ -65,6 +66,7 @@ def test_subnational_seed_sources_exist() -> None:
     assert sources["qld_ecq_eds_api_local_groups"].level == "council"
     assert sources["qld_ecq_eds_api_political_parties"].expected_format == "json"
     assert "historical" in sources["qld_ecq_disclosure_return_archives"].notes.lower()
+    assert "return-level" in sources["sa_ecsa_funding2024_return_records"].notes
     assert "campaign context" in sources["act_elections_funding_disclosure"].notes
     assert "cumulative gifts" in sources["act_gift_returns_2025_2026"].notes
     assert "donor-side" in sources["nt_ntec_annual_returns_2024_2025"].notes

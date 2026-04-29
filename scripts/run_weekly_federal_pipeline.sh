@@ -24,6 +24,7 @@ LOAD_ARGS=(
   --skip-act-gift-returns
   --skip-nt-ntec-annual-returns
   --skip-nt-ntec-annual-gifts
+  --skip-sa-ecsa-return-summaries
   --skip-vic-vec-funding-register
 )
 if .venv/bin/dotenv -f .env run -- \

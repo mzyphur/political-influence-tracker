@@ -555,6 +555,7 @@ def load_postgres_command(
     skip_act_gift_returns: bool,
     skip_nt_ntec_annual_returns: bool,
     skip_nt_ntec_annual_gifts: bool,
+    skip_sa_ecsa_return_summaries: bool,
     skip_vic_vec_funding_register: bool,
     skip_house_interests: bool,
     skip_senate_interests: bool,
@@ -579,6 +580,7 @@ def load_postgres_command(
         include_act_gift_returns=not skip_act_gift_returns,
         include_nt_ntec_annual_returns=not skip_nt_ntec_annual_returns,
         include_nt_ntec_annual_gifts=not skip_nt_ntec_annual_gifts,
+        include_sa_ecsa_return_summaries=not skip_sa_ecsa_return_summaries,
         include_vic_vec_funding_register=not skip_vic_vec_funding_register,
         include_house_interests=not skip_house_interests,
         include_senate_interests=not skip_senate_interests,
@@ -1134,9 +1136,9 @@ def build_parser() -> argparse.ArgumentParser:
     state_local_pipeline_parser = subparsers.add_parser("run-state-local-pipeline")
     state_local_pipeline_parser.add_argument(
         "--jurisdiction",
-        choices=("act", "qld", "nsw", "nt", "vic"),
+        choices=("act", "qld", "nsw", "nt", "sa", "vic"),
         default="qld",
-        help="State/local adapter to run. Currently supported: act, qld, nsw, nt, vic.",
+        help="State/local adapter to run. Currently supported: act, qld, nsw, nt, sa, vic.",
     )
     state_local_pipeline_parser.add_argument(
         "--smoke",
@@ -1190,6 +1192,15 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Skip NTEC annual gift-return artifacts during this load. These rows "
             "are Northern Territory gifts received over the threshold."
+        ),
+    )
+    load_parser.add_argument(
+        "--skip-sa-ecsa-return-summaries",
+        action="store_true",
+        help=(
+            "Skip ECSA current funding portal return-summary artifacts during this "
+            "load. These rows are South Australian return-level index values, not "
+            "deduplicated transaction rows."
         ),
     )
     load_parser.add_argument(
@@ -1406,6 +1417,7 @@ def main() -> int:
             args.skip_act_gift_returns,
             args.skip_nt_ntec_annual_returns,
             args.skip_nt_ntec_annual_gifts,
+            args.skip_sa_ecsa_return_summaries,
             args.skip_vic_vec_funding_register,
             args.skip_house_interests,
             args.skip_senate_interests,

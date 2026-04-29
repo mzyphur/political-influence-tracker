@@ -31,7 +31,20 @@ STATE_LOCAL_MONEY_SOURCE_DATASETS = (
     "act_elections_gift_returns",
     "nt_ntec_annual_returns_gifts",
     "qld_ecq_eds",
+    "sa_ecsa_funding_returns",
     "vic_vec_funding_register",
+)
+SA_ECSA_RETURN_SUMMARY_FLOW_KINDS = (
+    "sa_annual_political_expenditure_return_summary",
+    "sa_associated_entity_return_summary",
+    "sa_candidate_campaign_donations_return_summary",
+    "sa_capped_expenditure_return_summary",
+    "sa_donor_return_summary",
+    "sa_political_party_return_summary",
+    "sa_prescribed_expenditure_return_summary",
+    "sa_special_large_gift_return_summary",
+    "sa_third_party_capped_expenditure_return_summary",
+    "sa_third_party_return_summary",
 )
 STATE_LOCAL_RECORD_FLOW_KINDS = {
     "act_gift_in_kind",
@@ -42,6 +55,7 @@ STATE_LOCAL_RECORD_FLOW_KINDS = {
     "nt_donor_return_donation",
     "qld_electoral_expenditure",
     "qld_gift",
+    *SA_ECSA_RETURN_SUMMARY_FLOW_KINDS,
     "vic_administrative_funding_entitlement",
     "vic_policy_development_funding_payment",
     "vic_public_funding_payment",
@@ -62,6 +76,7 @@ STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS = (
     "vic_policy_development_funding_payment",
     "vic_public_funding_payment",
 )
+STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS = SA_ECSA_RETURN_SUMMARY_FLOW_KINDS
 
 PARTY_PUBLIC_LABELS = {
     "AG": "Australian Greens",
@@ -1419,6 +1434,9 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
                 count(*) FILTER (
                     WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
                 ) AS public_funding_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
+                ) AS return_summary_count,
                 count(*) FILTER (WHERE money_flow.amount IS NOT NULL)
                     AS reported_amount_event_count,
                 sum(money_flow.amount) FILTER (WHERE money_flow.amount IS NOT NULL)
@@ -1436,6 +1454,7 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             (
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
                 list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
+                list(STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS),
                 list(STATE_LOCAL_MONEY_SOURCE_DATASETS),
             ),
         )
@@ -1975,6 +1994,7 @@ def get_state_local_records(
                 money_flow.date_received,
                 money_flow.date_reported,
                 money_flow.source_row_ref,
+                money_flow.metadata->'original'->>'report_url' AS report_url,
                 CASE
                     WHEN money_flow.metadata->>'source_dataset'
                          IN (
@@ -2070,7 +2090,9 @@ def get_state_local_records(
                 "gift date in the source table; NT annual-return receipts, debts, and "
                 "donor-return donations are source-row context and can overlap with "
                 "gift-return or Commonwealth records until cross-source deduplication "
-                "exists; Queensland expenditure is campaign-support context, not "
+                "exists; SA ECSA current funding portal rows are return-level index "
+                "summaries and official report links, not detailed transaction rows "
+                "or personal receipts; Queensland expenditure is campaign-support context, not "
                 "personal receipt; VEC funding-register "
                 "rows are public "
                 "funding/admin/policy context, not private donations or personal "
@@ -2118,6 +2140,9 @@ def get_state_local_summary(
                 count(*) FILTER (
                     WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
                 ) AS public_funding_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
+                ) AS return_summary_count,
                 CASE
                     WHEN count(*) FILTER (
                         WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
@@ -2145,6 +2170,15 @@ def get_state_local_summary(
                           AND money_flow.metadata->>'flow_kind' = ANY(%s)
                     )
                 END AS public_funding_reported_amount_total,
+                CASE
+                    WHEN count(*) FILTER (
+                        WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
+                    ) = 0 THEN 0
+                    ELSE sum(money_flow.amount) FILTER (
+                        WHERE money_flow.amount IS NOT NULL
+                          AND money_flow.metadata->>'flow_kind' = ANY(%s)
+                    )
+                END AS return_summary_reported_amount_total,
                 count(*) FILTER (
                     WHERE EXISTS (
                         SELECT 1
@@ -2178,10 +2212,13 @@ def get_state_local_summary(
             (
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
                 list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
+                list(STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS),
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
                 list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
                 list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
+                list(STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS),
+                list(STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS),
                 list(STATE_LOCAL_MONEY_SOURCE_DATASETS),
                 *params,
             ),
@@ -2228,6 +2265,20 @@ def get_state_local_summary(
             conn,
             role="recipient",
             flow_kind=STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS,
+            db_level=db_level,
+            limit=limit,
+        )
+        top_return_summary_sources = _qld_summary_rows(
+            conn,
+            role="source",
+            flow_kind=STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS,
+            db_level=db_level,
+            limit=limit,
+        )
+        top_return_summary_recipients = _qld_summary_rows(
+            conn,
+            role="recipient",
+            flow_kind=STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS,
             db_level=db_level,
             limit=limit,
         )
@@ -2348,6 +2399,8 @@ def get_state_local_summary(
             "top_gift_recipients": top_gift_recipients,
             "top_expenditure_actors": top_expenditure_actors,
             "top_public_funding_recipients": top_public_funding_recipients,
+            "top_return_summary_sources": top_return_summary_sources,
+            "top_return_summary_recipients": top_return_summary_recipients,
             "top_events": top_events,
             "top_local_electorates": top_local_electorates,
             "recent_records": recent_records,
@@ -2373,10 +2426,12 @@ def get_state_local_summary(
                 "context and not personal receipt; VEC funding-register rows are public "
                 "funding/admin/policy-funding context, not private donations or personal "
                 "income, and VEC says affected material is under review after Hopper & "
-                "Anor v State of Victoria [2026] HCA 11. Event, local-electorate, "
-                "candidate, or party labels are disclosure metadata and do not attribute "
-                "money or campaign expenditure to a candidate, councillor, or MP unless "
-                "a separate source supports that link."
+                "Anor v State of Victoria [2026] HCA 11. SA ECSA rows are return-level "
+                "index summaries, not detailed transaction rows or personal receipt. "
+                "Event, local-electorate, candidate, or party labels are disclosure "
+                "metadata and do not attribute money or campaign expenditure to a "
+                "candidate, councillor, or MP unless a separate source supports that "
+                "link."
             ),
         }
     )

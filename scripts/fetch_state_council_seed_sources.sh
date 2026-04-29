@@ -12,6 +12,7 @@ SOURCE_IDS=(
   vic_vec_disclosures
   qld_ecq_disclosures
   sa_ecsa_funding_disclosure
+  sa_ecsa_funding2024_return_records
   waec_returns_reports
   tas_tec_disclosure_funding
   nt_ntec_annual_returns
