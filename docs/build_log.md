@@ -229,6 +229,9 @@ Completed:
   conservative thresholds into the weekly federal runner for influence events,
   person-linked rows, current money flows, current interest rows, and current
   House/Senate office terms.
+- Added `docs/federal_rollout_checklist.md`, which defines the data, evidence,
+  review, operational, UI, and state/council transition gates for treating the
+  Commonwealth layer as release-ready rather than merely useful beta software.
 
 Verification:
 
