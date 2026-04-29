@@ -55,6 +55,7 @@ type GraphRoot = {
   label: string;
   includeCandidates: boolean;
 };
+type DisplayLandMask = NonNullable<CoverageResponse["display_land_masks"]>[number];
 
 const levelLabels: Record<DataLevel, string> = {
   federal: "Federal",
@@ -735,6 +736,10 @@ function CoveragePanel({
   const reportedTotal = numberValue(coverage.influence_event_totals.reported_amount_total);
   const stateLayer = coverage.coverage_layers.find((layer) => layer.level === "state");
   const councilLayer = coverage.coverage_layers.find((layer) => layer.level === "council");
+  const displayLandMask = coverage.display_land_masks?.[0];
+  const displayLandMaskLabel = displayLandMask
+    ? displayLandMask.source_name || displayLandMask.source_key
+    : "not loaded";
 
   return (
     <div className="coverage-panel" aria-label="Database coverage">
@@ -764,6 +769,11 @@ function CoveragePanel({
         <span>State: {stateLayer?.status || "planned"}</span>
         <span>Council: {councilLayer?.status || "planned"}</span>
       </div>
+      <div className="coverage-status-row">
+        <span title={displayLandMaskTooltip(displayLandMask)}>
+          Map land mask: {displayLandMaskLabel}
+        </span>
+      </div>
       <details className="coverage-caveat">
         <summary>Coverage caveat</summary>
         <p>{coverage.caveat}</p>
@@ -779,6 +789,22 @@ function numberValue(value: number | string | null | undefined): number {
     return Number.isFinite(parsed) ? parsed : 0;
   }
   return 0;
+}
+
+function displayLandMaskTooltip(mask: DisplayLandMask | undefined): string {
+  if (!mask) {
+    return "No display land mask is loaded. Source electorate boundaries remain available.";
+  }
+  return [
+    `Source key: ${mask.source_key}`,
+    `Geometry role: ${mask.geometry_role}`,
+    `Method: ${mask.mask_method || "not recorded"}`,
+    `Licence status: ${mask.licence_status || "source document terms"}`,
+    mask.source_limitations ? `Limitations: ${mask.source_limitations}` : null,
+    `Display geometry only; official source electorate geometry remains preserved.`
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export default App;

@@ -11,6 +11,11 @@ The hostable public companion page is `frontend/public/methodology.html`. It
 translates this theory into a public-facing HTML explanation with diagrams while
 preserving the same evidence tiers and claim limits.
 
+The state and council expansion plan is `docs/state_council_expansion_plan.md`.
+It applies this theory below the Commonwealth level, where planning, zoning,
+procurement, mining, gambling, transport, policing, housing, and local
+development decisions make subnational influence especially important.
+
 ## Democratic Premise
 
 The democratic benchmark is political equality: citizens should be able to see

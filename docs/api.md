@@ -160,6 +160,12 @@ layers, and exposes whole-database counts alongside attribution caveats. This is
 the endpoint the UI uses to show why the map-linked record counts are narrower
 than the total disclosed-money database.
 
+The endpoint also exposes `display_land_masks` when a display-only land mask is
+loaded for interactive boundary clipping. These rows identify the source key,
+source document, geometry role, method, licence status, and limitations. They do
+not replace official electorate boundaries; they explain the public map display
+geometry.
+
 The coverage model is intentionally portable: each jurisdiction adapter should
 fill the same dimensions where legally/publicly available: actors, offices,
 boundaries, money flows, gifts/hospitality/travel, interests/assets/roles,

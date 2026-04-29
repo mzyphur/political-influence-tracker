@@ -26,6 +26,8 @@ users must be able to drill from a visualization down to the source record.
    evidence tiers; see `docs/influence_network_model.md`.
 9. Document the operating theory behind substantial engineering and product
    choices; see `docs/theory_of_influence.md`.
+10. Carry the same attribution discipline into state and council adapters; see
+    `docs/state_council_expansion_plan.md`.
 
 ## Phase 1: Federal Foundation
 
@@ -187,15 +189,21 @@ Design requirements:
 
 Goal: add jurisdictions one at a time after federal stability.
 
+Primary source inventory and sequencing are maintained in
+`docs/state_council_expansion_plan.md`. Each state/territory adapter must first
+fetch and archive raw official source material, then normalize into the existing
+jurisdiction, office, entity, and `influence_event` surfaces with explicit
+coverage caveats.
+
 Likely order:
 
 1. NSW
-2. Queensland
-3. Victoria
-4. Western Australia
-5. South Australia
-6. Tasmania
-7. ACT
+2. Victoria
+3. Queensland
+4. ACT
+5. Western Australia
+6. South Australia
+7. Tasmania
 8. Northern Territory
 
 The order may change based on data access, current legal/publication changes,
@@ -207,4 +215,7 @@ Goal: extend to local government.
 
 This is a separate major effort. Council data is likely fragmented by state,
 election commission, and council-level disclosure practices. Start only after
-state ingestion patterns are stable.
+state ingestion patterns are stable. Queensland and NSW are likely the first
+targets for common electoral-disclosure coverage; Victoria and Western Australia
+will need separate local-government handling because official pages point to
+local/council-specific processes for some disclosure duties.

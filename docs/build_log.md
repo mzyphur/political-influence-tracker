@@ -57,6 +57,12 @@ Completed:
 - Added `frontend/public/methodology.html` and an app-header "Method" link so
   the public web app can host a companion methodology page with diagrams of the
   operating theory, evidence tiers, network paths, and claim discipline.
+- Added `display_land_masks` to `/api/coverage` and the frontend coverage panel
+  so public users can see which display-only land-mask source is backing clipped
+  interactive map geometry.
+- Added `docs/state_council_expansion_plan.md`, grounded in current official
+  state/territory disclosure pages, to define the first subnational source
+  surfaces, sequencing, theory rationale, and claim limits before implementation.
 
 Verification:
 

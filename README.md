@@ -25,6 +25,11 @@ The frontend includes a hostable public companion page at
 the theory and evidence rules into an HTML page with diagrams for public,
 journalistic, and academic audiences.
 
+The state/council expansion sequence is tracked in
+`docs/state_council_expansion_plan.md`. It identifies the first official
+state/territory disclosure surfaces, source-priority order, and attribution
+rules for carrying the same influence model below the Commonwealth level.
+
 ## Current Structure
 
 - `docs/` - planning, research standards, source inventory, and methodology.

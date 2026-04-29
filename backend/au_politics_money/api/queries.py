@@ -1031,6 +1031,36 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             """,
             (),
         )
+        display_land_mask_rows = (
+            _fetch_dicts(
+                conn,
+                """
+                SELECT
+                    mask.source_key,
+                    mask.country_name,
+                    mask.geometry_role,
+                    mask.source_document_id,
+                    source_document.source_name,
+                    source_document.source_type,
+                    source_document.jurisdiction,
+                    source_document.url AS source_url,
+                    source_document.final_url AS source_final_url,
+                    source_document.fetched_at AS source_fetched_at,
+                    mask.metadata->>'licence_status' AS licence_status,
+                    mask.metadata->>'mask_method' AS mask_method,
+                    mask.metadata->>'source_limitations' AS source_limitations,
+                    ST_IsValid(mask.geom) AS geometry_is_valid,
+                    ST_NumGeometries(mask.geom) AS geometry_part_count
+                FROM display_land_mask mask
+                LEFT JOIN source_document
+                  ON source_document.id = mask.source_document_id
+                ORDER BY mask.country_name, mask.geometry_role, mask.source_key
+                """,
+                (),
+            )
+            if _table_exists(conn, "display_land_mask")
+            else []
+        )
         influence_family_rows = _fetch_dicts(
             conn,
             """
@@ -1139,6 +1169,20 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             },
         },
         {
+            "id": "federal_display_land_mask",
+            "label": "Display land mask for interactive boundary clipping",
+            "level": "federal",
+            "status": "active" if display_land_mask_rows else "not_loaded",
+            "attribution": "display-only geometry source; legal/electoral boundaries remain preserved",
+            "counts": {
+                "masks": len(display_land_mask_rows),
+                "valid_geometries": sum(
+                    1 for row in display_land_mask_rows if row.get("geometry_is_valid")
+                ),
+                "geometry_parts": sum(row.get("geometry_part_count") or 0 for row in display_land_mask_rows),
+            },
+        },
+        {
             "id": "federal_influence_events",
             "label": "Disclosed money, gifts, interests, and roles",
             "level": "federal",
@@ -1188,6 +1232,7 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             "planned_levels": ["state", "council"],
             "coverage_layers": layers,
             "source_documents": source_rows,
+            "display_land_masks": display_land_mask_rows,
             "jurisdictions": jurisdiction_rows,
             "representatives_by_chamber": representative_rows,
             "boundaries_by_chamber": boundary_rows,

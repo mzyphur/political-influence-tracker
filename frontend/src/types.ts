@@ -96,6 +96,23 @@ export type CoverageResponse = {
   active_levels: string[];
   planned_levels: string[];
   coverage_layers: CoverageLayer[];
+  display_land_masks?: Array<{
+    source_key: string;
+    country_name: string;
+    geometry_role: string;
+    source_document_id: number | null;
+    source_name: string | null;
+    source_type: string | null;
+    jurisdiction: string | null;
+    source_url: string | null;
+    source_final_url: string | null;
+    source_fetched_at: string | null;
+    licence_status: string | null;
+    mask_method: string | null;
+    source_limitations: string | null;
+    geometry_is_valid: boolean | null;
+    geometry_part_count: number | null;
+  }>;
   influence_events_by_family: Array<Record<string, number | string | null>>;
   influence_event_totals: Record<string, number | string | null>;
   caveat: string;

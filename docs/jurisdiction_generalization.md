@@ -55,6 +55,9 @@ States after the Australian pilot stabilizes:
   disclosures, lobbying disclosure, travel/gifts where available, House/Senate
   votes, state legislatures, OpenSecrets-style enrichment where licensed.
 
+The Australian state/council source-priority plan is maintained in
+`docs/state_council_expansion_plan.md`.
+
 ## Attribution Rule
 
 Never force a record onto a person, party, district, or industry if the source

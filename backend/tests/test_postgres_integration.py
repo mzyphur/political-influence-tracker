@@ -146,6 +146,33 @@ def _seed_minimal_influence_graph(conn) -> dict[str, int]:
 
         cur.execute(
             """
+            INSERT INTO display_land_mask (
+                source_key, country_name, geometry_role, geom, source_document_id, metadata
+            )
+            VALUES (
+                'pytest_land_mask:australia', 'Australia',
+                'country_high_resolution_land_display_mask',
+                ST_Multi(ST_GeomFromText(
+                    'POLYGON((144.0 -38.0,146.0 -38.0,146.0 -34.0,144.0 -34.0,144.0 -38.0))',
+                    4326
+                )),
+                %s,
+                %s
+            )
+            """,
+            (
+                source_document_id,
+                Jsonb(
+                    {
+                        "mask_method": "pytest_fixture_land_mask",
+                        "licence_status": "test_fixture",
+                    }
+                ),
+            ),
+        )
+
+        cur.execute(
+            """
             INSERT INTO jurisdiction (name, level, code)
             VALUES ('Commonwealth of Australia', 'federal', 'CWLTH')
             RETURNING id
@@ -648,6 +675,11 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert {
         layer["id"]: layer["status"] for layer in coverage_payload["coverage_layers"]
     }["state_territory_disclosures"] == "planned"
+    assert coverage_payload["display_land_masks"][0]["source_key"] == "pytest_land_mask:australia"
+    assert coverage_payload["display_land_masks"][0]["licence_status"] == "test_fixture"
+    assert {
+        layer["id"]: layer["status"] for layer in coverage_payload["coverage_layers"]
+    }["federal_display_land_mask"] == "active"
 
     representative_response = client.get(f"/api/representatives/{integration_db.person_id}")
     assert representative_response.status_code == 200
