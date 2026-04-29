@@ -28,6 +28,10 @@ from au_politics_money.db.load import (
 from au_politics_money.db.party_entity_suggestions import (
     materialize_party_entity_link_candidates,
 )
+from au_politics_money.db.quality import (
+    ServingDatabaseQualityConfig,
+    run_serving_database_quality_checks,
+)
 from au_politics_money.db.review import (
     ReviewImportError,
     export_review_queue,
@@ -1443,6 +1447,31 @@ def test_withdrawn_source_rows_do_not_remain_public_events(
                 """
             )
             assert cur.fetchone()[0] == 0
+
+
+def test_serving_database_quality_gate_reports_pass_and_failures(
+    integration_db: IntegrationDatabase,
+) -> None:
+    config = ServingDatabaseQualityConfig(
+        boundary_set="pytest_boundary_set",
+        expected_house_boundary_count=2,
+    )
+    with connect(integration_db.url) as conn:
+        passing_summary = run_serving_database_quality_checks(conn, config)
+        assert passing_summary["status"] == "pass"
+
+        failing_summary = run_serving_database_quality_checks(
+            conn,
+            ServingDatabaseQualityConfig(
+                boundary_set="pytest_boundary_set",
+                expected_house_boundary_count=150,
+            ),
+        )
+        assert failing_summary["status"] == "fail"
+        failed_ids = {
+            check["id"] for check in failing_summary["checks"] if check["status"] == "fail"
+        }
+        assert "house_boundary_count" in failed_ids
 
 
 def test_qld_participant_loader_requires_review_for_candidate_name_only_matches(

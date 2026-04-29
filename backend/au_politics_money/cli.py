@@ -25,6 +25,10 @@ from au_politics_money.db.review import (
     review_queue_names,
 )
 from au_politics_money.db.party_entity_suggestions import materialize_party_entity_link_candidates
+from au_politics_money.db.quality import (
+    ServingDatabaseQualityConfig,
+    run_serving_database_quality_checks,
+)
 from au_politics_money.db.sector_policy_suggestions import export_sector_policy_link_suggestions
 from au_politics_money.ingest.discovered_sources import (
     child_source_id,
@@ -642,6 +646,22 @@ def reapply_review_decisions_command(
     return 0
 
 
+def qa_serving_database_command(
+    boundary_set: str,
+    expected_house_boundary_count: int,
+    max_official_unmatched_votes: int,
+) -> int:
+    config = ServingDatabaseQualityConfig(
+        boundary_set=boundary_set,
+        expected_house_boundary_count=expected_house_boundary_count,
+        max_official_unmatched_votes=max_official_unmatched_votes,
+    )
+    with connect() as conn:
+        summary = run_serving_database_quality_checks(conn, config)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0 if summary["status"] == "pass" else 1
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="au-politics-money")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -863,6 +883,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     reapply_review_parser.add_argument("--continue-on-error", action="store_true")
 
+    qa_parser = subparsers.add_parser("qa-serving-database")
+    qa_parser.add_argument("--boundary-set", default="aec_federal_2025_current")
+    qa_parser.add_argument("--expected-house-boundary-count", type=int, default=150)
+    qa_parser.add_argument("--max-official-unmatched-votes", type=int, default=25)
+
     pipeline_parser = subparsers.add_parser("run-federal-foundation-pipeline")
     pipeline_parser.add_argument("--smoke", action="store_true")
     pipeline_parser.add_argument("--skip-house-pdfs", action="store_true")
@@ -1027,6 +1052,12 @@ def main() -> int:
             args.apply,
             args.subject_type,
             args.continue_on_error,
+        )
+    if args.command == "qa-serving-database":
+        return qa_serving_database_command(
+            args.boundary_set,
+            args.expected_house_boundary_count,
+            args.max_official_unmatched_votes,
         )
     if args.command == "run-federal-foundation-pipeline":
         return run_pipeline_command(

@@ -154,6 +154,22 @@ followed by `load-postgres` so the serving database is updated from the newest
 reproducible artifacts. `--include-vote-divisions` should be added only when a
 They Vote For You API key is configured.
 
+Routine update jobs should run the serving-database QA gate after loading:
+
+```bash
+cd backend
+.venv/bin/dotenv -f .env run -- .venv/bin/python -m au_politics_money.cli qa-serving-database
+```
+
+The QA gate fails if the current federal House boundary count is not 150, any
+current House office term lacks a loaded boundary, a non-rejected public
+influence event points to a non-current base row, known House form/OCR
+boilerplate appears as an active influence event, an official APH division has a
+parsed vote-count mismatch, or official APH vote rows cannot be matched to the
+current roster beyond the configured tolerance. The current default tolerance is
+25 unmatched official APH roster-vote rows, so small known parser/roster name
+edge cases are monitored without blocking every refresh.
+
 ## Pipeline Stages
 
 The federal foundation pipeline currently performs:

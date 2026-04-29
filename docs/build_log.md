@@ -85,6 +85,11 @@ Completed:
   runs now skip optional TVFY fetch/load steps when neither
   `THEY_VOTE_FOR_YOU_API_KEY` nor `TVFY_API_KEY` is configured, instead of
   aborting the whole federal refresh.
+- Added `qa-serving-database` and wired it into the weekly runner after the
+  database load. The QA gate checks federal House boundary coverage, public
+  events pointing at non-current base rows, known House form/OCR boilerplate,
+  official APH vote-count mismatches, and unmatched official APH roster votes
+  above a configurable tolerance.
 - Added `docs/theory_of_influence.md` as the standing theory/methodology layer
   connecting engineering decisions to mechanisms of influence, democratic
   transparency, operating hypotheses, allowed claims, non-claims, and the

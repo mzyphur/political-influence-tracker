@@ -43,6 +43,11 @@ fi
   > "${LOG_DIR}/weekly_federal_load_${TIMESTAMP}.stdout.log" \
   2> "${LOG_DIR}/weekly_federal_load_${TIMESTAMP}.stderr.log"
 
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli qa-serving-database \
+  > "${LOG_DIR}/weekly_federal_qa_${TIMESTAMP}.stdout.log" \
+  2> "${LOG_DIR}/weekly_federal_qa_${TIMESTAMP}.stderr.log"
+
 .venv/bin/python -m pytest \
   > "${LOG_DIR}/weekly_federal_pipeline_tests_${TIMESTAMP}.stdout.log" \
   2> "${LOG_DIR}/weekly_federal_pipeline_tests_${TIMESTAMP}.stderr.log"

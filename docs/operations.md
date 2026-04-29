@@ -161,6 +161,13 @@ The script loads `backend/.env` and includes optional vote ingestion only when
 `THEY_VOTE_FOR_YOU_API_KEY` or `TVFY_API_KEY` is present. When neither key is
 set, the weekly run writes a `weekly_federal_votes_<timestamp>.skipped.log`
 file and still refreshes the rest of the federal database.
+After loading, the script runs `qa-serving-database`. That QA gate fails the
+weekly run before the database is treated as releasable if core serving
+invariants break, including missing House boundaries, active events pointing at
+non-current source rows, obvious House form/OCR boilerplate in public events,
+official APH vote-count mismatches, or unexpected unmatched official APH votes.
+The default unmatched-vote tolerance is 25 rows, currently above the 11 known
+unmatched official APH roster-vote rows in the local baseline.
 
 Example cron entry for a server using UTC, running Sundays at 18:00 UTC
 which is Monday morning in eastern Australia depending on daylight saving:
