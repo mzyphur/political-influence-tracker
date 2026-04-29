@@ -913,6 +913,100 @@ def _postcode_artifact_postcodes(path: Path, records: list[dict[str, Any]]) -> s
     return {str(record.get("postcode")) for record in records if record.get("postcode")}
 
 
+def _postcode_record_metadata(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "source_dataset": record.get("source_dataset"),
+        "normalizer_name": record.get("normalizer_name"),
+        "normalizer_version": record.get("normalizer_version"),
+        "caveat": record.get("caveat"),
+        "ambiguity": record.get("ambiguity"),
+        "source_boundary_context": record.get("source_boundary_context"),
+        "current_member_context": record.get("current_member_context"),
+        "aec_boundary_note": record.get("aec_boundary_note"),
+        "original_rows": record.get("original_rows", []),
+    }
+
+
+def _postcode_source_document_id(
+    conn,
+    record: dict[str, Any],
+    source_doc_cache: dict[str, int],
+) -> int | None:
+    metadata_path = str(record.get("source_metadata_path") or "")
+    if not metadata_path:
+        return None
+    if metadata_path not in source_doc_cache:
+        source_doc_cache[metadata_path] = upsert_source_document(
+            conn,
+            _resolve_project_path(metadata_path),
+        )
+    return source_doc_cache[metadata_path]
+
+
+def _insert_unresolved_postcode_candidate(
+    conn,
+    *,
+    record: dict[str, Any],
+    source_document_id: int | None,
+) -> None:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO postcode_electorate_crosswalk_unresolved (
+                postcode, electorate_name, state_or_territory, match_method,
+                confidence, locality_count, localities,
+                redistributed_electorates, other_localities,
+                aec_division_ids, source_document_id, source_updated_text,
+                source_boundary_context, current_member_context, metadata
+            )
+            VALUES (
+                %(postcode)s, %(electorate_name)s, %(state_or_territory)s,
+                %(match_method)s, %(confidence)s, %(locality_count)s,
+                %(localities)s, %(redistributed_electorates)s,
+                %(other_localities)s, %(aec_division_ids)s,
+                %(source_document_id)s, %(source_updated_text)s,
+                %(source_boundary_context)s, %(current_member_context)s,
+                %(metadata)s
+            )
+            ON CONFLICT (postcode, electorate_name, state_or_territory, match_method)
+            DO UPDATE SET
+                confidence = EXCLUDED.confidence,
+                locality_count = EXCLUDED.locality_count,
+                localities = EXCLUDED.localities,
+                redistributed_electorates = EXCLUDED.redistributed_electorates,
+                other_localities = EXCLUDED.other_localities,
+                aec_division_ids = EXCLUDED.aec_division_ids,
+                source_document_id = EXCLUDED.source_document_id,
+                source_updated_text = EXCLUDED.source_updated_text,
+                source_boundary_context = EXCLUDED.source_boundary_context,
+                current_member_context = EXCLUDED.current_member_context,
+                metadata = EXCLUDED.metadata,
+                updated_at = now()
+            """,
+            {
+                "postcode": str(record.get("postcode") or ""),
+                "electorate_name": str(record.get("electorate_name") or ""),
+                "state_or_territory": str(record.get("state_or_territory") or ""),
+                "match_method": record.get("match_method") or "aec_postcode_locality_search",
+                "confidence": Decimal(str(record.get("confidence") or "0")),
+                "locality_count": int(record.get("locality_count") or 0),
+                "localities": as_jsonb(record.get("localities") or []),
+                "redistributed_electorates": as_jsonb(
+                    record.get("redistributed_electorates") or []
+                ),
+                "other_localities": as_jsonb(record.get("other_localities") or []),
+                "aec_division_ids": as_jsonb(record.get("aec_division_ids") or []),
+                "source_document_id": source_document_id,
+                "source_updated_text": record.get("page_updated_text") or None,
+                "source_boundary_context": record.get("source_boundary_context")
+                or "next_federal_election_electorates",
+                "current_member_context": record.get("current_member_context")
+                or "previous_election_or_subsequent_by_election_member",
+                "metadata": as_jsonb(_postcode_record_metadata(record)),
+            },
+        )
+
+
 def load_postcode_electorate_crosswalk(
     conn,
     jsonl_path: Path | None = None,
@@ -936,22 +1030,9 @@ def load_postcode_electorate_crosswalk(
         for record in records
     } or {"aec_postcode_locality_search"}
 
-    if artifact_postcodes:
-        with conn.cursor() as cur:
-            cur.execute(
-                """
-                DELETE FROM postcode_electorate_crosswalk
-                WHERE postcode = ANY(%s)
-                  AND match_method = ANY(%s)
-                """,
-                (sorted(artifact_postcodes), sorted(artifact_match_methods)),
-            )
-
-    source_doc_cache: dict[str, int] = {}
-    inserted_or_updated = 0
+    resolved_records: list[tuple[dict[str, Any], int]] = []
+    unresolved_records: list[dict[str, Any]] = []
     skipped_missing_electorate = 0
-    postcode_count: set[str] = set()
-    ambiguous_postcodes: set[str] = set()
     for record in records:
         postcode = str(record.get("postcode") or "")
         electorate_name = str(record.get("electorate_name") or "")
@@ -965,27 +1046,62 @@ def load_postcode_electorate_crosswalk(
         )
         if electorate_id is None:
             skipped_missing_electorate += 1
+            unresolved_records.append(record)
             continue
-        metadata_path = str(record.get("source_metadata_path") or "")
-        source_document_id = None
-        if metadata_path:
-            if metadata_path not in source_doc_cache:
-                source_doc_cache[metadata_path] = upsert_source_document(
-                    conn,
-                    _resolve_project_path(metadata_path),
-                )
-            source_document_id = source_doc_cache[metadata_path]
-        metadata = {
-            "source_dataset": record.get("source_dataset"),
-            "normalizer_name": record.get("normalizer_name"),
-            "normalizer_version": record.get("normalizer_version"),
-            "caveat": record.get("caveat"),
-            "ambiguity": record.get("ambiguity"),
-            "source_boundary_context": record.get("source_boundary_context"),
-            "current_member_context": record.get("current_member_context"),
-            "aec_boundary_note": record.get("aec_boundary_note"),
-            "original_rows": record.get("original_rows", []),
-        }
+        resolved_records.append((record, electorate_id))
+
+    if artifact_postcodes:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM postcode_electorate_crosswalk
+                WHERE postcode = ANY(%s)
+                  AND match_method = ANY(%s)
+                """,
+                (sorted(artifact_postcodes), sorted(artifact_match_methods)),
+            )
+            cur.execute(
+                """
+                DELETE FROM postcode_electorate_crosswalk_unresolved
+                WHERE postcode = ANY(%s)
+                  AND match_method = ANY(%s)
+                """,
+                (sorted(artifact_postcodes), sorted(artifact_match_methods)),
+            )
+
+    source_doc_cache: dict[str, int] = {}
+    inserted_or_updated = 0
+    unresolved_inserted_or_updated = 0
+    postcode_count: set[str] = set()
+    ambiguous_postcodes: set[str] = set()
+
+    for record in unresolved_records:
+        postcode = str(record.get("postcode") or "")
+        if not postcode:
+            continue
+        source_document_id = _postcode_source_document_id(
+            conn,
+            record,
+            source_doc_cache,
+        )
+        _insert_unresolved_postcode_candidate(
+            conn,
+            record=record,
+            source_document_id=source_document_id,
+        )
+        unresolved_inserted_or_updated += 1
+        postcode_count.add(postcode)
+        if record.get("ambiguity") == "ambiguous_postcode":
+            ambiguous_postcodes.add(postcode)
+
+    for record, electorate_id in resolved_records:
+        postcode = str(record.get("postcode") or "")
+        state = str(record.get("state_or_territory") or "")
+        source_document_id = _postcode_source_document_id(
+            conn,
+            record,
+            source_doc_cache,
+        )
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -1038,7 +1154,7 @@ def load_postcode_electorate_crosswalk(
                     or "next_federal_election_electorates",
                     "current_member_context": record.get("current_member_context")
                     or "previous_election_or_subsequent_by_election_member",
-                    "metadata": as_jsonb(metadata),
+                    "metadata": as_jsonb(_postcode_record_metadata(record)),
                 },
             )
         inserted_or_updated += 1
@@ -1053,6 +1169,7 @@ def load_postcode_electorate_crosswalk(
         "ambiguous_postcodes": len(ambiguous_postcodes),
         "source_documents_upserted": len(source_doc_cache),
         "skipped_missing_electorate": skipped_missing_electorate,
+        "unresolved_postcode_candidates": unresolved_inserted_or_updated,
         "jsonl_path": str(path),
     }
 
@@ -2373,6 +2490,16 @@ def load_house_interest_records(conn, jsonl_path: Path | None = None) -> dict[st
     }
 
 
+def _senate_interest_extraction_confidence(record: dict[str, Any]) -> str:
+    extraction = record.get("counterparty_extraction")
+    provider_method = (
+        str(extraction.get("method") or "") if isinstance(extraction, dict) else ""
+    )
+    if provider_method.startswith("subject_provider_verb:"):
+        return "official_api_structured_provider_heuristic"
+    return "official_api_structured"
+
+
 def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
     path = jsonl_path or latest_file(PROCESSED_DIR / "senate_interest_records", "*.jsonl")
     person_lookup = _person_lookup(conn)
@@ -2450,7 +2577,7 @@ def load_senate_interest_records(conn, jsonl_path: Path | None = None) -> dict[s
                         source_document_id,
                         f"cdap:{record['cdap_id']}:interest:{record['interest_id']}",
                         json.dumps(record.get("original", {}), sort_keys=True),
-                        "official_api_structured",
+                        _senate_interest_extraction_confidence(record),
                         as_jsonb(record),
                     ),
                 )

@@ -217,12 +217,15 @@ The federal foundation pipeline currently performs:
     "valued at", "worth", or a parseable date. A second conservative pattern
     captures subject-provider wording such as "Example Foundation provided..."
     or "Commonwealth Bank hosted..." when the source text names the provider
-    before the verb. Date parsing includes numeric dates, day-month dates,
-    day-range starts, and month-first dates. A narrow branded-benefit pass also
-    identifies source providers for recurring named benefits such as Qantas
-    Chairman's Lounge, Virgin lounge/club access, airline upgrades, and Foxtel
-    subscriptions. Non-disclosed providers, values, or dates remain labelled as
-    missing rather than inferred.
+    before the verb. That subject-provider pattern is treated as a review-gated
+    heuristic in Senate API rows, and passive fragments such as "tickets were
+    provided" or "I was gifted" are rejected as provider names. Date parsing
+    includes numeric dates, day-month dates, day-range starts, and month-first
+    dates. A narrow branded-benefit pass also identifies source providers for
+    recurring named benefits such as Qantas Chairman's Lounge, Virgin
+    lounge/club access, airline upgrades, and Foxtel subscriptions.
+    Non-disclosed providers, values, or dates remain labelled as missing rather
+    than inferred.
 18. Optional, when `THEY_VOTE_FOR_YOU_API_KEY` is available: fetch They Vote For
     You division lists/details, archive raw public JSON with API-key-free
     request metadata, and normalize divisions, votes, linked civic policies,

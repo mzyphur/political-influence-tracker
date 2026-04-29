@@ -71,7 +71,6 @@ SUBJECT_PROVIDER_PATTERN = re.compile(
     r"\b(?P<name>[A-Z][A-Za-z0-9&'’.,() -]{2,120}?)\s+"
     r"(?P<verb>provided|supplied|hosted|sponsored|funded|paid\s+for|"
     r"donated|gifted|facilitated|arranged|organised|organized|invited)\b",
-    flags=re.IGNORECASE,
 )
 
 BRANDED_PROVIDER_PATTERNS = (
@@ -150,8 +149,9 @@ def _clean_provider_name(name: str) -> str:
     name = _clean_text(name)
     name = re.sub(r"\s+-\s+.*$", "", name)
     name = re.sub(
-        r"\s+(?:on|at|for|to attend|to the|valued at|value|cost(?:ing)?|including|"
-        r"estimated at|estimated value|worth|approx(?:imately)?)\b.*$",
+        r"\s+(?:on|at|for|to attend|to assist|to support|to participate|to speak|"
+        r"to my|to the|valued at|value|cost(?:ing)?|including|estimated at|"
+        r"estimated value|worth|approx(?:imately)?)\b.*$",
         "",
         name,
         flags=re.IGNORECASE,
@@ -179,18 +179,42 @@ def _looks_like_travel_route(description: str, match: re.Match[str]) -> bool:
 
 def _generic_subject_provider(value: str) -> bool:
     normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    tokens = normalized.split()
+    if any(token in {"am", "are", "is", "was", "were", "be", "been", "being"} for token in tokens):
+        return True
+    if tokens and tokens[0] in {
+        "i",
+        "we",
+        "my",
+        "our",
+        "ticket",
+        "tickets",
+        "travel",
+        "hospitality",
+        "flight",
+        "flights",
+        "airfare",
+        "airfares",
+        "accommodation",
+    }:
+        return True
     return normalized in {
         "",
         "i",
+        "i was",
         "me",
         "self",
         "the member",
         "member",
         "my office",
+        "my office was",
         "parliament house",
         "tickets",
+        "tickets were",
         "travel",
+        "travel was",
         "hospitality",
+        "hospitality was",
     }
 
 

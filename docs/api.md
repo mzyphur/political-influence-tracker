@@ -103,9 +103,13 @@ source-backed electorate candidate with `match_method`, `confidence`,
 the AEC ambiguity caveat. AEC Electorate Finder results may describe electorates
 for the next federal election, so the API also exposes `source_boundary_context`
 and `current_member_context`; postcode search must not be displayed as proof of
-the current local member after a redistribution. When a postcode is not loaded,
-the API returns a `postcode_search` limitation rather than implying the postcode
-has no federal electorate.
+the current local member after a redistribution. If an AEC candidate cannot yet
+be resolved to the loaded House electorate boundary table, the loader stores it
+in `postcode_electorate_crosswalk_unresolved` and the API returns a
+`postcode_search` limitation naming the unresolved candidate instead of silently
+dropping it. When a postcode is not loaded at all, the API returns a
+`postcode_search` limitation rather than implying the postcode has no federal
+electorate.
 
 Next implementation path:
 

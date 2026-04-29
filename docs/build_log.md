@@ -12,6 +12,11 @@ Completed:
   hardening added AEC division ids, next-election boundary context, deterministic
   seed hashes, stale-row replacement on reload, and removal of local filesystem
   paths from public API metadata.
+- Added `postcode_electorate_crosswalk_unresolved` so AEC postcode candidates
+  that cannot yet be resolved to the loaded House boundary table remain
+  auditable and surface as explicit search limitations rather than disappearing.
+  The frontend now renders search limitations and marks postcode map-opening as
+  pending until the target feature is actually loaded.
 - Compact laptop map layout pass: narrowed the left controls and right details
   overlays, reduced panel spacing, made both overlays independently scrollable,
   and collapsed the long coverage caveat behind a disclosure control so map
@@ -61,9 +66,11 @@ Completed:
 - Added a further benefit-extraction hardening pass for source text that names
   the provider before the verb, such as "Commonwealth Bank hosted..." or
   "Example Foundation provided..."; date parsing now handles day-range starts
-  and month-first dates. Regenerated the House/Senate interest artifacts and
-  narrowly refreshed local `gift_interest` plus `influence_event` records
-  without rebuilding map geometry.
+  and month-first dates. A follow-up review gate rejects passive fragments such
+  as "tickets were provided" as provider names and marks Senate subject-provider
+  captures as heuristic review items. Regenerated the House/Senate interest
+  artifacts and narrowly refreshed local `gift_interest` plus `influence_event`
+  records without rebuilding map geometry.
 - Added `docs/theory_of_influence.md` as the standing theory/methodology layer
   connecting engineering decisions to mechanisms of influence, democratic
   transparency, operating hypotheses, allowed claims, non-claims, and the

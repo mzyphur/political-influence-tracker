@@ -212,7 +212,9 @@ QA. `/api/coverage` exposes source-family coverage so map-linked representative
 counts are not confused with whole-database party/entity/return-level money-flow
 counts. Postcode search can return source-backed AEC electorate candidates
 where the crosswalk has been loaded, with explicit caveats for split postcodes
-and AEC next-election boundary context.
+and AEC next-election boundary context. AEC candidates that cannot yet be
+matched to the loaded boundary table are retained in an unresolved-audit table
+and surfaced as search limitations, not discarded.
 
 ## Standards
 

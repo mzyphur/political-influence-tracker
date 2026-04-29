@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import uuid
@@ -20,6 +21,7 @@ from au_politics_money.db.load import (
     connect,
     link_aec_direct_representative_money_flows,
     load_influence_events,
+    load_postcode_electorate_crosswalk,
     load_qld_ecq_eds_contexts,
     load_qld_ecq_eds_participants,
 )
@@ -126,6 +128,8 @@ def _assert_expected_indexes(conn) -> None:
             "postcode_electorate_crosswalk_postcode_idx",
             "postcode_electorate_crosswalk_electorate_idx",
             "postcode_electorate_crosswalk_source_document_idx",
+            "postcode_electorate_crosswalk_unresolved_postcode_idx",
+            "postcode_electorate_crosswalk_unresolved_source_document_idx",
         ):
             cur.execute("SELECT to_regclass(%s)", (index_name,))
             assert cur.fetchone()[0] is not None, index_name
@@ -817,6 +821,10 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
         result["metadata"]["electorate_name"]: result["metadata"]["locality_count"]
         for result in postcode_payload["results"]
     } == {"Canberra": 3, "Bean": 1}
+    assert {
+        result["metadata"]["electorate_name"]: result["metadata"]["chamber"]
+        for result in postcode_payload["results"]
+    } == {"Canberra": "house", "Bean": "house"}
 
     entity_search_response = client.get(
         "/api/search",
@@ -911,6 +919,99 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     context_payload = context_response.json()
     assert context_payload["row_count"] == 1
     assert context_payload["rows"][0]["relationship"] == "direct_material_interest"
+
+
+def test_postcode_loader_keeps_unresolved_aec_candidates_auditable(
+    integration_db: IntegrationDatabase,
+    tmp_path: Path,
+) -> None:
+    body_path = tmp_path / "postcode.html"
+    body_text = "<html><body>AEC postcode fixture</body></html>"
+    body_path.write_text(body_text, encoding="utf-8")
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "source": {
+                    "source_id": "aec_electorate_finder_postcode_9999",
+                    "name": "AEC Electorate Finder postcode 9999",
+                    "source_type": "postcode_locality_electorate_lookup",
+                    "jurisdiction": "Commonwealth",
+                    "url": (
+                        "https://electorate.aec.gov.au/LocalitySearchResults.aspx"
+                        "?filter=9999&filterby=Postcode"
+                    ),
+                },
+                "fetched_at": "20260429T000000Z",
+                "final_url": (
+                    "https://electorate.aec.gov.au/LocalitySearchResults.aspx"
+                    "?filter=9999&filterby=Postcode"
+                ),
+                "http_status": 200,
+                "content_type": "text/html",
+                "sha256": hashlib.sha256(body_text.encode("utf-8")).hexdigest(),
+                "body_path": str(body_path),
+            }
+        ),
+        encoding="utf-8",
+    )
+    jsonl_path = tmp_path / "postcode_crosswalk.jsonl"
+    record = {
+        "postcode": "9999",
+        "electorate_name": "Future Seat",
+        "state_or_territory": "NSW",
+        "match_method": "aec_postcode_locality_search",
+        "confidence": "1.0",
+        "locality_count": 1,
+        "localities": ["FUTURE TOWN"],
+        "redistributed_electorates": [],
+        "other_localities": [],
+        "aec_division_ids": [999],
+        "page_updated_text": "29 April 2026",
+        "source_boundary_context": "next_federal_election_electorates",
+        "current_member_context": "previous_election_or_subsequent_by_election_member",
+        "source_dataset": "aec_electorate_finder_postcode",
+        "normalizer_name": "aec_electorate_finder_postcode_normalizer",
+        "normalizer_version": "1",
+        "caveat": "fixture caveat",
+        "ambiguity": "single_electorate",
+        "source_metadata_path": str(metadata_path),
+        "original_rows": [{"Locality/Suburb": "FUTURE TOWN"}],
+    }
+    jsonl_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+    with connect(integration_db.url) as conn:
+        summary = load_postcode_electorate_crosswalk(conn, jsonl_path=jsonl_path)
+        assert summary["postcode_electorate_crosswalk_rows"] == 0
+        assert summary["skipped_missing_electorate"] == 1
+        assert summary["unresolved_postcode_candidates"] == 1
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT postcode, electorate_name, aec_division_ids
+                FROM postcode_electorate_crosswalk_unresolved
+                WHERE postcode = '9999'
+                """
+            )
+            unresolved = cur.fetchone()
+        assert unresolved[0] == "9999"
+        assert unresolved[1] == "Future Seat"
+        assert unresolved[2] == [999]
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/search",
+        params=[("q", "9999"), ("types", "postcode"), ("limit", "5")],
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["result_count"] == 0
+    statuses = {limitation["status"] for limitation in payload["limitations"]}
+    assert "postcode_candidates_unresolved" in statuses
+    assert "postcode_no_map_linked_results" in statuses
+    assert "Future Seat" in " ".join(
+        limitation["message"] for limitation in payload["limitations"]
+    )
 
 
 def test_coverage_reports_partial_qld_state_and_local_levels(

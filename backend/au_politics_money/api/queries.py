@@ -555,6 +555,61 @@ def _search_sectors(conn, pattern: str, limit: int) -> list[dict[str, Any]]:
     ]
 
 
+def _append_unresolved_postcode_limitations(
+    conn,
+    *,
+    query: str,
+    limitations: list[dict[str, str]],
+    has_resolved_rows: bool,
+) -> bool:
+    if not _table_exists(conn, "postcode_electorate_crosswalk_unresolved"):
+        return False
+    unresolved_rows = _fetch_dicts(
+        conn,
+        """
+        SELECT
+            postcode,
+            electorate_name,
+            state_or_territory,
+            locality_count,
+            source_boundary_context,
+            current_member_context,
+            metadata
+        FROM postcode_electorate_crosswalk_unresolved
+        WHERE postcode = %s
+        ORDER BY confidence DESC, locality_count DESC, electorate_name
+        LIMIT 10
+        """,
+        (query,),
+    )
+    if not unresolved_rows:
+        return False
+    candidate_names = ", ".join(
+        str(row.get("electorate_name") or "unnamed electorate") for row in unresolved_rows
+    )
+    prefix = (
+        "Some AEC postcode candidates are not yet linked to the local electorate table"
+        if has_resolved_rows
+        else "AEC postcode candidates were loaded but are not yet linked to the local electorate table"
+    )
+    limitations.append(
+        {
+            "feature": "postcode_search",
+            "status": (
+                "postcode_some_candidates_unresolved"
+                if has_resolved_rows
+                else "postcode_candidates_unresolved"
+            ),
+            "message": (
+                f"{prefix} for postcode {query}: {candidate_names}. This can happen "
+                "when the AEC finder reflects next-election boundaries or a new "
+                "division name before the current map boundary table is refreshed."
+            ),
+        }
+    )
+    return True
+
+
 def _search_postcodes(
     conn,
     query: str,
@@ -591,7 +646,8 @@ def _search_postcodes(
             source_document.url AS source_url,
             electorate.id AS electorate_id,
             electorate.name AS electorate_name,
-            electorate.state_or_territory
+            electorate.state_or_territory,
+            electorate.chamber
         FROM postcode_electorate_crosswalk crosswalk
         JOIN electorate ON electorate.id = crosswalk.electorate_id
         LEFT JOIN source_document ON source_document.id = crosswalk.source_document_id
@@ -601,15 +657,32 @@ def _search_postcodes(
         """,
         (query, limit),
     )
+    has_unresolved_rows = _append_unresolved_postcode_limitations(
+        conn,
+        query=query,
+        limitations=limitations,
+        has_resolved_rows=bool(rows),
+    )
     if not rows:
         limitations.append(
             {
                 "feature": "postcode_search",
-                "status": "postcode_not_loaded",
+                "status": (
+                    "postcode_no_map_linked_results"
+                    if has_unresolved_rows
+                    else "postcode_not_loaded"
+                ),
                 "message": (
-                    "No source-backed AEC electorate-finder crosswalk row is loaded "
-                    f"for postcode {query}. The absence of a result is not evidence "
-                    "that the postcode has no federal electorate."
+                    (
+                        "No AEC postcode candidates for this postcode are currently "
+                        "linked to the map boundary table."
+                    )
+                    if has_unresolved_rows
+                    else (
+                        "No source-backed AEC electorate-finder crosswalk row is loaded "
+                        f"for postcode {query}. The absence of a result is not evidence "
+                        "that the postcode has no federal electorate."
+                    )
                 ),
             }
         )

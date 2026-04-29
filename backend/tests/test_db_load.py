@@ -6,6 +6,7 @@ import pytest
 from au_politics_money.db.load import (
     MAX_COASTLINE_REPAIR_BUFFER_METERS,
     _can_create_house_interest_person,
+    _senate_interest_extraction_confidence,
     apply_schema,
     classify_interest_event,
     classify_money_event_type,
@@ -89,6 +90,21 @@ def test_parse_aec_money_flow_date_validates_financial_year_bounds() -> None:
 def test_senate_api_name_to_canonical() -> None:
     assert senate_api_name_to_canonical("Allman-Payne, Penny") == "Penny Allman-Payne"
     assert senate_api_name_to_canonical("Alex Antic") == "Alex Antic"
+
+
+def test_senate_interest_subject_provider_requires_review_gate() -> None:
+    assert (
+        _senate_interest_extraction_confidence(
+            {"counterparty_extraction": {"method": "subject_provider_verb:provided"}}
+        )
+        == "official_api_structured_provider_heuristic"
+    )
+    assert (
+        _senate_interest_extraction_confidence(
+            {"counterparty_extraction": {"method": "explicit_provider_phrase:provided by"}}
+        )
+        == "official_api_structured"
+    )
 
 
 def test_normalize_electorate_name_strips_ocr_old_suffix() -> None:

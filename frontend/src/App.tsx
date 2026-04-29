@@ -48,6 +48,7 @@ import type {
   LoadState,
   PartyProfile,
   RepresentativeProfile,
+  SearchResponse,
   SearchResult,
   StateLocalSummaryContextRow,
   StateLocalSummaryEntityRow,
@@ -82,6 +83,7 @@ function App() {
   const [query, setQuery] = useState("");
   const [searchStatus, setSearchStatus] = useState<LoadState>("idle");
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchLimitations, setSearchLimitations] = useState<SearchResponse["limitations"]>([]);
   const [searchCaveat, setSearchCaveat] = useState("");
   const [selectedSearchResult, setSelectedSearchResult] = useState<SearchResult | null>(null);
   const [pendingSearchResult, setPendingSearchResult] = useState<SearchResult | null>(null);
@@ -245,6 +247,7 @@ function App() {
     const cleaned = query.trim();
     if (dataLevel !== "federal" || cleaned.length < 3) {
       setSearchResults([]);
+      setSearchLimitations([]);
       setSearchStatus("idle");
       return;
     }
@@ -254,12 +257,14 @@ function App() {
       searchDatabase(cleaned, controller.signal)
         .then((payload) => {
           setSearchResults(payload.results);
+          setSearchLimitations(payload.limitations);
           setSearchCaveat(payload.caveat);
           setSearchStatus("ready");
         })
         .catch((error: Error) => {
           if (controller.signal.aborted) return;
           setSearchStatus("error");
+          setSearchLimitations([]);
           setSearchCaveat(error.message);
         });
     }, 180);
@@ -408,6 +413,15 @@ function App() {
     setSelectedSearchResult(result);
     const resultChamber = stringMetadata(result, "chamber")?.toLowerCase();
     const resultState = stringMetadata(result, "state_or_territory")?.toUpperCase();
+    if (result.type === "postcode") {
+      setDataLevel("federal");
+      setChamber("house");
+      if (resultState && states.includes(resultState)) {
+        setStateFilter(resultState);
+      }
+      setPendingSearchResult(result);
+      return;
+    }
     if (resultChamber === "house" || resultChamber === "senate") {
       setDataLevel("federal");
       setChamber(resultChamber);
@@ -649,6 +663,18 @@ function App() {
               {searchStatus === "ready" && searchResults.length === 0 && (
                 <p className="muted">No source-backed results matched this search.</p>
               )}
+              {searchLimitations.length > 0 && (
+                <div className="search-limitations" aria-label="Search limitations">
+                  {searchLimitations.map((limitation) => (
+                    <p
+                      className="caveat compact"
+                      key={`${limitation.feature}:${limitation.status}:${limitation.message}`}
+                    >
+                      {limitation.message}
+                    </p>
+                  ))}
+                </div>
+              )}
               {searchResults.map((result) => (
                 <button
                   type="button"
@@ -670,7 +696,13 @@ function App() {
                 selectedSearchResult.type !== "party" && (
                 <div className="search-selection-note">
                   <strong>{selectedSearchResult.label}</strong>
-                  <span>{searchSelectionNote(selectedSearchResult)}</span>
+                  <span>
+                    {searchSelectionNote(
+                      selectedSearchResult,
+                      pendingSearchResult?.type === selectedSearchResult.type &&
+                        String(pendingSearchResult.id) === String(selectedSearchResult.id)
+                    )}
+                  </span>
                 </div>
               )}
               {searchCaveat && <p className="caveat compact">{searchCaveat}</p>}
@@ -1162,8 +1194,15 @@ function stringMetadata(result: SearchResult, key: string): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
-function searchSelectionNote(result: SearchResult): string {
+function searchSelectionNote(result: SearchResult, isPending = false): string {
   if (result.type === "postcode") {
+    if (isPending) {
+      return (
+        "Looking for this source-backed AEC electorate candidate in the current House map. " +
+        "If it does not appear, the candidate may be a next-election boundary result that " +
+        "has not yet been linked to the loaded map boundary table."
+      );
+    }
     return (
       "Opened this source-backed AEC electorate candidate on the map. Postcodes can split " +
       "across electorates and the AEC finder can reflect next-election boundaries, so this " +
