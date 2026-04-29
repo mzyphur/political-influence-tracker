@@ -92,5 +92,10 @@ export function findFeatureByResult(
       )
     );
   }
+  if (resultType === "postcode") {
+    const electorateId = String(resultId).split(":")[1];
+    if (!electorateId) return undefined;
+    return features.find((feature) => String(feature.id) === electorateId);
+  }
   return undefined;
 }

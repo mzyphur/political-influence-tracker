@@ -397,7 +397,7 @@ function App() {
     if (feature) {
       setSelectedFeature(feature);
       setPendingSearchResult(null);
-      setSelectedSearchResult(null);
+      setSelectedSearchResult(result.type === "postcode" ? result : null);
       setEntityProfile(null);
       setEntityProfileStatus("idle");
       setPartyProfile(null);
@@ -670,11 +670,7 @@ function App() {
                 selectedSearchResult.type !== "party" && (
                 <div className="search-selection-note">
                   <strong>{selectedSearchResult.label}</strong>
-                  <span>
-                    This {selectedSearchResult.type.replace("_", " ")} result is in the database,
-                    but it is not yet a map drilldown target. Use it as a discovery lead while
-                    party, sector, and topic detail panels are built.
-                  </span>
+                  <span>{searchSelectionNote(selectedSearchResult)}</span>
                 </div>
               )}
               {searchCaveat && <p className="caveat compact">{searchCaveat}</p>}
@@ -1164,4 +1160,19 @@ export default App;
 function stringMetadata(result: SearchResult, key: string): string | null {
   const value = result.metadata[key];
   return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function searchSelectionNote(result: SearchResult): string {
+  if (result.type === "postcode") {
+    return (
+      "Opened this source-backed AEC electorate candidate on the map. Postcodes can split " +
+      "across electorates and the AEC finder can reflect next-election boundaries, so this " +
+      "is not address-level proof of the current local member."
+    );
+  }
+  return (
+    `This ${result.type.replace("_", " ")} result is in the database, but it is not yet ` +
+    "a map drilldown target. Use it as a discovery lead while party, sector, and topic " +
+    "detail panels are built."
+  );
 }
