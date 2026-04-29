@@ -29,6 +29,11 @@ Completed:
   When a source/provider field is not named but the public description contains
   useful text, collapsed cards now use that description instead of leading with
   "Source not named".
+- Enabled first-pass State/Council map search in the frontend. Outside federal
+  mode the search box now searches the loaded map features client-side by
+  electorate/council name, state, current representative names, parties, and
+  boundary metadata. This is intentionally map-feature search only; disclosure
+  attribution remains governed by the state/local caveats.
 - Added the first source-backed council map layer. The new QLD
   local-government boundary adapter fetches the official Queensland government
   ArcGIS/QSpatial local-government layer, normalizes 78 current council areas

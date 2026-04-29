@@ -101,6 +101,12 @@ type GraphRoot = {
   label: string;
   includeCandidates: boolean;
 };
+type LocalMapSearchResult = {
+  feature: ElectorateFeature;
+  type: "state_electorate" | "council_area";
+  label: string;
+  subtitle: string;
+};
 type StateLocalRecordPage = {
   records: StateLocalSummaryRecord[];
   status: LoadState;
@@ -276,6 +282,11 @@ function App() {
   const hasPostcodeLimitations = searchLimitations.some(
     (limitation) => limitation.feature === "postcode_search"
   );
+  const localMapSearchResults = useMemo(
+    () => buildLocalMapSearchResults(features, query, dataLevel),
+    [dataLevel, features, query]
+  );
+  const localMapSearchActive = dataLevel !== "federal" && query.trim().length >= 2;
 
   useEffect(() => {
     const controller = new AbortController();
@@ -745,12 +756,13 @@ function App() {
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              disabled={dataLevel !== "federal"}
               placeholder={
                 dataLevel === "federal"
                   ? "Search representatives, electorates, parties, entities, sectors"
+                  : dataLevel === "state"
+                    ? "Search loaded state electorates, MPs, parties"
                   : features.length > 0
-                    ? `${levelLabels[dataLevel]} map search is pending`
+                    ? "Search loaded councils"
                   : selectedLevelHasPartialData
                     ? `${levelLabels[dataLevel]} map/search drilldown is pending`
                     : `${levelLabels[dataLevel]} search will activate after ingestion`
@@ -889,6 +901,42 @@ function App() {
                 </div>
               )}
               {searchCaveat && <p className="caveat compact">{searchCaveat}</p>}
+            </div>
+          )}
+          {localMapSearchActive && (
+            <div className="search-results" aria-label={`${levelLabels[dataLevel]} map search results`} aria-live="polite">
+              {mapStatus === "loading" && (
+                <p className="muted inline-loading">
+                  <Loader2 size={14} className="spin" aria-hidden="true" />
+                  Searching loaded map features
+                </p>
+              )}
+              {mapStatus === "ready" && localMapSearchResults.length === 0 && (
+                <p className="muted">
+                  No loaded {levelLabels[dataLevel].toLowerCase()} map feature matched this search.
+                </p>
+              )}
+              {localMapSearchResults.map((item) => (
+                <button
+                  type="button"
+                  key={`${item.type}:${item.feature.properties.electorate_id}`}
+                  className="search-result"
+                  data-selected={selectedFeature?.id === item.feature.id}
+                  onClick={() => {
+                    setSelectedFeature(item.feature);
+                    setSelectedSearchResult(null);
+                    setPendingSearchResult(null);
+                  }}
+                >
+                  <span className="result-type">{item.type.replace("_", " ")}</span>
+                  <strong>{item.label}</strong>
+                  <small>{item.subtitle}</small>
+                </button>
+              ))}
+              <p className="caveat compact">
+                This searches loaded map features only. Disclosure rows remain governed by
+                the state/local attribution caveats.
+              </p>
             </div>
           )}
           {selectedSearchResult?.type === "entity" && (
@@ -2091,6 +2139,89 @@ function safeSourceHref(value: string | null | undefined) {
   } catch {
     return null;
   }
+}
+
+function buildLocalMapSearchResults(
+  features: ElectorateFeature[],
+  query: string,
+  dataLevel: DataLevel
+): LocalMapSearchResult[] {
+  if (dataLevel === "federal") return [];
+  const cleaned = normalizeSearchText(query);
+  if (cleaned.length < 2) return [];
+  return features
+    .map((feature) => {
+      const haystack = normalizeSearchText(localFeatureHaystack(feature));
+      if (!haystack.includes(cleaned)) return null;
+      return {
+        feature,
+        type: dataLevel === "state" ? "state_electorate" : "council_area",
+        label: feature.properties.electorate_name,
+        subtitle: localFeatureSubtitle(feature)
+      } satisfies LocalMapSearchResult;
+    })
+    .filter((item): item is LocalMapSearchResult => item !== null)
+    .sort((left, right) => localFeatureRank(left, cleaned) - localFeatureRank(right, cleaned))
+    .slice(0, 8);
+}
+
+function normalizeSearchText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function localFeatureHaystack(feature: ElectorateFeature): string {
+  const properties = feature.properties;
+  return [
+    properties.electorate_name,
+    properties.state_or_territory,
+    properties.party_name,
+    properties.party_short_name,
+    properties.boundary_set,
+    ...properties.current_representatives.flatMap((representative) => [
+      representative.display_name,
+      representative.party_name,
+      representative.party_short_name,
+      representative.portfolio
+    ]),
+    ...properties.party_breakdown.flatMap((party) => [
+      party.party_name,
+      party.party_short_name
+    ])
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function localFeatureSubtitle(feature: ElectorateFeature): string {
+  const properties = feature.properties;
+  const representativeNames = properties.current_representatives
+    .slice(0, 2)
+    .map((representative) => representative.display_name)
+    .filter(Boolean);
+  const representativeLabel = representativeNames.length
+    ? representativeNames.join(", ")
+    : properties.chamber === "council"
+      ? "Council boundary"
+      : "No current representative loaded";
+  return [
+    properties.state_or_territory,
+    properties.chamber === "council" ? "council area" : "state electorate",
+    representativeLabel
+  ]
+    .filter(Boolean)
+    .join(" · ");
+}
+
+function localFeatureRank(result: LocalMapSearchResult, cleanedQuery: string): number {
+  const name = normalizeSearchText(result.feature.properties.electorate_name);
+  if (name === cleanedQuery) return 0;
+  if (name.startsWith(cleanedQuery)) return 1;
+  if (name.includes(cleanedQuery)) return 2;
+  return 3;
 }
 
 export default App;
