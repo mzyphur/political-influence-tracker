@@ -1389,6 +1389,38 @@ def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
             "body_path": str(body_path),
             "body_sha256": sha256_path(body_path),
         }
+    declaration_url = "https://www.tec.tas.gov.au/example-declaration.pdf"
+    declaration_body_path = tmp_path / "tas-declaration.pdf"
+    declaration_body_bytes = b"%PDF-1.4\nfixture\n%%EOF\n"
+    declaration_body_path.write_bytes(declaration_body_bytes)
+    declaration_metadata_path = tmp_path / "tas-declaration.metadata.json"
+    declaration_metadata_path.write_text(
+        json.dumps(
+            {
+                "source": {
+                    "source_id": "tas_tec_declaration_document_fixture",
+                    "url": declaration_url,
+                },
+                "body_path": str(declaration_body_path),
+                "sha256": sha256_path(declaration_body_path),
+                "ok": True,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    declaration_attempt = {
+        "archive_source_id": "tas_tec_declaration_document_fixture",
+        "archive_metadata_path": str(declaration_metadata_path),
+        "archive_metadata_sha256": sha256_path(declaration_metadata_path),
+        "archived": True,
+    }
+    declaration_hash = {
+        **declaration_attempt,
+        "archive_body_path": str(declaration_body_path),
+        "archive_body_sha256": sha256_path(declaration_body_path),
+    }
     summary_path = tmp_path / "tas-donations.summary.json"
     summary_path.write_text(
         json.dumps(
@@ -1400,6 +1432,13 @@ def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
                 "jsonl_sha256": sha256_path(jsonl_path),
                 "source_counts": {source_id: 1 for source_id in source_ids},
                 "source_hashes": source_hashes,
+                "supporting_document_url_count": 1,
+                "supporting_document_attempts": {
+                    declaration_url: declaration_attempt,
+                },
+                "supporting_document_hashes": {
+                    declaration_url: declaration_hash,
+                },
                 "total_count": 3,
             },
             sort_keys=True,
@@ -1432,6 +1471,11 @@ def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
     )
 
     assert tas_tec_donation_path_from_pipeline_manifest(manifest_path) == jsonl_path
+
+    declaration_body_path.write_bytes(b"%PDF-1.4\ntampered\n%%EOF\n")
+    with pytest.raises(ValueError, match="supporting document body hash mismatch"):
+        tas_tec_donation_path_from_pipeline_manifest(manifest_path)
+    declaration_body_path.write_bytes(declaration_body_bytes)
 
     first_body = Path(source_hashes[source_ids[0]]["body_path"])
     first_body.write_text("tampered\n", encoding="utf-8")

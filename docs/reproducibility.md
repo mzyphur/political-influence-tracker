@@ -169,7 +169,10 @@ donation date, amount, donor, recipient, recipient type, donor ABN/ACN where
 published, declaration status, declaration document URLs, supporting-document
 archive status, declaration PDF hashes where available, failed declaration
 fetch metadata, and source snapshot hashes. `tas_reportable_donation` rows
-count as gift/donation state-local rows.
+count as gift/donation state-local rows. Manifest replay validates the
+supporting-document metadata hashes and, for archived declarations, the PDF
+body hashes before database loading so declaration evidence cannot drift from
+the processed artifact unnoticed.
 `tas_reportable_loan` rows remain source-backed loan observations and are not
 merged into gift totals. Both are disclosure observations, not claims of
 wrongdoing, causation, or personal receipt unless another source supports that

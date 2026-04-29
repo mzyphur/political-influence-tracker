@@ -2071,6 +2071,7 @@ def _tas_tec_jsonl_path_from_summary(
                 f"TAS TEC metadata/body hash mismatch for {source_metadata_path}: "
                 f"metadata={metadata_body_sha256} summary={expected_source_body_sha256}"
             )
+    _validate_tas_tec_supporting_document_hashes(summary_path, summary)
     return _jsonl_path_from_summary(
         summary_path,
         TAS_TEC_PARSER_NAME,
@@ -2078,6 +2079,125 @@ def _tas_tec_jsonl_path_from_summary(
         expected_source_keys=set(TAS_TEC_SOURCE_IDS),
         source_count_field="source_counts",
     )
+
+
+def _validate_tas_tec_supporting_document_hashes(
+    summary_path: Path,
+    summary: dict[str, Any],
+) -> None:
+    supporting_document_url_count = int(summary.get("supporting_document_url_count") or 0)
+    attempts = summary.get("supporting_document_attempts")
+    hashes = summary.get("supporting_document_hashes")
+    if supporting_document_url_count and not attempts:
+        raise ValueError(
+            f"TAS TEC summary is missing supporting_document_attempts: {summary_path}"
+        )
+    if attempts is None:
+        attempts = {}
+    if hashes is None:
+        hashes = {}
+    if not isinstance(attempts, dict):
+        raise ValueError(
+            f"TAS TEC summary has invalid supporting_document_attempts: {summary_path}"
+        )
+    if not isinstance(hashes, dict):
+        raise ValueError(
+            f"TAS TEC summary has invalid supporting_document_hashes: {summary_path}"
+        )
+    for url, attempt in attempts.items():
+        if not isinstance(attempt, dict):
+            raise ValueError(
+                f"TAS TEC supporting document attempt is invalid for {url}: {summary_path}"
+            )
+        _validate_tas_tec_supporting_document_metadata(
+            summary_path=summary_path,
+            url=str(url),
+            document=attempt,
+            require_body=False,
+        )
+        if attempt.get("archived") is True and url not in hashes:
+            raise ValueError(
+                f"TAS TEC archived supporting document attempt has no body hash for {url}: "
+                f"{summary_path}"
+            )
+    for url, document_hash in hashes.items():
+        if not isinstance(document_hash, dict):
+            raise ValueError(
+                f"TAS TEC supporting document hash is invalid for {url}: {summary_path}"
+            )
+        if url not in attempts:
+            raise ValueError(
+                f"TAS TEC supporting document hash has no matching attempt for {url}: "
+                f"{summary_path}"
+            )
+        if document_hash.get("archived") is not True:
+            raise ValueError(
+                f"TAS TEC supporting document hash is not marked archived for {url}: "
+                f"{summary_path}"
+            )
+        _validate_tas_tec_supporting_document_metadata(
+            summary_path=summary_path,
+            url=str(url),
+            document=document_hash,
+            require_body=True,
+        )
+
+
+def _validate_tas_tec_supporting_document_metadata(
+    *,
+    summary_path: Path,
+    url: str,
+    document: dict[str, Any],
+    require_body: bool,
+) -> None:
+    metadata_path = Path(str(document.get("archive_metadata_path") or ""))
+    expected_metadata_sha256 = str(document.get("archive_metadata_sha256") or "")
+    if not expected_metadata_sha256:
+        raise ValueError(
+            f"TAS TEC supporting document is missing metadata hash for {url}: "
+            f"{summary_path}"
+        )
+    actual_metadata_sha256 = _sha256_path(metadata_path)
+    if actual_metadata_sha256 != expected_metadata_sha256:
+        raise ValueError(
+            f"TAS TEC supporting document metadata hash mismatch for {metadata_path}: "
+            f"summary={expected_metadata_sha256} actual={actual_metadata_sha256}"
+        )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    source = metadata.get("source")
+    metadata_source_id = source.get("source_id") if isinstance(source, dict) else None
+    expected_source_id = str(document.get("archive_source_id") or "")
+    if expected_source_id and metadata_source_id != expected_source_id:
+        raise ValueError(
+            f"Unexpected TAS TEC supporting document source_id in {metadata_path}: "
+            f"{metadata_source_id!r}"
+        )
+    if not require_body:
+        return
+
+    if metadata.get("ok") is not True:
+        raise ValueError(
+            f"TAS TEC archived supporting document metadata is not successful for {url}: "
+            f"{metadata_path}"
+        )
+    body_path = Path(str(document.get("archive_body_path") or ""))
+    expected_body_sha256 = str(document.get("archive_body_sha256") or "")
+    if not expected_body_sha256:
+        raise ValueError(
+            f"TAS TEC supporting document is missing body hash for {url}: {summary_path}"
+        )
+    actual_body_sha256 = _sha256_path(body_path)
+    if actual_body_sha256 != expected_body_sha256:
+        raise ValueError(
+            f"TAS TEC supporting document body hash mismatch for {body_path}: "
+            f"summary={expected_body_sha256} actual={actual_body_sha256}"
+        )
+    metadata_body_sha256 = str(metadata.get("sha256") or "")
+    if metadata_body_sha256 and metadata_body_sha256 != expected_body_sha256:
+        raise ValueError(
+            f"TAS TEC supporting document metadata/body hash mismatch for {metadata_path}: "
+            f"metadata={metadata_body_sha256} summary={expected_body_sha256}"
+        )
 
 
 def _latest_tas_tec_donation_jsonl() -> Path:

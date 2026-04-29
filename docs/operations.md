@@ -313,7 +313,9 @@ The TAS runner archives the TEC monthly reportable donation table and the 2025
 House of Assembly / 2026 Legislative Council seven-day disclosure table
 fragments. It also fetches linked donor/recipient declaration PDFs as
 supporting documents, hashes successful PDF downloads, and keeps failed
-declaration fetch metadata when a TEC link is broken. Normalized rows are
+declaration fetch metadata when a TEC link is broken. Manifest loading
+re-checks declaration metadata hashes and archived PDF body hashes before
+accepting the processed artifact. Normalized rows are
 written under
 `data/processed/tas_tec_donation_money_flows/` and loaded as Tasmanian state
 disclosure rows. `tas_reportable_donation` rows are donor-to-recipient

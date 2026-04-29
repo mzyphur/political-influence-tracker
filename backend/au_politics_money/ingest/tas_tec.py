@@ -348,10 +348,25 @@ def _archived_declaration_document(
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     ok = metadata.get("ok") is True
     body_path = Path(str(metadata["body_path"])) if metadata.get("body_path") else None
+    actual_body_sha256 = ""
+    if ok:
+        if body_path is None:
+            raise ValueError(f"TAS TEC archived declaration has no body path: {url}")
+        if not body_path.exists():
+            raise ValueError(
+                f"TAS TEC archived declaration body is missing for {url}: {body_path}"
+            )
+        actual_body_sha256 = _sha256_path(body_path)
+        expected_body_sha256 = str(metadata.get("sha256") or "")
+        if expected_body_sha256 and actual_body_sha256 != expected_body_sha256:
+            raise ValueError(
+                f"TAS TEC archived declaration body hash mismatch for {body_path}: "
+                f"metadata={expected_body_sha256} actual={actual_body_sha256}"
+            )
     document.update(
         {
             "archive_attempted": True,
-            "archived": bool(ok and body_path),
+            "archived": bool(ok),
             "archive_metadata_path": str(metadata_path),
             "archive_metadata_sha256": _sha256_path(metadata_path),
             "archive_source_id": (metadata.get("source") or {}).get("source_id"),
@@ -363,10 +378,13 @@ def _archived_declaration_document(
         }
     )
     if body_path:
+        body_sha256 = actual_body_sha256 or metadata.get("sha256") or ""
+        if not body_sha256 and body_path.exists():
+            body_sha256 = _sha256_path(body_path)
         document.update(
             {
                 "archive_body_path": str(body_path),
-                "archive_body_sha256": metadata.get("sha256") or _sha256_path(body_path),
+                "archive_body_sha256": body_sha256,
             }
         )
     return document

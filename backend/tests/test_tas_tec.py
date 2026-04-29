@@ -210,6 +210,66 @@ def test_normalize_tas_tec_donations_attaches_archived_declaration_metadata(tmp_
     assert declaration_url in summary["supporting_document_hashes"]
 
 
+def test_normalize_tas_tec_donations_rejects_missing_archived_declaration_body(
+    tmp_path,
+) -> None:
+    metadata_paths = {
+        source_id: _write_metadata(
+            tmp_path,
+            source_id,
+            _table_html(
+                amount="$1,200.00",
+                donor="Example Donor Pty Ltd",
+                recipient="Example Party Tasmania",
+            ),
+        )
+        for source_id in SOURCE_IDS
+    }
+    declaration_url = (
+        "https://www.tec.tas.gov.au/disclosure-and-funding/"
+        "registers-and-reports/donations/data/downloads/edf-donation-ha25-0001-d.pdf"
+    )
+    declaration_metadata = _write_declaration_metadata(tmp_path, declaration_url)
+    (tmp_path / "declaration.pdf").unlink()
+
+    with pytest.raises(ValueError, match="archived declaration body is missing"):
+        normalize_tas_tec_donations(
+            metadata_paths=metadata_paths,
+            declaration_metadata_paths={declaration_url: declaration_metadata},
+            processed_dir=tmp_path / "processed",
+        )
+
+
+def test_normalize_tas_tec_donations_rejects_tampered_archived_declaration_body(
+    tmp_path,
+) -> None:
+    metadata_paths = {
+        source_id: _write_metadata(
+            tmp_path,
+            source_id,
+            _table_html(
+                amount="$1,200.00",
+                donor="Example Donor Pty Ltd",
+                recipient="Example Party Tasmania",
+            ),
+        )
+        for source_id in SOURCE_IDS
+    }
+    declaration_url = (
+        "https://www.tec.tas.gov.au/disclosure-and-funding/"
+        "registers-and-reports/donations/data/downloads/edf-donation-ha25-0001-d.pdf"
+    )
+    declaration_metadata = _write_declaration_metadata(tmp_path, declaration_url)
+    (tmp_path / "declaration.pdf").write_bytes(b"%PDF-1.4\ntampered\n%%EOF\n")
+
+    with pytest.raises(ValueError, match="archived declaration body hash mismatch"):
+        normalize_tas_tec_donations(
+            metadata_paths=metadata_paths,
+            declaration_metadata_paths={declaration_url: declaration_metadata},
+            processed_dir=tmp_path / "processed",
+        )
+
+
 def test_fetch_tas_tec_declaration_documents_archives_unique_links(tmp_path, monkeypatch) -> None:
     metadata_paths = {
         source_id: _write_metadata(

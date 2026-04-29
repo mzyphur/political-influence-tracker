@@ -11,6 +11,13 @@ Completed:
   Pagination cursors include the selected jurisdiction so a "load more" action
   cannot mix rows from a previous state selection. The frontend state selector
   now filters the State and Council panes as well as the federal map.
+- Hardened the Tasmania declaration evidence chain after review. A declaration
+  PDF marked `archived` must now have an existing body file whose SHA-256
+  matches the fetch metadata, and the TAS manifest loader verifies both
+  declaration metadata and archived PDF body hashes before allowing a processed
+  artifact into a database load. The frontend declaration label now counts only
+  URL-backed declaration documents, so statuses such as `failed_to_lodge` do
+  not inflate the archived-document denominator.
 - Tightened the representative evidence-card display so the public pane no
   longer repeats invariant workflow labels (`official_record_parsed`,
   `needs_review`, default not-disclosed amount status, or numeric register

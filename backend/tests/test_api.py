@@ -270,6 +270,48 @@ def test_state_local_records_endpoint_accepts_act_annual_flow_filters(monkeypatc
     assert captured == flow_kinds
 
 
+def test_state_local_supporting_document_public_sanitization() -> None:
+    public_documents = queries._public_supporting_documents(
+        [
+            {
+                "role": "donor_declaration",
+                "status": "download_available",
+                "label": "Download",
+                "url": "https://example.test/declaration.pdf",
+                "archived": True,
+                "archive_http_status": 200,
+                "archive_content_type": "application/pdf",
+                "archive_content_length": 123,
+                "archive_body_sha256": "bodyhash",
+                "archive_metadata_sha256": "metadatahash",
+                "archive_fetched_at": "20260429T000000Z",
+                "archive_error": "",
+                "archive_body_path": "/private/raw/body.pdf",
+                "archive_metadata_path": "/private/raw/metadata.json",
+            }
+        ]
+    )
+
+    assert public_documents == [
+        {
+            "role": "donor_declaration",
+            "status": "download_available",
+            "label": "Download",
+            "url": "https://example.test/declaration.pdf",
+            "archived": True,
+            "archive_attempted": False,
+            "archive_source_id": None,
+            "archive_fetched_at": "20260429T000000Z",
+            "archive_body_sha256": "bodyhash",
+            "archive_metadata_sha256": "metadatahash",
+            "archive_http_status": 200,
+            "archive_content_type": "application/pdf",
+            "archive_content_length": 123,
+            "archive_error": "",
+        }
+    ]
+
+
 def test_influence_graph_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     def fake_get_influence_graph(
         *,

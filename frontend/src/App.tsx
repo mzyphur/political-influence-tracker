@@ -1589,12 +1589,13 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
 }
 
 function stateLocalSupportingDocumentCount(row: StateLocalSummaryRecord): number {
-  return Array.isArray(row.supporting_documents) ? row.supporting_documents.length : 0;
+  return stateLocalUrlBackedSupportingDocuments(row).length;
 }
 
 function stateLocalArchivedSupportingDocumentCount(row: StateLocalSummaryRecord): number {
-  if (!Array.isArray(row.supporting_documents)) return 0;
-  return row.supporting_documents.filter((document) => document.archived === true).length;
+  return stateLocalUrlBackedSupportingDocuments(row).filter(
+    (document) => document.archived === true
+  ).length;
 }
 
 function stateLocalSupportingDocumentLabel(row: StateLocalSummaryRecord): string {
@@ -1605,6 +1606,15 @@ function stateLocalSupportingDocumentLabel(row: StateLocalSummaryRecord): string
     return `${count.toLocaleString("en-AU")} declarations archived`;
   }
   return `${archived.toLocaleString("en-AU")}/${count.toLocaleString("en-AU")} declarations archived`;
+}
+
+function stateLocalUrlBackedSupportingDocuments(
+  row: StateLocalSummaryRecord
+): Array<Record<string, unknown>> {
+  if (!Array.isArray(row.supporting_documents)) return [];
+  return row.supporting_documents.filter(
+    (document) => typeof document.url === "string" && document.url.trim().length > 0
+  );
 }
 
 function formatCompactDateTime(value: string | null): string {
