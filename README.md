@@ -20,6 +20,11 @@ The project also maintains an explicit operating theory of influence in
 which influence mechanism is being operationalized, which observable indicator is
 being used, and which public claims remain out of bounds.
 
+The frontend includes a hostable public companion page at
+`frontend/public/methodology.html`, linked from the app as "Method". It translates
+the theory and evidence rules into an HTML page with diagrams for public,
+journalistic, and academic audiences.
+
 ## Current Structure
 
 - `docs/` - planning, research standards, source inventory, and methodology.

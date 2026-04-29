@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   Banknote,
+  BookOpen,
   Building2,
   CircleDot,
   Landmark,
@@ -418,6 +419,17 @@ function App() {
               </p>
               <h1>Political Influence Explorer</h1>
             </div>
+            <a
+              className="methodology-link"
+              href="/methodology.html"
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open methodology companion page"
+              title="Methodology"
+            >
+              <BookOpen size={16} aria-hidden="true" />
+              <span>Method</span>
+            </a>
           </div>
           <div className="status-pill" data-state={mapStatus}>
             {mapStatus === "loading" ? <Loader2 size={16} className="spin" /> : <CircleDot size={16} />}

@@ -45,6 +45,10 @@ The first usable screen is the national map explorer:
 - House map fills and panel accents use explicit party short-code colors for the
   party codes currently present in the database. Senate map fills use
   state/territory colors because each Senate feature is multi-member.
+- `/methodology.html` is a static public companion page bundled through Vite's
+  `public/` directory. The app header links to it as "Method"; the page explains
+  the operating theory of influence, evidence tiers, typed network model, and
+  claim limits with dependency-free HTML/SVG diagrams.
 
 ## Local Development
 
@@ -71,3 +75,6 @@ keys in `backend/.env`; only use frontend-safe map keys here.
 ```bash
 npm run build
 ```
+
+The production build should include `dist/methodology.html`; this is the
+public-facing methodology page that can be hosted beside the map app.

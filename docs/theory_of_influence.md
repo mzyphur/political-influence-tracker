@@ -7,6 +7,10 @@ political influence may operate in a liberal democracy under unequal resource
 conditions. The code, database, user interface, and public language should all
 reflect the same theory and the same limits of inference.
 
+The hostable public companion page is `frontend/public/methodology.html`. It
+translates this theory into a public-facing HTML explanation with diagrams while
+preserving the same evidence tiers and claim limits.
+
 ## Democratic Premise
 
 The democratic benchmark is political equality: citizens should be able to see
@@ -148,4 +152,3 @@ UI surface, document:
 
 This rule applies equally to engineering notes, methodology docs, public app
 copy, academic articles, and popular-press writing.
-

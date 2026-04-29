@@ -137,6 +137,27 @@ a:focus-visible {
   letter-spacing: 0;
 }
 
+.methodology-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: auto;
+  border: 1px solid rgba(30, 109, 121, 0.22);
+  border-radius: 7px;
+  background: rgba(232, 247, 245, 0.9);
+  color: #174f58;
+  padding: 7px 8px;
+  font-size: 11px;
+  font-weight: 900;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.methodology-link:hover {
+  border-color: rgba(30, 109, 121, 0.42);
+  background: #dff3f1;
+}
+
 .eyebrow {
   margin: 0 0 4px;
   color: var(--ink-muted);

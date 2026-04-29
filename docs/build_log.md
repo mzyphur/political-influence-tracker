@@ -54,6 +54,9 @@ Completed:
   connecting engineering decisions to mechanisms of influence, democratic
   transparency, operating hypotheses, allowed claims, non-claims, and the
   documentation rule for future data families and UI surfaces.
+- Added `frontend/public/methodology.html` and an app-header "Method" link so
+  the public web app can host a companion methodology page with diagrams of the
+  operating theory, evidence tiers, network paths, and claim discipline.
 
 Verification:
 
