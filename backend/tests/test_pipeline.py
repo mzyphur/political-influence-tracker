@@ -209,6 +209,22 @@ def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_pa
         calls["context_lookup_metadata_paths"] = sorted(lookup_metadata_paths)
         return "qld-context-summary"
 
+    def fake_fetch_qld_state_boundaries(*, refetch):
+        calls["boundary_refetch"] = refetch
+        return "qld-state-boundaries-metadata"
+
+    def fake_normalize_qld_state_boundaries(*, metadata_path):
+        calls["boundary_metadata_path"] = str(metadata_path)
+        return "qld-state-boundaries-summary"
+
+    def fake_fetch_qld_members(*, refetch):
+        calls["member_refetch"] = refetch
+        return "qld-current-members-metadata"
+
+    def fake_normalize_qld_members(*, metadata_path):
+        calls["member_metadata_path"] = str(metadata_path)
+        return "qld-current-members-summary"
+
     monkeypatch.setattr(
         "au_politics_money.pipeline.fetch_qld_ecq_eds_exports",
         fake_fetch_qld_exports,
@@ -224,6 +240,22 @@ def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_pa
     monkeypatch.setattr(
         "au_politics_money.pipeline.normalize_qld_ecq_eds_contexts",
         fake_normalize_qld_contexts,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_qld_state_electorate_boundaries",
+        fake_fetch_qld_state_boundaries,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.extract_qld_state_electorate_boundaries",
+        fake_normalize_qld_state_boundaries,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_qld_current_members",
+        fake_fetch_qld_members,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.extract_qld_current_members",
+        fake_normalize_qld_members,
     )
 
     assert run_state_local_pipeline(jurisdiction="Queensland", smoke=True) == "manifest.json"
@@ -242,6 +274,10 @@ def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_pa
         "normalize_qld_ecq_eds_money_flows",
         "normalize_qld_ecq_eds_participants",
         "normalize_qld_ecq_eds_contexts",
+        "fetch_qld_state_boundaries",
+        "normalize_qld_state_boundaries",
+        "fetch_qld_current_members",
+        "normalize_qld_current_members",
     ]
     fetched_sources = set(manifest.steps[0].output["metadata_paths"].values())
     assert "fetch:qld_ecq_eds_public_map" in fetched_sources
@@ -258,6 +294,10 @@ def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_pa
     ]
     assert "qld_ecq_eds_api_political_parties" in calls["participant_lookup_metadata_paths"]
     assert "qld_ecq_eds_api_local_electorates" in calls["context_lookup_metadata_paths"]
+    assert calls["boundary_refetch"] is True
+    assert calls["boundary_metadata_path"] == "qld-state-boundaries-metadata"
+    assert calls["member_refetch"] is True
+    assert calls["member_metadata_path"] == "qld-current-members-metadata"
 
 
 def test_state_local_nsw_pipeline_records_aggregate_context_steps(monkeypatch) -> None:

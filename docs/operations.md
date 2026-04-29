@@ -76,18 +76,24 @@ MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --
 
 The state/local pipeline writes a reproducibility manifest under
 `data/audit/pipeline_runs/`. It fetches the ECQ form pages and lookup API
-snapshots, fetches both current ECQ CSV exports, and normalizes money-flow,
-participant, and event/local-electorate context artifacts. The loader is kept
-separate so database mutation remains an explicit step after source acquisition
-and normalization have succeeded. Within the runner, later steps receive the
-exact metadata paths produced by earlier steps rather than re-reading an
-ambient "latest" snapshot; this keeps a manifest tied to the artifacts it
-actually normalized. `load-state-local-pipeline-manifest` then reads that same
-manifest, opens the normalizer summaries it references, and loads those exact
-processed JSONL files after validating summary hashes, JSONL hashes, expected
-QLD source scopes, and row counts. If an older QLD manifest was produced before
-artifact hashes were recorded, the loader computes current file hashes from the
-referenced local artifacts and still validates normalizer names, source scopes,
+snapshots, fetches both current ECQ CSV exports, normalizes money-flow,
+participant, and event/local-electorate context artifacts, then fetches and
+normalizes the current QLD state boundary layer and Queensland Parliament
+current-member roster. The loader is kept separate so database mutation remains
+an explicit step after source acquisition and normalization have succeeded.
+Within the runner, later steps receive the exact metadata paths produced by
+earlier steps rather than re-reading an ambient "latest" snapshot; this keeps a
+manifest tied to the artifacts it actually normalized.
+`load-state-local-pipeline-manifest` then reads that same manifest, opens the
+normalizer summaries it references, and loads those exact processed JSONL and
+GeoJSON files after validating summary hashes, JSONL hashes, expected QLD source
+scopes, and row counts. QLD boundary and current-member artifacts are also
+validated against their parser names, manifest summary hashes, artifact hashes,
+raw metadata/body hashes, source IDs, artifact-derived electorate names, and
+matching boundary/member electorate-name sets before loading.
+If an older QLD manifest was produced before artifact hashes or map/roster steps
+were recorded, the loader computes current file hashes from the referenced
+local ECQ artifacts and still validates normalizer names, source scopes,
 non-zero counts, JSONL row counts, and source-count totals before loading.
 
 The fetcher archives raw CSV bodies and metadata under
@@ -102,6 +108,9 @@ ECQ political-event and local-electorate lookup APIs, then writes
 can fetch a missing lookup snapshot, but reproducible runs should fetch the
 lookup source IDs explicitly first so raw acquisition remains visible in the
 audit log.
+The same manifest now also records the exact QLD boundary GeoJSON artifact under
+`data/processed/qld_state_electorate_boundaries/` and the exact current-member
+JSONL artifact under `data/processed/qld_parliament_current_members/`.
 `load-qld-ecq-eds-money-flows` refreshes just this source family and rebuilds
 the derived `influence_event` surface. It also applies the latest participant
 identifier and event/local-electorate context artifacts when present. To refresh
@@ -116,18 +125,21 @@ cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Dr
 ```
 
 For exact replay from a reviewed artifact bundle, the QLD loader commands also
-accept explicit processed JSONL paths: `--money-flows-path`,
-`--participants-path`, `--contexts-path`, and `--jsonl-path` on the individual
-participant/context loaders. Omit those flags only when loading the most recent
-processed artifacts is intentional. Prefer `load-state-local-pipeline-manifest`
-for normal scheduled QLD refreshes because it performs that exact-artifact
-selection from the pipeline manifest.
+accept explicit processed artifact paths: `--money-flows-path`,
+`--participants-path`, `--contexts-path`, `--geojson-path`, and `--jsonl-path`
+on the individual participant/context/boundary/member loaders. Omit those flags
+only when loading the most recent processed artifacts is intentional. Prefer
+`load-state-local-pipeline-manifest` for normal scheduled QLD refreshes because
+it performs that exact-artifact selection from the pipeline manifest across
+disclosures, lookup enrichments, state boundaries, and current-member roster.
 
 ## Queensland State Electorate Boundaries
 
-Queensland is the first active state map layer. Refresh the official Queensland
-government ArcGIS/QSpatial boundary source, normalize it, then load it into the
-same source-preserving boundary tables used by the federal map:
+Queensland is the first active state map layer. The normal scheduled path is the
+manifest runner above, which now includes the official Queensland government
+ArcGIS/QSpatial boundary source and the Queensland Parliament current-member
+roster. For partial manual refreshes, normalize and load the boundary source
+into the same source-preserving boundary tables used by the federal map:
 
 ```bash
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"

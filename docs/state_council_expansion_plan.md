@@ -424,8 +424,8 @@ Current implementation status:
 - Active reproducible exports:
   - `qld_ecq_eds_map_export_csv` for current gift/donation map rows;
   - `qld_ecq_eds_expenditure_export_csv` for electoral expenditure rows.
-- The current normalized artifact contains 49,838 rows: 22,725 gift/donation
-  rows and 27,113 electoral expenditure rows.
+- The current normalized artifact contains 49,840 rows: 22,725 gift/donation
+  rows and 27,115 electoral expenditure rows.
 - The gift/donation export is loaded as source-backed state/local money records
   at the actor level supported by the ECQ export fields.
 - The expenditure export is loaded as `campaign_support` with event type
@@ -446,8 +446,9 @@ Current implementation status:
   onto a donor, recipient, party, or candidate.
 - `/api/state-local/summary` and the frontend State/Council summary panel now
   expose QLD ECQ disclosure totals, identifier-backed counts, top gift
-  donors/recipients, and top electoral-expenditure actors before state/council
-  boundary maps are ready.
+  donors/recipients, and top electoral-expenditure actors. The QLD state map
+  also has current official electorate geometry and a current-member roster, but
+  those roster facts remain separate from disclosure attribution.
 - The QLD adapter also normalizes archived ECQ political-event and
   local-electorate lookup APIs. These exact unique name matches are displayed as
   disclosure context only. They improve event/local summaries but do not by
@@ -456,23 +457,27 @@ Current implementation status:
 - The QLD adapter is now orchestrated by
   `run-state-local-pipeline --jurisdiction qld`, which fetches source pages and
   lookup APIs, fetches current ECQ CSV exports, normalizes money-flow rows,
-  participants, and disclosure contexts, and writes a pipeline manifest without
-  mutating the serving database. This is the adapter template for the next state
-  and council jurisdictions: acquisition, normalization, loading, and public
-  attribution remain separate auditable stages. The QLD runner passes exact
-  fetched metadata paths into later export and normalization steps, which is the
-  reproducibility standard future adapters should follow rather than relying on
-  ambient latest-file lookup during a run. The paired
-  `load-state-local-pipeline-manifest` command loads the exact JSONL artifacts
-  named by the manifest, closing the acquisition-to-load reproducibility loop.
+  participants, disclosure contexts, the state boundary layer, and the current
+  member roster, and writes a pipeline manifest without mutating the serving
+  database. This is the adapter template for the next state and council
+  jurisdictions: acquisition, normalization, loading, and public attribution
+  remain separate auditable stages. The QLD runner passes exact fetched metadata
+  paths into later export and normalization steps, which is the reproducibility
+  standard future adapters should follow rather than relying on ambient
+  latest-file lookup during a run. The paired
+  `load-state-local-pipeline-manifest` command loads the exact JSONL/GeoJSON
+  artifacts named by the manifest, rejects failed or partial map/roster runs,
+  validates artifact and raw source hashes, and reconciles artifact-derived QLD
+  boundary/member electorate-name sets before mutating the database. This closes
+  the acquisition-to-load reproducibility loop.
 - The historical disclosure-return archive currently returned HTTP 401 during
   reproducible fetch. Treat it as a blocked/pending source until an official
   public access path is confirmed.
 
-Next adapter task: map candidate/group/electorate records into state and local
+Next QLD task: map candidate/group/electorate records into state and local
 electoral districts without reclassifying campaign expenditure as personal
-receipt, then build QLD state/local map layers and representative/candidate
-drilldowns.
+receipt, then build stronger candidate, party-branch, and electorate drilldowns
+on top of the state map and roster.
 
 ## Data Model Requirements
 

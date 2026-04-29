@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import zipfile
@@ -22,6 +23,14 @@ XLSX_NS = {"m": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _latest_metadata_path(source_id: str, raw_dir: Path = RAW_DIR) -> Path | None:
@@ -217,6 +226,7 @@ def extract_qld_current_members(
         for record in records:
             record["source_metadata_path"] = str(metadata_path.resolve())
             handle.write(json.dumps(record, sort_keys=True) + "\n")
+    jsonl_sha256 = _sha256_path(jsonl_path)
 
     summary = {
         "electorate_count": len(records),
@@ -225,9 +235,11 @@ def extract_qld_current_members(
         "office_row_count": sum(len(record["electorate_offices"]) for record in records),
         "generated_at": timestamp,
         "jsonl_path": str(jsonl_path.resolve()),
+        "jsonl_sha256": jsonl_sha256,
         "parser_name": PARSER_NAME,
         "parser_version": PARSER_VERSION,
         "raw_metadata_path": str(metadata_path.resolve()),
+        "raw_metadata_sha256": _sha256_path(metadata_path),
         "raw_sha256": metadata.get("sha256"),
         "source_id": metadata["source"]["source_id"],
         "source_url": metadata["source"]["url"],

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -67,8 +68,11 @@ def test_extract_qld_state_electorate_boundaries_normalizes_geojson(tmp_path: Pa
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     assert summary["feature_count"] == 93
     assert summary["boundary_set"] == "qld_state_2017_current"
+    assert summary["raw_metadata_sha256"] == hashlib.sha256(metadata_path.read_bytes()).hexdigest()
 
-    geojson = json.loads(Path(summary["geojson_path"]).read_text(encoding="utf-8"))
+    geojson_path = Path(summary["geojson_path"])
+    assert summary["geojson_sha256"] == hashlib.sha256(geojson_path.read_bytes()).hexdigest()
+    geojson = json.loads(geojson_path.read_text(encoding="utf-8"))
     first = geojson["features"][0]
     assert first["properties"]["division_name"] == "McDowall"
     assert first["properties"]["official_name"] == "MCDOWALL"

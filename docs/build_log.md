@@ -20,6 +20,17 @@ Completed:
   state map payload. The State details panel now shows these roster facts while
   explicitly avoiding claims that ECQ disclosure rows are personal receipts or
   electorate-level attributions.
+- Folded the QLD state map and current-member roster into the reproducible
+  state/local manifest path. `run-state-local-pipeline --jurisdiction qld` now
+  archives and normalizes ECQ disclosure exports, ECQ lookup enrichments, QLD
+  state boundaries, and the Queensland Parliament current-member roster in one
+  non-mutating manifest run. `load-state-local-pipeline-manifest` validates and
+  loads the exact named artifacts, rejects failed or partial map/roster
+  manifests, checks boundary/member artifact and raw source hashes, and verifies
+  that artifact-derived boundary and roster electorate-name sets match; the live
+  smoke/replay run loaded 49,840 QLD ECQ rows, 93 state boundaries, 92 current
+  MPs, and one vacant electorate with influence-event rebuild skipped for fast
+  loader validation.
 - Hardened House-register `As above` handling for multi-record owner blocks.
   When a spouse/partner row says `As above` after several self disclosures, the
   parser now preserves the whole preceding owner block rather than only the

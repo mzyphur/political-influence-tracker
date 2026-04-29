@@ -89,6 +89,14 @@ from au_politics_money.ingest.qld_ecq_eds import (
     normalize_qld_ecq_eds_money_flows,
     normalize_qld_ecq_eds_participants,
 )
+from au_politics_money.ingest.qld_boundaries import (
+    extract_qld_state_electorate_boundaries,
+    fetch_qld_state_electorate_boundaries,
+)
+from au_politics_money.ingest.qld_parliament_members import (
+    extract_qld_current_members,
+    fetch_qld_current_members,
+)
 from au_politics_money.ingest.sa_ecsa import (
     SOURCE_DATASET as SA_ECSA_SOURCE_DATASET,
     fetch_sa_ecsa_return_index_pages,
@@ -601,6 +609,8 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         "page_metadata_paths": {},
         "lookup_metadata_paths": {},
         "export_metadata_paths": {},
+        "boundary_metadata_paths": {},
+        "member_metadata_paths": {},
     }
 
     def fetch_qld_form_and_lookup_sources() -> dict[str, Any]:
@@ -625,6 +635,16 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
             summary_path
         )
         return summary_path
+
+    def fetch_qld_state_boundaries() -> Path:
+        metadata_path = fetch_qld_state_electorate_boundaries(refetch=True)
+        qld_artifacts["boundary_metadata_paths"]["state_boundaries"] = Path(metadata_path)
+        return metadata_path
+
+    def fetch_qld_members() -> Path:
+        metadata_path = fetch_qld_current_members(refetch=True)
+        qld_artifacts["member_metadata_paths"]["current_members"] = Path(metadata_path)
+        return metadata_path
 
     manifest = PipelineManifest(
         pipeline_name="state_local",
@@ -668,6 +688,20 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
             "normalize_qld_ecq_eds_contexts",
             lambda: normalize_qld_ecq_eds_contexts(
                 lookup_metadata_paths=qld_artifacts["lookup_metadata_paths"],
+            ),
+        ),
+        ("fetch_qld_state_boundaries", fetch_qld_state_boundaries),
+        (
+            "normalize_qld_state_boundaries",
+            lambda: extract_qld_state_electorate_boundaries(
+                metadata_path=qld_artifacts["boundary_metadata_paths"]["state_boundaries"],
+            ),
+        ),
+        ("fetch_qld_current_members", fetch_qld_members),
+        (
+            "normalize_qld_current_members",
+            lambda: extract_qld_current_members(
+                metadata_path=qld_artifacts["member_metadata_paths"]["current_members"],
             ),
         ),
     ]

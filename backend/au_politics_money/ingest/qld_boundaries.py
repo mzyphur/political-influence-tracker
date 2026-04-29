@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
@@ -21,6 +22,14 @@ OUTPUT_CRS = "EPSG:4326"
 
 def _timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _latest_metadata_path(source_id: str, raw_dir: Path = RAW_DIR) -> Path | None:
@@ -151,15 +160,18 @@ def extract_qld_state_electorate_boundaries(
         json.dumps(feature_collection, separators=(",", ":"), sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    geojson_sha256 = _sha256_path(geojson_path)
     division_names = sorted(feature["properties"]["division_name"] for feature in features)
     summary = {
         "boundary_set": BOUNDARY_SET,
         "feature_count": len(features),
         "generated_at": timestamp,
         "geojson_path": str(geojson_path.resolve()),
+        "geojson_sha256": geojson_sha256,
         "parser_name": PARSER_NAME,
         "parser_version": PARSER_VERSION,
         "raw_metadata_path": str(metadata_path.resolve()),
+        "raw_metadata_sha256": _sha256_path(metadata_path),
         "raw_sha256": metadata.get("sha256"),
         "source_id": metadata["source"]["source_id"],
         "source_url": metadata["source"]["url"],

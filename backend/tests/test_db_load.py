@@ -219,6 +219,8 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
     money_jsonl = tmp_path / "money.jsonl"
     participants_jsonl = tmp_path / "participants.jsonl"
     contexts_jsonl = tmp_path / "contexts.jsonl"
+    qld_boundaries_geojson = tmp_path / "qld-state-boundaries.geojson"
+    qld_members_jsonl = tmp_path / "qld-current-members.jsonl"
     money_jsonl.write_text(
         json.dumps({"source_id": "qld_ecq_eds_map_export_csv"}) + "\n"
         + json.dumps({"source_id": "qld_ecq_eds_expenditure_export_csv"}) + "\n",
@@ -236,9 +238,49 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
         + json.dumps({"source_id": "qld_ecq_eds_api_local_electorates"}) + "\n",
         encoding="utf-8",
     )
+    qld_boundaries_geojson.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"division_name": "Algester"},
+                        "geometry": None,
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    qld_members_jsonl.write_text(
+        json.dumps({"electorate": "Algester", "display_name": "Hon Leeanne Enoch"}) + "\n",
+        encoding="utf-8",
+    )
 
     def sha256_path(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def write_raw_metadata(name: str, body_text: str) -> Path:
+        body_path = tmp_path / f"{name}.body"
+        body_path.write_text(body_text, encoding="utf-8")
+        metadata_path = tmp_path / f"{name}.metadata.json"
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "body_path": str(body_path),
+                    "sha256": sha256_path(body_path),
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return metadata_path
+
+    qld_boundary_metadata = write_raw_metadata("qld-boundary", '{"source": "boundary"}\n')
+    qld_members_metadata = write_raw_metadata("qld-members", "member source\n")
 
     def write_summary(
         name: str,
@@ -256,6 +298,44 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
                     "jsonl_sha256": sha256_path(jsonl_path),
                     "total_count": sum(counts.values()),
                     count_field: counts,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return summary_path
+
+    def write_artifact_summary(
+        name: str,
+        *,
+        parser_name: str,
+        path_field: str,
+        sha256_field: str,
+        artifact_path: Path,
+        source_id: str,
+        count_field: str,
+        count: int,
+        names_field: str,
+        names: list[str],
+        raw_metadata_path: Path,
+        extra: dict[str, str] | None = None,
+    ) -> Path:
+        raw_metadata = json.loads(raw_metadata_path.read_text(encoding="utf-8"))
+        summary_path = tmp_path / f"{name}.summary.json"
+        summary_path.write_text(
+            json.dumps(
+                {
+                    **(extra or {}),
+                    count_field: count,
+                    "parser_name": parser_name,
+                    path_field: str(artifact_path),
+                    sha256_field: sha256_path(artifact_path),
+                    "source_id": source_id,
+                    names_field: names,
+                    "raw_metadata_path": str(raw_metadata_path),
+                    "raw_metadata_sha256": sha256_path(raw_metadata_path),
+                    "raw_sha256": raw_metadata["sha256"],
                 },
                 sort_keys=True,
             )
@@ -293,6 +373,33 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
             "qld_ecq_eds_api_local_electorates": 1,
         },
     )
+    qld_boundaries_summary = write_artifact_summary(
+        "qld_state_electorate_boundaries",
+        parser_name="qld_state_electorate_boundaries_arcgis_geojson_v1",
+        path_field="geojson_path",
+        sha256_field="geojson_sha256",
+        artifact_path=qld_boundaries_geojson,
+        source_id="qld_state_electoral_boundaries_arcgis",
+        count_field="feature_count",
+        count=1,
+        names_field="division_names",
+        names=["Algester"],
+        raw_metadata_path=qld_boundary_metadata,
+        extra={"boundary_set": "qld_state_2017_current"},
+    )
+    qld_members_summary = write_artifact_summary(
+        "qld_parliament_current_members",
+        parser_name="qld_parliament_current_members_mail_merge_xlsx_v1",
+        path_field="jsonl_path",
+        sha256_field="jsonl_sha256",
+        artifact_path=qld_members_jsonl,
+        source_id="qld_parliament_members_mail_merge_xlsx",
+        count_field="electorate_count",
+        count=1,
+        names_field="electorates",
+        names=["Algester"],
+        raw_metadata_path=qld_members_metadata,
+    )
     manifest_path = tmp_path / "state_local_qld_manifest.json"
     manifest_path.write_text(
         json.dumps(
@@ -321,6 +428,18 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
                         "output": str(contexts_summary),
                         "output_sha256": sha256_path(contexts_summary),
                     },
+                    {
+                        "name": "normalize_qld_state_boundaries",
+                        "status": "succeeded",
+                        "output": str(qld_boundaries_summary),
+                        "output_sha256": sha256_path(qld_boundaries_summary),
+                    },
+                    {
+                        "name": "normalize_qld_current_members",
+                        "status": "succeeded",
+                        "output": str(qld_members_summary),
+                        "output_sha256": sha256_path(qld_members_summary),
+                    },
                 ],
             },
             sort_keys=True,
@@ -333,7 +452,90 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
         "money_flows": money_jsonl,
         "participants": participants_jsonl,
         "contexts": contexts_jsonl,
+        "state_boundaries": qld_boundaries_geojson,
+        "current_members": qld_members_jsonl,
     }
+
+    failed_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    failed_manifest["status"] = "failed"
+    failed_manifest_path = tmp_path / "state_local_qld_failed_status_manifest.json"
+    failed_manifest_path.write_text(
+        json.dumps(failed_manifest, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="Pipeline manifest did not succeed"):
+        qld_ecq_eds_paths_from_pipeline_manifest(failed_manifest_path)
+
+    missing_normalize_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    missing_normalize_manifest["steps"] = [
+        step
+        for step in missing_normalize_manifest["steps"]
+        if step["name"] != "normalize_qld_state_boundaries"
+    ]
+    missing_normalize_manifest["steps"].append(
+        {
+            "name": "fetch_qld_state_boundaries",
+            "status": "succeeded",
+            "output": "/tmp/qld-boundary-metadata.json",
+        }
+    )
+    missing_normalize_manifest_path = tmp_path / "state_local_qld_missing_normalize.json"
+    missing_normalize_manifest_path.write_text(
+        json.dumps(missing_normalize_manifest, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="boundary fetch without boundary normalization"):
+        qld_ecq_eds_paths_from_pipeline_manifest(missing_normalize_manifest_path)
+
+    partial_map_roster_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    partial_map_roster_manifest["steps"] = [
+        step
+        for step in partial_map_roster_manifest["steps"]
+        if step["name"] != "normalize_qld_current_members"
+    ]
+    partial_map_roster_manifest_path = tmp_path / "state_local_qld_partial_map_roster.json"
+    partial_map_roster_manifest_path.write_text(
+        json.dumps(partial_map_roster_manifest, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="must include both boundaries and current members"):
+        qld_ecq_eds_paths_from_pipeline_manifest(partial_map_roster_manifest_path)
+
+    mismatched_members_summary = write_artifact_summary(
+        "qld_parliament_current_members_mismatch",
+        parser_name="qld_parliament_current_members_mail_merge_xlsx_v1",
+        path_field="jsonl_path",
+        sha256_field="jsonl_sha256",
+        artifact_path=qld_members_jsonl,
+        source_id="qld_parliament_members_mail_merge_xlsx",
+        count_field="electorate_count",
+        count=1,
+        names_field="electorates",
+        names=["Ashgrove"],
+        raw_metadata_path=qld_members_metadata,
+    )
+    mismatched_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for step in mismatched_manifest["steps"]:
+        if step["name"] == "normalize_qld_current_members":
+            step["output"] = str(mismatched_members_summary)
+            step["output_sha256"] = sha256_path(mismatched_members_summary)
+    mismatched_manifest_path = tmp_path / "state_local_qld_mismatched_roster.json"
+    mismatched_manifest_path.write_text(
+        json.dumps(mismatched_manifest, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="electorate sets do not match"):
+        qld_ecq_eds_paths_from_pipeline_manifest(mismatched_manifest_path)
+
+    original_boundary_metadata = qld_boundary_metadata.read_text(encoding="utf-8")
+    qld_boundary_metadata.write_text('{"changed": true}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="raw metadata hash mismatch"):
+        qld_ecq_eds_paths_from_pipeline_manifest(manifest_path)
+    qld_boundary_metadata.write_text(original_boundary_metadata, encoding="utf-8")
+
+    qld_boundaries_geojson.write_text('{"changed": true}\n', encoding="utf-8")
+    with pytest.raises(ValueError, match="Artifact hash mismatch"):
+        qld_ecq_eds_paths_from_pipeline_manifest(manifest_path)
 
 
 def test_qld_pipeline_manifest_replays_legacy_unhashed_artifacts(tmp_path) -> None:

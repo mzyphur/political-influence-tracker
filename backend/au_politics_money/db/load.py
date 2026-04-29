@@ -83,11 +83,13 @@ from au_politics_money.ingest.qld_boundaries import (
     BOUNDARY_SET as QLD_STATE_BOUNDARY_SET,
     PARSER_NAME as QLD_STATE_BOUNDARY_PARSER_NAME,
     PARSER_VERSION as QLD_STATE_BOUNDARY_PARSER_VERSION,
+    SOURCE_ID as QLD_STATE_BOUNDARY_SOURCE_ID,
     latest_qld_state_boundaries_geojson,
 )
 from au_politics_money.ingest.qld_parliament_members import (
     PARSER_NAME as QLD_CURRENT_MEMBERS_PARSER_NAME,
     PARSER_VERSION as QLD_CURRENT_MEMBERS_PARSER_VERSION,
+    SOURCE_ID as QLD_CURRENT_MEMBERS_SOURCE_ID,
     latest_qld_current_members_jsonl,
 )
 from au_politics_money.ingest.sa_ecsa import (
@@ -2667,6 +2669,25 @@ def _pipeline_step_output(manifest: dict[str, Any], step_name: str) -> tuple[Pat
     raise ValueError(f"Pipeline manifest is missing step {step_name}")
 
 
+def _optional_pipeline_step_output(
+    manifest: dict[str, Any],
+    step_name: str,
+) -> tuple[Path, str] | None:
+    steps = manifest.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError("Pipeline manifest is missing a steps array")
+    if not any(isinstance(step, dict) and step.get("name") == step_name for step in steps):
+        return None
+    return _pipeline_step_output(manifest, step_name)
+
+
+def _pipeline_has_step(manifest: dict[str, Any], step_name: str) -> bool:
+    steps = manifest.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError("Pipeline manifest is missing a steps array")
+    return any(isinstance(step, dict) and step.get("name") == step_name for step in steps)
+
+
 def _jsonl_path_from_summary(
     summary_path: Path,
     expected_normalizer: str,
@@ -2724,6 +2745,167 @@ def _jsonl_path_from_summary(
     return path
 
 
+def _artifact_path_from_summary(
+    summary_path: Path,
+    *,
+    expected_parser: str,
+    expected_summary_sha256: str,
+    path_field: str,
+    sha256_field: str,
+) -> tuple[Path, dict[str, Any]]:
+    actual_summary_sha256 = _sha256_path(summary_path)
+    if expected_summary_sha256 and actual_summary_sha256 != expected_summary_sha256:
+        raise ValueError(
+            f"Summary hash mismatch for {summary_path}: "
+            f"manifest={expected_summary_sha256} actual={actual_summary_sha256}"
+        )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("parser_name") != expected_parser:
+        raise ValueError(
+            f"Unexpected parser in {summary_path}: {summary.get('parser_name')!r}"
+        )
+    artifact_path = summary.get(path_field)
+    if not artifact_path:
+        raise ValueError(f"Summary is missing {path_field}: {summary_path}")
+    path = Path(str(artifact_path))
+    if not path.exists():
+        raise FileNotFoundError(path)
+    expected_artifact_sha256 = str(summary.get(sha256_field) or "")
+    if not expected_artifact_sha256:
+        raise ValueError(f"Summary is missing {sha256_field}: {summary_path}")
+    actual_artifact_sha256 = _sha256_path(path)
+    if actual_artifact_sha256 != expected_artifact_sha256:
+        raise ValueError(
+            f"Artifact hash mismatch for {path}: "
+            f"summary={expected_artifact_sha256} actual={actual_artifact_sha256}"
+        )
+    return path, summary
+
+
+def _summary_name_set(
+    summary: dict[str, Any],
+    *,
+    summary_label: str,
+    names_field: str,
+    count_field: str,
+) -> set[str]:
+    names = summary.get(names_field)
+    if not isinstance(names, list) or not names:
+        raise ValueError(f"{summary_label} summary is missing {names_field}")
+    normalized = _unique_name_set(names, label=f"{summary_label} summary", names_field=names_field)
+    expected_count = int(summary.get(count_field) or 0)
+    if expected_count != len(normalized):
+        raise ValueError(
+            f"{summary_label} summary {count_field} does not match {names_field}: "
+            f"{expected_count} != {len(normalized)}"
+        )
+    return normalized
+
+
+def _unique_name_set(names: list[Any], *, label: str, names_field: str) -> set[str]:
+    normalized = {
+        re.sub(r"\s+", " ", str(name)).strip().casefold()
+        for name in names
+        if str(name).strip()
+    }
+    if len(normalized) != len(names):
+        raise ValueError(f"{label} has blank or duplicate {names_field}")
+    return normalized
+
+
+def _qld_boundary_artifact_name_set(path: Path) -> set[str]:
+    geojson = json.loads(path.read_text(encoding="utf-8"))
+    features = geojson.get("features")
+    if not isinstance(features, list) or not features:
+        raise ValueError(f"QLD boundary artifact has no features: {path}")
+    names = [
+        (feature.get("properties") or {}).get("division_name")
+        for feature in features
+        if isinstance(feature, dict)
+    ]
+    if len(names) != len(features):
+        raise ValueError(f"QLD boundary artifact has malformed feature(s): {path}")
+    return _unique_name_set(
+        names,
+        label="QLD boundary artifact",
+        names_field="division_name",
+    )
+
+
+def _qld_member_artifact_name_set(path: Path) -> set[str]:
+    names: list[Any] = []
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            if not isinstance(record, dict):
+                raise ValueError(f"QLD current-member artifact has malformed row: {path}")
+            names.append(record.get("electorate"))
+    if not names:
+        raise ValueError(f"QLD current-member artifact has no rows: {path}")
+    return _unique_name_set(
+        names,
+        label="QLD current-member artifact",
+        names_field="electorate",
+    )
+
+
+def _validate_artifact_names_match_summary(
+    *,
+    summary_names: set[str],
+    artifact_names: set[str],
+    label: str,
+) -> None:
+    if summary_names != artifact_names:
+        raise ValueError(
+            f"{label} summary/artifact electorate sets do not match: "
+            f"only_in_summary={sorted(summary_names - artifact_names)} "
+            f"only_in_artifact={sorted(artifact_names - summary_names)}"
+        )
+
+
+def _validate_raw_metadata_chain(summary: dict[str, Any], *, summary_label: str) -> None:
+    raw_metadata_path_value = summary.get("raw_metadata_path")
+    if not raw_metadata_path_value:
+        raise ValueError(f"{summary_label} summary is missing raw_metadata_path")
+    raw_metadata_path = Path(str(raw_metadata_path_value))
+    if not raw_metadata_path.exists():
+        raise FileNotFoundError(raw_metadata_path)
+    expected_metadata_sha256 = str(summary.get("raw_metadata_sha256") or "")
+    if not expected_metadata_sha256:
+        raise ValueError(f"{summary_label} summary is missing raw_metadata_sha256")
+    actual_metadata_sha256 = _sha256_path(raw_metadata_path)
+    if actual_metadata_sha256 != expected_metadata_sha256:
+        raise ValueError(
+            f"{summary_label} raw metadata hash mismatch for {raw_metadata_path}: "
+            f"summary={expected_metadata_sha256} actual={actual_metadata_sha256}"
+        )
+
+    raw_metadata = json.loads(raw_metadata_path.read_text(encoding="utf-8"))
+    raw_body_path_value = raw_metadata.get("body_path")
+    if not raw_body_path_value:
+        raise ValueError(f"{summary_label} raw metadata is missing body_path")
+    raw_body_path = Path(str(raw_body_path_value))
+    if not raw_body_path.exists():
+        raise FileNotFoundError(raw_body_path)
+    expected_body_sha256 = str(summary.get("raw_sha256") or "")
+    if not expected_body_sha256:
+        raise ValueError(f"{summary_label} summary is missing raw_sha256")
+    metadata_body_sha256 = str(raw_metadata.get("sha256") or "")
+    if metadata_body_sha256 and metadata_body_sha256 != expected_body_sha256:
+        raise ValueError(
+            f"{summary_label} raw metadata/body summary hash mismatch: "
+            f"metadata={metadata_body_sha256} summary={expected_body_sha256}"
+        )
+    actual_body_sha256 = _sha256_path(raw_body_path)
+    if actual_body_sha256 != expected_body_sha256:
+        raise ValueError(
+            f"{summary_label} raw body hash mismatch for {raw_body_path}: "
+            f"summary={expected_body_sha256} actual={actual_body_sha256}"
+        )
+
+
 def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, Path]:
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     if manifest.get("pipeline_name") != "state_local":
@@ -2733,6 +2915,8 @@ def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, P
         raise ValueError("Expected a QLD ECQ EDS state/local manifest")
     if parameters.get("loads_database") is not False:
         raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+    if manifest.get("status") not in (None, "succeeded"):
+        raise ValueError("Pipeline manifest did not succeed")
 
     money_summary_path, money_summary_sha256 = _pipeline_step_output(
         manifest,
@@ -2746,8 +2930,89 @@ def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, P
         manifest,
         "normalize_qld_ecq_eds_contexts",
     )
+    state_boundaries_path: Path | None = None
+    state_boundaries_summary: dict[str, Any] | None = None
+    current_members_path: Path | None = None
+    current_members_summary: dict[str, Any] | None = None
+    state_boundaries_output = _optional_pipeline_step_output(
+        manifest,
+        "normalize_qld_state_boundaries",
+    )
+    current_members_output = _optional_pipeline_step_output(
+        manifest,
+        "normalize_qld_current_members",
+    )
+    if state_boundaries_output is None and _pipeline_has_step(manifest, "fetch_qld_state_boundaries"):
+        raise ValueError("Pipeline manifest has QLD boundary fetch without boundary normalization")
+    if current_members_output is None and _pipeline_has_step(manifest, "fetch_qld_current_members"):
+        raise ValueError("Pipeline manifest has QLD member fetch without member normalization")
+    if (state_boundaries_output is None) != (current_members_output is None):
+        raise ValueError("QLD map/roster manifest must include both boundaries and current members")
+    if state_boundaries_output is not None:
+        state_boundaries_summary_path, state_boundaries_summary_sha256 = state_boundaries_output
+        state_boundaries_path, state_boundaries_summary = _artifact_path_from_summary(
+            state_boundaries_summary_path,
+            expected_parser=QLD_STATE_BOUNDARY_PARSER_NAME,
+            expected_summary_sha256=state_boundaries_summary_sha256,
+            path_field="geojson_path",
+            sha256_field="geojson_sha256",
+        )
+        if state_boundaries_summary.get("source_id") != QLD_STATE_BOUNDARY_SOURCE_ID:
+            raise ValueError("QLD boundary summary has unexpected source_id")
+        if state_boundaries_summary.get("boundary_set") != QLD_STATE_BOUNDARY_SET:
+            raise ValueError("QLD boundary summary has unexpected boundary_set")
+        _validate_raw_metadata_chain(
+            state_boundaries_summary,
+            summary_label="QLD boundary",
+        )
+    if current_members_output is not None:
+        current_members_summary_path, current_members_summary_sha256 = current_members_output
+        current_members_path, current_members_summary = _artifact_path_from_summary(
+            current_members_summary_path,
+            expected_parser=QLD_CURRENT_MEMBERS_PARSER_NAME,
+            expected_summary_sha256=current_members_summary_sha256,
+            path_field="jsonl_path",
+            sha256_field="jsonl_sha256",
+        )
+        if current_members_summary.get("source_id") != QLD_CURRENT_MEMBERS_SOURCE_ID:
+            raise ValueError("QLD current-member summary has unexpected source_id")
+        _validate_raw_metadata_chain(
+            current_members_summary,
+            summary_label="QLD current-member",
+        )
+    if state_boundaries_summary is not None and current_members_summary is not None:
+        boundary_electorates = _summary_name_set(
+            state_boundaries_summary,
+            summary_label="QLD boundary",
+            names_field="division_names",
+            count_field="feature_count",
+        )
+        boundary_artifact_electorates = _qld_boundary_artifact_name_set(state_boundaries_path)
+        _validate_artifact_names_match_summary(
+            summary_names=boundary_electorates,
+            artifact_names=boundary_artifact_electorates,
+            label="QLD boundary",
+        )
+        roster_electorates = _summary_name_set(
+            current_members_summary,
+            summary_label="QLD current-member",
+            names_field="electorates",
+            count_field="electorate_count",
+        )
+        roster_artifact_electorates = _qld_member_artifact_name_set(current_members_path)
+        _validate_artifact_names_match_summary(
+            summary_names=roster_electorates,
+            artifact_names=roster_artifact_electorates,
+            label="QLD current-member",
+        )
+        if boundary_electorates != roster_electorates:
+            raise ValueError(
+                "QLD boundary/member electorate sets do not match: "
+                f"only_in_boundaries={sorted(boundary_electorates - roster_electorates)} "
+                f"only_in_members={sorted(roster_electorates - boundary_electorates)}"
+            )
 
-    return {
+    paths = {
         "money_flows": _jsonl_path_from_summary(
             money_summary_path,
             QLD_ECQ_MONEY_PARSER_NAME,
@@ -2770,6 +3035,11 @@ def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, P
             source_count_field="source_counts",
         ),
     }
+    if state_boundaries_path is not None:
+        paths["state_boundaries"] = state_boundaries_path
+    if current_members_path is not None:
+        paths["current_members"] = current_members_path
+    return paths
 
 
 def nsw_aggregate_context_path_from_pipeline_manifest(manifest_path: Path) -> Path:
@@ -3327,6 +3597,16 @@ def load_qld_ecq_eds_from_pipeline_manifest(
             jsonl_path=paths["contexts"],
         ),
     }
+    if "state_boundaries" in paths:
+        summary["qld_state_electorate_boundaries"] = load_qld_state_electorate_boundaries(
+            conn,
+            geojson_path=paths["state_boundaries"],
+        )
+    if "current_members" in paths:
+        summary["qld_current_members"] = load_qld_current_members(
+            conn,
+            jsonl_path=paths["current_members"],
+        )
     if include_influence_events:
         summary["influence_events"] = load_influence_events(conn)
     return summary
