@@ -154,6 +154,14 @@ the current APH index are ignored by the text-extraction stage, so they cannot
 be re-parsed and reloaded as current House register rows after APH withdraws or
 renames a PDF.
 
+Official APH parliamentary decision-record indexes, linked decision-record
+documents, official `vote_division` rows, and official `person_vote` rows use
+the same snapshot discipline. Each refreshed source/chamber first marks prior
+official rows as `is_current = false` with withdrawal metadata, then reactivates
+the rows present in the latest parsed artifact. Public vote summaries, coverage
+counts, and serving-database quality checks filter to current official vote
+rows, while withdrawn/corrected rows remain available for audit.
+
 When `--apply-schema` is used, the loader applies the baseline schema and then
 all additive migrations. Routine weekly runs should use `migrate-postgres`
 followed by `load-postgres` so the serving database is updated from the newest

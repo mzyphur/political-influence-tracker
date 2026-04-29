@@ -1269,6 +1269,7 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
                 min(division_date) AS first_division_date,
                 max(division_date) AS last_division_date
             FROM vote_division
+            WHERE is_current IS TRUE
             GROUP BY chamber
             ORDER BY chamber
             """,

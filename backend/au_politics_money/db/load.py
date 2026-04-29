@@ -616,6 +616,98 @@ def _begin_gift_interest_source_refresh(conn, chamber: str) -> int:
         return int(cur.rowcount or 0)
 
 
+def _begin_official_decision_record_refresh(conn, source_ids: list[str]) -> int:
+    if not source_ids:
+        return 0
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE official_parliamentary_decision_record
+            SET is_current = FALSE,
+                withdrawn_at = now(),
+                metadata = metadata || jsonb_build_object(
+                    'source_record_status', 'not_in_latest_official_index',
+                    'source_record_withdrawn_at', now()
+                )
+            WHERE source_id = ANY(%s)
+              AND is_current IS TRUE
+            """,
+            (source_ids,),
+        )
+        return int(cur.rowcount or 0)
+
+
+def _begin_official_decision_record_document_refresh(conn, source_ids: list[str]) -> int:
+    if not source_ids:
+        return 0
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE official_parliamentary_decision_record_document document
+            SET is_current = FALSE,
+                withdrawn_at = now(),
+                metadata = document.metadata || jsonb_build_object(
+                    'source_record_status', 'not_in_latest_official_document_fetch',
+                    'source_record_withdrawn_at', now()
+                )
+            FROM official_parliamentary_decision_record record
+            WHERE record.id = document.decision_record_id
+              AND record.source_id = ANY(%s)
+              AND document.is_current IS TRUE
+            """,
+            (source_ids,),
+        )
+        return int(cur.rowcount or 0)
+
+
+def _begin_official_aph_division_refresh(conn, chambers: list[str]) -> dict[str, int]:
+    if not chambers:
+        return {
+            "official_vote_rows_deactivated_before_reload": 0,
+            "divisions_deactivated_before_reload": 0,
+        }
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE person_vote vote
+            SET is_current = FALSE,
+                withdrawn_at = now(),
+                metadata = vote.metadata || jsonb_build_object(
+                    'source_record_status', 'not_in_latest_official_division_artifact',
+                    'source_record_withdrawn_at', now()
+                )
+            FROM vote_division division
+            WHERE division.id = vote.division_id
+              AND division.chamber = ANY(%s)
+              AND division.metadata->>'source' = 'aph_official_decision_record'
+              AND vote.metadata->>'source' = 'aph_official_decision_record'
+              AND vote.is_current IS TRUE
+            """,
+            (chambers,),
+        )
+        vote_rows = int(cur.rowcount or 0)
+        cur.execute(
+            """
+            UPDATE vote_division
+            SET is_current = FALSE,
+                withdrawn_at = now(),
+                metadata = metadata || jsonb_build_object(
+                    'source_record_status', 'not_in_latest_official_division_artifact',
+                    'source_record_withdrawn_at', now()
+                )
+            WHERE chamber = ANY(%s)
+              AND metadata->>'source' = 'aph_official_decision_record'
+              AND is_current IS TRUE
+            """,
+            (chambers,),
+        )
+        division_rows = int(cur.rowcount or 0)
+    return {
+        "official_vote_rows_deactivated_before_reload": vote_rows,
+        "divisions_deactivated_before_reload": division_rows,
+    }
+
+
 def apply_schema(conn, schema_path: Path | None = None) -> None:
     path = schema_path or PROJECT_ROOT / "backend" / "schema" / "001_initial.sql"
     with conn.cursor() as cur:
@@ -5004,130 +5096,134 @@ def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[st
             "skipped_reason": "no_official_aph_divisions_artifact",
         }
 
+    records: list[dict[str, Any]] = []
+    with jsonl_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                records.append(json.loads(line))
+
+    refreshed_chambers = sorted(
+        {str(record["chamber"]) for record in records if record.get("chamber")}
+    )
+    refresh_summary = _begin_official_aph_division_refresh(conn, refreshed_chambers)
+
     vote_indexes: dict[str, dict[str, list[tuple[int, int | None]]]] = {}
     divisions_seen = 0
     divisions_inserted_or_updated = 0
     votes_seen = 0
     votes_inserted_or_updated = 0
     unmatched_votes = 0
-    stale_official_vote_rows_deleted = 0
     chamber_counts: Counter[str] = Counter()
 
-    with jsonl_path.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            if not line.strip():
-                continue
-            record = json.loads(line)
-            divisions_seen += 1
-            chamber = record["chamber"]
-            chamber_counts[chamber] += 1
-            if chamber not in vote_indexes:
-                vote_indexes[chamber] = _current_chamber_vote_person_index(conn, chamber)
-            source_document_id = upsert_source_document(conn, Path(record["source_metadata_path"]))
-            division_date = parse_date(str(record["division_date"]))
-            if division_date is None:
-                raise RuntimeError(f"Official APH division is missing a parseable date: {record}")
+    for record in records:
+        divisions_seen += 1
+        chamber = record["chamber"]
+        chamber_counts[chamber] += 1
+        if chamber not in vote_indexes:
+            vote_indexes[chamber] = _current_chamber_vote_person_index(conn, chamber)
+        source_document_id = upsert_source_document(conn, Path(record["source_metadata_path"]))
+        division_date = parse_date(str(record["division_date"]))
+        if division_date is None:
+            raise RuntimeError(f"Official APH division is missing a parseable date: {record}")
 
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO vote_division (
+                    external_id, chamber, division_date, division_number, title,
+                    bill_name, motion_text, aye_count, no_count, possible_turnout,
+                    source_document_id, metadata, is_current, last_seen_at, withdrawn_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, TRUE, now(), NULL)
+                ON CONFLICT (chamber, division_date, division_number) DO UPDATE SET
+                    external_id = EXCLUDED.external_id,
+                    title = EXCLUDED.title,
+                    bill_name = EXCLUDED.bill_name,
+                    motion_text = EXCLUDED.motion_text,
+                    aye_count = EXCLUDED.aye_count,
+                    no_count = EXCLUDED.no_count,
+                    possible_turnout = EXCLUDED.possible_turnout,
+                    source_document_id = EXCLUDED.source_document_id,
+                    metadata = vote_division.metadata || EXCLUDED.metadata,
+                    is_current = TRUE,
+                    last_seen_at = now(),
+                    withdrawn_at = NULL
+                RETURNING id
+                """,
+                (
+                    record["external_id"],
+                    chamber,
+                    division_date,
+                    record["division_number"],
+                    record["title"],
+                    record.get("bill_name") or None,
+                    record.get("motion_text") or None,
+                    record.get("aye_count"),
+                    record.get("no_count"),
+                    record.get("possible_turnout"),
+                    source_document_id,
+                    as_jsonb(
+                        {
+                            **(record.get("metadata") or {}),
+                            "source": "aph_official_decision_record",
+                            "source_evidence_class": "official_record_parsed",
+                            "official_aph_external_id": record["external_id"],
+                            "official_decision_record_external_key": record.get(
+                                "official_decision_record_external_key"
+                            ),
+                            "source_url": record.get("source_url"),
+                            "representation_kind": record.get("representation_kind"),
+                        }
+                    ),
+                ),
+            )
+            division_id = int(cur.fetchone()[0])
+            divisions_inserted_or_updated += 1
+
+        for vote in record.get("votes") or []:
+            votes_seen += 1
+            match = _match_vote_person(vote_indexes[chamber], vote)
+            if match is None:
+                unmatched_votes += 1
+                continue
+            person_id, party_id = match
             with conn.cursor() as cur:
                 cur.execute(
                     """
-                    INSERT INTO vote_division (
-                        external_id, chamber, division_date, division_number, title,
-                        bill_name, motion_text, aye_count, no_count, possible_turnout,
-                        source_document_id, metadata
+                    INSERT INTO person_vote (
+                        division_id, person_id, vote, party_id,
+                        rebelled_against_party, source_document_id, metadata,
+                        is_current, last_seen_at, withdrawn_at
                     )
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    ON CONFLICT (chamber, division_date, division_number) DO UPDATE SET
-                        external_id = EXCLUDED.external_id,
-                        title = EXCLUDED.title,
-                        bill_name = EXCLUDED.bill_name,
-                        motion_text = EXCLUDED.motion_text,
-                        aye_count = EXCLUDED.aye_count,
-                        no_count = EXCLUDED.no_count,
-                        possible_turnout = EXCLUDED.possible_turnout,
+                    VALUES (%s, %s, %s, %s, NULL, %s, %s, TRUE, now(), NULL)
+                    ON CONFLICT (division_id, person_id) DO UPDATE SET
+                        vote = EXCLUDED.vote,
+                        party_id = EXCLUDED.party_id,
                         source_document_id = EXCLUDED.source_document_id,
-                        metadata = vote_division.metadata || EXCLUDED.metadata
-                    RETURNING id
+                        metadata = person_vote.metadata || EXCLUDED.metadata,
+                        is_current = TRUE,
+                        last_seen_at = now(),
+                        withdrawn_at = NULL
                     """,
                     (
-                        record["external_id"],
-                        chamber,
-                        division_date,
-                        record["division_number"],
-                        record["title"],
-                        record.get("bill_name") or None,
-                        record.get("motion_text") or None,
-                        record.get("aye_count"),
-                        record.get("no_count"),
-                        record.get("possible_turnout"),
+                        division_id,
+                        person_id,
+                        vote["vote"],
+                        party_id,
                         source_document_id,
                         as_jsonb(
                             {
-                                **(record.get("metadata") or {}),
                                 "source": "aph_official_decision_record",
                                 "source_evidence_class": "official_record_parsed",
-                                "official_aph_external_id": record["external_id"],
-                                "official_decision_record_external_key": record.get(
-                                    "official_decision_record_external_key"
-                                ),
-                                "source_url": record.get("source_url"),
-                                "representation_kind": record.get("representation_kind"),
+                                "raw_vote_name": vote.get("raw_name"),
+                                "name_key": vote.get("name_key"),
+                                "is_teller": vote.get("is_teller"),
+                                "source_line": vote.get("source_line"),
                             }
                         ),
                     ),
                 )
-                division_id = int(cur.fetchone()[0])
-                divisions_inserted_or_updated += 1
-                cur.execute(
-                    """
-                    DELETE FROM person_vote
-                    WHERE division_id = %s
-                      AND metadata->>'source' = 'aph_official_decision_record'
-                    """,
-                    (division_id,),
-                )
-                stale_official_vote_rows_deleted += cur.rowcount
-
-            for vote in record.get("votes") or []:
-                votes_seen += 1
-                match = _match_vote_person(vote_indexes[chamber], vote)
-                if match is None:
-                    unmatched_votes += 1
-                    continue
-                person_id, party_id = match
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO person_vote (
-                            division_id, person_id, vote, party_id,
-                            rebelled_against_party, source_document_id, metadata
-                        )
-                        VALUES (%s, %s, %s, %s, NULL, %s, %s)
-                        ON CONFLICT (division_id, person_id) DO UPDATE SET
-                            vote = EXCLUDED.vote,
-                            party_id = EXCLUDED.party_id,
-                            source_document_id = EXCLUDED.source_document_id,
-                            metadata = person_vote.metadata || EXCLUDED.metadata
-                        """,
-                        (
-                            division_id,
-                            person_id,
-                            vote["vote"],
-                            party_id,
-                            source_document_id,
-                            as_jsonb(
-                                {
-                                    "source": "aph_official_decision_record",
-                                    "source_evidence_class": "official_record_parsed",
-                                    "raw_vote_name": vote.get("raw_name"),
-                                    "name_key": vote.get("name_key"),
-                                    "is_teller": vote.get("is_teller"),
-                                    "source_line": vote.get("source_line"),
-                                }
-                            ),
-                        ),
-                    )
-                    votes_inserted_or_updated += cur.rowcount
+                votes_inserted_or_updated += cur.rowcount
 
     conn.commit()
     return {
@@ -5137,7 +5233,8 @@ def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[st
         "votes_seen": votes_seen,
         "votes_inserted_or_updated": votes_inserted_or_updated,
         "unmatched_votes": unmatched_votes,
-        "stale_official_vote_rows_deleted": stale_official_vote_rows_deleted,
+        "stale_official_vote_rows_deleted": 0,
+        **refresh_summary,
         "chamber_counts": dict(sorted(chamber_counts.items())),
     }
 
@@ -5154,108 +5251,123 @@ def load_official_parliamentary_decision_records(
             "skipped_reason": "no_aph_decision_record_index_artifacts",
         }
 
+    indexed_records: list[tuple[Path, dict[str, Any]]] = []
+    for path in paths:
+        with path.open("r", encoding="utf-8") as handle:
+            for line in handle:
+                if line.strip():
+                    indexed_records.append((path, json.loads(line)))
+
+    refreshed_source_ids = sorted(
+        {str(record["source_id"]) for _, record in indexed_records if record.get("source_id")}
+    )
+    records_deactivated_before_reload = _begin_official_decision_record_refresh(
+        conn,
+        refreshed_source_ids,
+    )
+
     records_seen = 0
     records_inserted_or_updated = 0
     source_counts: Counter[str] = Counter()
     kind_counts: Counter[str] = Counter()
     source_doc_cache: dict[str, int | None] = {}
 
-    for path in paths:
-        with path.open("r", encoding="utf-8") as handle:
-            for line in handle:
-                if not line.strip():
-                    continue
-                record = json.loads(line)
-                records_seen += 1
-                source_counts[record["source_id"]] += 1
-                kind_counts[record["record_kind"]] += 1
+    for path, record in indexed_records:
+        records_seen += 1
+        source_counts[record["source_id"]] += 1
+        kind_counts[record["record_kind"]] += 1
 
-                source_metadata_path = record.get("source_metadata_path") or ""
-                if source_metadata_path not in source_doc_cache:
-                    metadata_path = Path(source_metadata_path) if source_metadata_path else None
-                    source_doc_cache[source_metadata_path] = (
-                        upsert_source_document(conn, metadata_path)
-                        if metadata_path is not None and metadata_path.exists()
-                        else None
-                    )
-                source_document_id = source_doc_cache[source_metadata_path]
+        source_metadata_path = record.get("source_metadata_path") or ""
+        if source_metadata_path not in source_doc_cache:
+            metadata_path = Path(source_metadata_path) if source_metadata_path else None
+            source_doc_cache[source_metadata_path] = (
+                upsert_source_document(conn, metadata_path)
+                if metadata_path is not None and metadata_path.exists()
+                else None
+            )
+        source_document_id = source_doc_cache[source_metadata_path]
 
-                with conn.cursor() as cur:
-                    cur.execute(
-                        """
-                        INSERT INTO official_parliamentary_decision_record (
-                            external_key, source_document_id, source_id, chamber,
-                            record_type, record_kind, parliament_label, year_label,
-                            month_label, day_label, record_date, title, link_text, url,
-                            evidence_status, parser_name, parser_version, metadata
-                        )
-                        VALUES (
-                            %(external_key)s, %(source_document_id)s, %(source_id)s,
-                            %(chamber)s, %(record_type)s, %(record_kind)s,
-                            %(parliament_label)s, %(year_label)s, %(month_label)s,
-                            %(day_label)s, %(record_date)s, %(title)s, %(link_text)s,
-                            %(url)s, %(evidence_status)s, %(parser_name)s,
-                            %(parser_version)s, %(metadata)s
-                        )
-                        ON CONFLICT (external_key) DO UPDATE SET
-                            source_document_id = COALESCE(
-                                EXCLUDED.source_document_id,
-                                official_parliamentary_decision_record.source_document_id
-                            ),
-                            source_id = EXCLUDED.source_id,
-                            chamber = EXCLUDED.chamber,
-                            record_type = EXCLUDED.record_type,
-                            record_kind = EXCLUDED.record_kind,
-                            parliament_label = EXCLUDED.parliament_label,
-                            year_label = EXCLUDED.year_label,
-                            month_label = EXCLUDED.month_label,
-                            day_label = EXCLUDED.day_label,
-                            record_date = EXCLUDED.record_date,
-                            title = EXCLUDED.title,
-                            link_text = EXCLUDED.link_text,
-                            url = EXCLUDED.url,
-                            evidence_status = EXCLUDED.evidence_status,
-                            parser_name = EXCLUDED.parser_name,
-                            parser_version = EXCLUDED.parser_version,
-                            metadata = official_parliamentary_decision_record.metadata
-                                || EXCLUDED.metadata
-                        """,
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO official_parliamentary_decision_record (
+                    external_key, source_document_id, source_id, chamber,
+                    record_type, record_kind, parliament_label, year_label,
+                    month_label, day_label, record_date, title, link_text, url,
+                    evidence_status, parser_name, parser_version, metadata,
+                    is_current, last_seen_at, withdrawn_at
+                )
+                VALUES (
+                    %(external_key)s, %(source_document_id)s, %(source_id)s,
+                    %(chamber)s, %(record_type)s, %(record_kind)s,
+                    %(parliament_label)s, %(year_label)s, %(month_label)s,
+                    %(day_label)s, %(record_date)s, %(title)s, %(link_text)s,
+                    %(url)s, %(evidence_status)s, %(parser_name)s,
+                    %(parser_version)s, %(metadata)s, TRUE, now(), NULL
+                )
+                ON CONFLICT (external_key) DO UPDATE SET
+                    source_document_id = COALESCE(
+                        EXCLUDED.source_document_id,
+                        official_parliamentary_decision_record.source_document_id
+                    ),
+                    source_id = EXCLUDED.source_id,
+                    chamber = EXCLUDED.chamber,
+                    record_type = EXCLUDED.record_type,
+                    record_kind = EXCLUDED.record_kind,
+                    parliament_label = EXCLUDED.parliament_label,
+                    year_label = EXCLUDED.year_label,
+                    month_label = EXCLUDED.month_label,
+                    day_label = EXCLUDED.day_label,
+                    record_date = EXCLUDED.record_date,
+                    title = EXCLUDED.title,
+                    link_text = EXCLUDED.link_text,
+                    url = EXCLUDED.url,
+                    evidence_status = EXCLUDED.evidence_status,
+                    parser_name = EXCLUDED.parser_name,
+                    parser_version = EXCLUDED.parser_version,
+                    metadata = official_parliamentary_decision_record.metadata
+                        || EXCLUDED.metadata,
+                    is_current = TRUE,
+                    last_seen_at = now(),
+                    withdrawn_at = NULL
+                """,
+                {
+                    "external_key": record["external_key"],
+                    "source_document_id": source_document_id,
+                    "source_id": record["source_id"],
+                    "chamber": record["chamber"],
+                    "record_type": record["record_type"],
+                    "record_kind": record["record_kind"],
+                    "parliament_label": record.get("parliament_label") or None,
+                    "year_label": record.get("year") or None,
+                    "month_label": record.get("month") or None,
+                    "day_label": record.get("day_label") or None,
+                    "record_date": parse_date(str(record.get("record_date") or "")),
+                    "title": record["title"],
+                    "link_text": record.get("link_text") or None,
+                    "url": record["url"],
+                    "evidence_status": record["evidence_status"],
+                    "parser_name": record["parser_name"],
+                    "parser_version": record["parser_version"],
+                    "metadata": as_jsonb(
                         {
-                            "external_key": record["external_key"],
-                            "source_document_id": source_document_id,
-                            "source_id": record["source_id"],
-                            "chamber": record["chamber"],
-                            "record_type": record["record_type"],
-                            "record_kind": record["record_kind"],
-                            "parliament_label": record.get("parliament_label") or None,
-                            "year_label": record.get("year") or None,
-                            "month_label": record.get("month") or None,
-                            "day_label": record.get("day_label") or None,
-                            "record_date": parse_date(str(record.get("record_date") or "")),
-                            "title": record["title"],
-                            "link_text": record.get("link_text") or None,
-                            "url": record["url"],
-                            "evidence_status": record["evidence_status"],
-                            "parser_name": record["parser_name"],
-                            "parser_version": record["parser_version"],
-                            "metadata": as_jsonb(
-                                {
-                                    "schema_version": record.get("schema_version"),
-                                    "source_name": record.get("source_name"),
-                                    "source_metadata_path": source_metadata_path,
-                                    "decision_record_index_artifact_path": str(path),
-                                    "source_record_metadata": record.get("metadata") or {},
-                                }
-                            ),
-                        },
-                    )
-                    records_inserted_or_updated += cur.rowcount
+                            "schema_version": record.get("schema_version"),
+                            "source_name": record.get("source_name"),
+                            "source_metadata_path": source_metadata_path,
+                            "decision_record_index_artifact_path": str(path),
+                            "source_record_metadata": record.get("metadata") or {},
+                        }
+                    ),
+                },
+            )
+            records_inserted_or_updated += cur.rowcount
 
     conn.commit()
     return {
         "jsonl_paths": [str(path.resolve()) for path in paths],
         "records_seen": records_seen,
         "records_inserted_or_updated": records_inserted_or_updated,
+        "records_deactivated_before_reload": records_deactivated_before_reload,
         "source_counts": dict(sorted(source_counts.items())),
         "record_kind_counts": dict(sorted(kind_counts.items())),
     }
@@ -5280,6 +5392,7 @@ def load_official_parliamentary_decision_record_documents(
     skipped_missing_metadata = 0
     skipped_missing_decision_record = 0
     representation_counts: Counter[str] = Counter()
+    document_rows: list[tuple[dict[str, Any], Path, dict[str, Any], dict[str, Any], dict[str, Any]]] = []
 
     for document in payload.get("documents") or []:
         if document.get("status") not in {"fetched", "skipped_existing"}:
@@ -5311,7 +5424,26 @@ def load_official_parliamentary_decision_record_documents(
         if not (decision_external_key and representation_url and representation_kind):
             skipped_missing_metadata += 1
             continue
+        document_rows.append((document, metadata_path, metadata, decision_metadata, representation))
 
+    refreshed_source_ids = sorted(
+        {
+            str(decision_metadata["source_id"])
+            for _, _, _, decision_metadata, _ in document_rows
+            if decision_metadata.get("source_id")
+        }
+    )
+    documents_deactivated_before_reload = _begin_official_decision_record_document_refresh(
+        conn,
+        refreshed_source_ids,
+    )
+
+    for document, metadata_path, metadata, decision_metadata, representation in document_rows:
+        decision_external_key = decision_metadata.get("external_key") or document.get(
+            "decision_record_external_key"
+        )
+        representation_url = representation.get("url") or document.get("representation_url")
+        representation_kind = representation.get("record_kind") or document.get("representation_kind")
         with conn.cursor() as cur:
             cur.execute(
                 """
@@ -5331,9 +5463,10 @@ def load_official_parliamentary_decision_record_documents(
                 """
                 INSERT INTO official_parliamentary_decision_record_document (
                     decision_record_id, source_document_id, representation_url,
-                    representation_kind, fetched_at, sha256, metadata
+                    representation_kind, fetched_at, sha256, metadata,
+                    is_current, last_seen_at, withdrawn_at
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, TRUE, now(), NULL)
                 ON CONFLICT (
                     decision_record_id, representation_url, source_document_id
                 ) DO UPDATE SET
@@ -5341,7 +5474,10 @@ def load_official_parliamentary_decision_record_documents(
                     fetched_at = EXCLUDED.fetched_at,
                     sha256 = EXCLUDED.sha256,
                     metadata = official_parliamentary_decision_record_document.metadata
-                        || EXCLUDED.metadata
+                        || EXCLUDED.metadata,
+                    is_current = TRUE,
+                    last_seen_at = now(),
+                    withdrawn_at = NULL
                 """,
                 (
                     decision_record_id,
@@ -5373,6 +5509,7 @@ def load_official_parliamentary_decision_record_documents(
         "skipped_not_fetched": skipped_not_fetched,
         "skipped_missing_metadata": skipped_missing_metadata,
         "skipped_missing_decision_record": skipped_missing_decision_record,
+        "documents_deactivated_before_reload": documents_deactivated_before_reload,
         "representation_counts": dict(sorted(representation_counts.items())),
     }
 

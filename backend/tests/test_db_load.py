@@ -11,6 +11,7 @@ from au_politics_money.db.load import (
     classify_interest_event,
     classify_money_event_type,
     is_direct_representative_return_type,
+    load_official_aph_divisions,
     load_official_parliamentary_decision_record_documents,
     load_official_parliamentary_decision_records,
     load_electorate_boundary_display_geometries,
@@ -305,6 +306,72 @@ def test_load_official_decision_record_index_upserts_rows(tmp_path) -> None:
         "INSERT INTO official_parliamentary_decision_record" in sql
         for sql in conn.cursor_instance.executed_sql
     )
+    assert any(
+        "UPDATE official_parliamentary_decision_record" in sql
+        and "is_current = FALSE" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
+        "is_current = TRUE" in sql and "withdrawn_at = NULL" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+
+
+def test_load_official_aph_divisions_marks_latest_snapshot_current(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    jsonl_path = tmp_path / "official_divisions.jsonl"
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "external_id": "aph:house:2026-02-03:1",
+                "chamber": "house",
+                "division_date": "2026-02-03",
+                "division_number": 1,
+                "title": "Fixture Division",
+                "aye_count": 1,
+                "no_count": 0,
+                "possible_turnout": 1,
+                "source_metadata_path": str(tmp_path / "metadata.json"),
+                "metadata": {"vote_count_matches": True},
+                "votes": [],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "au_politics_money.db.load.upsert_source_document",
+        lambda conn, path: 42,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.db.load._current_chamber_vote_person_index",
+        lambda conn, chamber: {},
+    )
+    conn = StatementRecordingConnection()
+
+    summary = load_official_aph_divisions(conn, jsonl_path)
+
+    assert summary["divisions_seen"] == 1
+    assert summary["votes_seen"] == 0
+    assert summary["divisions_deactivated_before_reload"] == 1
+    assert summary["official_vote_rows_deactivated_before_reload"] == 1
+    assert conn.committed is True
+    assert any(
+        "UPDATE person_vote vote" in sql and "is_current = FALSE" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
+        "UPDATE vote_division" in sql and "is_current = FALSE" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
+        "INSERT INTO vote_division" in sql
+        and "is_current" in sql
+        and "withdrawn_at = NULL" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
 
 
 def test_load_official_decision_record_documents_links_source_snapshot(
@@ -376,6 +443,16 @@ def test_load_official_decision_record_documents_links_source_snapshot(
     )
     assert any(
         "INSERT INTO official_parliamentary_decision_record_document" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert summary["documents_deactivated_before_reload"] == 1
+    assert any(
+        "UPDATE official_parliamentary_decision_record_document" in sql
+        and "is_current = FALSE" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
+        "is_current = TRUE" in sql and "withdrawn_at = NULL" in sql
         for sql in conn.cursor_instance.executed_sql
     )
 

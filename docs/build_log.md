@@ -109,6 +109,12 @@ Completed:
   discovered-link manifest. Cached PDFs absent from the current APH index are
   ignored during extraction, allowing prior House register rows to remain
   non-current instead of being republished.
+- Added current/withdrawn semantics for official APH parliamentary decision
+  indexes, linked decision-record documents, official `vote_division` rows, and
+  `person_vote` rows. Refresh loads now mark prior official rows for the
+  refreshed source/chamber as non-current before reactivating rows present in
+  the latest artifact, and public vote summaries, coverage counts, and QA checks
+  read only current official vote rows.
 - Softened public network language in the app from "influence graph" toward
   "evidence network", renamed "Non-rejected records" to "Published records",
   added visible non-causation caveats, and expanded the methodology page with

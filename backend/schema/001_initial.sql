@@ -516,7 +516,11 @@ CREATE TABLE official_parliamentary_decision_record (
     evidence_status TEXT NOT NULL,
     parser_name TEXT NOT NULL,
     parser_version TEXT NOT NULL,
-    metadata JSONB NOT NULL DEFAULT '{}'::jsonb
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    withdrawn_at TIMESTAMPTZ
 );
 
 CREATE INDEX official_decision_record_source_date_idx
@@ -525,6 +529,8 @@ CREATE INDEX official_decision_record_chamber_date_idx
     ON official_parliamentary_decision_record (chamber, record_date);
 CREATE INDEX official_decision_record_url_idx
     ON official_parliamentary_decision_record (url);
+CREATE INDEX official_decision_record_current_source_idx
+    ON official_parliamentary_decision_record (source_id, is_current);
 
 CREATE TABLE official_parliamentary_decision_record_document (
     id BIGSERIAL PRIMARY KEY,
@@ -535,6 +541,10 @@ CREATE TABLE official_parliamentary_decision_record_document (
     fetched_at TIMESTAMPTZ,
     sha256 TEXT,
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    withdrawn_at TIMESTAMPTZ,
     UNIQUE (decision_record_id, representation_url, source_document_id)
 );
 
@@ -544,6 +554,8 @@ CREATE INDEX official_decision_record_document_source_idx
     ON official_parliamentary_decision_record_document (source_document_id);
 CREATE INDEX official_decision_record_document_url_idx
     ON official_parliamentary_decision_record_document (representation_url);
+CREATE INDEX official_decision_record_document_current_record_idx
+    ON official_parliamentary_decision_record_document (decision_record_id, is_current);
 
 CREATE TABLE vote_division (
     id BIGSERIAL PRIMARY KEY,
@@ -559,12 +571,18 @@ CREATE TABLE vote_division (
     possible_turnout INTEGER,
     source_document_id BIGINT REFERENCES source_document(id),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    withdrawn_at TIMESTAMPTZ,
     UNIQUE (chamber, division_date, division_number)
 );
 
 CREATE UNIQUE INDEX vote_division_external_id_idx
     ON vote_division (external_id)
     WHERE external_id IS NOT NULL;
+CREATE INDEX vote_division_current_chamber_idx
+    ON vote_division (chamber, is_current);
 
 CREATE TABLE person_vote (
     id BIGSERIAL PRIMARY KEY,
@@ -575,8 +593,14 @@ CREATE TABLE person_vote (
     rebelled_against_party BOOLEAN,
     source_document_id BIGINT REFERENCES source_document(id),
     metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_current BOOLEAN NOT NULL DEFAULT TRUE,
+    first_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    withdrawn_at TIMESTAMPTZ,
     UNIQUE (division_id, person_id)
 );
+CREATE INDEX person_vote_current_division_idx
+    ON person_vote (division_id, is_current);
 
 CREATE TABLE policy_topic (
     id BIGSERIAL PRIMARY KEY,
@@ -686,13 +710,15 @@ SELECT
     'recorded_divisions_linked_to_topics'::TEXT AS summary_scope,
     jsonb_build_object(
         'view_caveat',
-        'Summarizes recorded divisions linked to policy topics; voice votes, party-room decisions, and unlinked divisions are outside this view.'
+        'Summarizes current recorded divisions linked to policy topics; voice votes, party-room decisions, withdrawn/corrected records, and unlinked divisions are outside this view.'
     ) AS metadata
 FROM person_vote pv
 JOIN person p ON p.id = pv.person_id
 JOIN vote_division vd ON vd.id = pv.division_id
 JOIN division_topic dt ON dt.division_id = vd.id
 JOIN policy_topic pt ON pt.id = dt.topic_id
+WHERE pv.is_current IS TRUE
+  AND vd.is_current IS TRUE
 GROUP BY pv.person_id, p.display_name, vd.chamber, dt.topic_id, pt.slug, pt.label;
 
 CREATE OR REPLACE VIEW person_influence_sector_summary AS

@@ -174,7 +174,9 @@ weekly run before the database is treated as releasable if core serving
 invariants break, including missing House boundaries, active events pointing at
 non-current source rows, obvious House form/OCR boilerplate in public events,
 official APH vote-count mismatches, or unexpected unmatched official APH votes.
-The default unmatched-vote tolerance is 25 rows, currently above the 11 known
+Official APH vote QA reads only current `vote_division` rows; withdrawn or
+corrected official rows remain auditable but do not fail serving checks. The
+default unmatched-vote tolerance is 25 rows, currently above the 11 known
 unmatched official APH roster-vote rows in the local baseline.
 
 New backend virtual environments created by the weekly runner and CI install

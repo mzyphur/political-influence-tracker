@@ -136,6 +136,10 @@ def _assert_expected_indexes(conn) -> None:
             "postcode_electorate_crosswalk_unresolved_source_document_idx",
             "money_flow_current_source_dataset_idx",
             "gift_interest_current_chamber_idx",
+            "official_decision_record_current_source_idx",
+            "official_decision_record_document_current_record_idx",
+            "vote_division_current_chamber_idx",
+            "person_vote_current_division_idx",
         ):
             cur.execute("SELECT to_regclass(%s)", (index_name,))
             assert cur.fetchone()[0] is not None, index_name
@@ -925,6 +929,76 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     context_payload = context_response.json()
     assert context_payload["row_count"] == 1
     assert context_payload["rows"][0]["relationship"] == "direct_material_interest"
+
+
+def test_vote_summary_excludes_non_current_official_rows(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT min(id) FROM source_document")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT min(id) FROM party")
+            party_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO vote_division (
+                    external_id, chamber, division_date, division_number, title,
+                    no_count, source_document_id, metadata, is_current, withdrawn_at
+                )
+                VALUES (
+                    'division:withdrawn-climate-2', 'house', '2023-03-02', 2,
+                    'Withdrawn Climate Division', 1, %s, %s, FALSE, now()
+                )
+                RETURNING id
+                """,
+                (
+                    source_document_id,
+                    Jsonb({"source": "aph_official_decision_record", "fixture": True}),
+                ),
+            )
+            withdrawn_division_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO person_vote (
+                    division_id, person_id, vote, party_id, source_document_id,
+                    metadata, is_current, withdrawn_at
+                )
+                VALUES (%s, %s, 'no', %s, %s, %s, FALSE, now())
+                """,
+                (
+                    withdrawn_division_id,
+                    integration_db.person_id,
+                    party_id,
+                    source_document_id,
+                    Jsonb({"source": "aph_official_decision_record", "fixture": True}),
+                ),
+            )
+            cur.execute(
+                """
+                INSERT INTO division_topic (
+                    division_id, topic_id, method, confidence, evidence_note
+                )
+                VALUES (
+                    %s, %s, 'manual', 1.000,
+                    'Fixture link for withdrawn official vote.'
+                )
+                """,
+                (withdrawn_division_id, integration_db.topic_id),
+            )
+            cur.execute(
+                """
+                SELECT division_vote_count, aye_count, no_count
+                FROM person_policy_vote_summary
+                WHERE person_id = %s
+                  AND topic_id = %s
+                """,
+                (integration_db.person_id, integration_db.topic_id),
+            )
+            row = cur.fetchone()
+        conn.commit()
+
+    assert row == (1, 1, 0)
 
 
 def test_postcode_loader_keeps_unresolved_aec_candidates_auditable(

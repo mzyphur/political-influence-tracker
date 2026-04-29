@@ -154,6 +154,7 @@ def run_serving_database_quality_checks(
         SELECT count(*)
         FROM vote_division
         WHERE metadata->>'source' = 'aph_official_decision_record'
+          AND is_current IS TRUE
           AND metadata->>'vote_count_matches' = 'false'
         """,
     )
@@ -174,6 +175,7 @@ def run_serving_database_quality_checks(
         SELECT COALESCE(sum((metadata->>'unmatched_roster_vote_count')::integer), 0)
         FROM vote_division
         WHERE metadata->>'source' = 'aph_official_decision_record'
+          AND is_current IS TRUE
           AND metadata ? 'unmatched_roster_vote_count'
         """,
     )
