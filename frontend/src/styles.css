@@ -526,6 +526,20 @@ a:focus-visible {
   padding: 7px;
 }
 
+.state-summary-row-button {
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.state-summary-row-button:hover,
+.state-summary-row-button:focus-visible {
+  border-color: rgba(30, 109, 121, 0.38);
+  background: rgba(232, 247, 245, 0.88);
+  outline: none;
+}
+
 .state-summary-row strong {
   color: #17252b;
   font-size: 12px;

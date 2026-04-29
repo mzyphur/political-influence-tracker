@@ -439,6 +439,17 @@ function App() {
     });
   }
 
+  function openEntityProfile(entityId: number, label: string) {
+    setSelectedSearchResult({
+      type: "entity",
+      id: entityId,
+      label,
+      subtitle: "Selected from QLD ECQ disclosure summary",
+      rank: 25,
+      metadata: { id: entityId }
+    });
+  }
+
   function toggleGraphCandidates(includeCandidates: boolean) {
     setGraphRoot((current) => (
       current?.kind === "party" ? { ...current, includeCandidates } : current
@@ -611,6 +622,7 @@ function App() {
               summary={stateLocalSummary}
               status={stateLocalSummaryStatus}
               error={stateLocalSummaryError}
+              onOpenEntityProfile={openEntityProfile}
             />
           )}
 
@@ -668,7 +680,7 @@ function App() {
               {searchCaveat && <p className="caveat compact">{searchCaveat}</p>}
             </div>
           )}
-          {dataLevel === "federal" && selectedSearchResult?.type === "entity" && (
+          {selectedSearchResult?.type === "entity" && (
             <EntityProfilePanel
               profile={entityProfile}
               status={entityProfileStatus}
@@ -679,7 +691,7 @@ function App() {
               onClose={() => setSelectedSearchResult(null)}
             />
           )}
-          {dataLevel === "federal" && selectedSearchResult?.type === "party" && (
+          {selectedSearchResult?.type === "party" && (
             <PartyProfilePanel
               profile={partyProfile}
               status={partyProfileStatus}
@@ -762,12 +774,14 @@ function StateLocalSummaryPanel({
   level,
   summary,
   status,
-  error
+  error,
+  onOpenEntityProfile
 }: {
   level: DataLevel;
   summary: StateLocalSummaryResponse | null;
   status: LoadState;
   error: string;
+  onOpenEntityProfile: (entityId: number, label: string) => void;
 }) {
   const levelName = level === "council" ? "local/council" : level;
   if (status === "idle" || status === "loading") {
@@ -850,9 +864,21 @@ function StateLocalSummaryPanel({
         <span>Campaign spend total</span>
         <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
       </div>
-      <StateLocalRankList title="Top gift donors" rows={summary.top_gift_donors} />
-      <StateLocalRankList title="Top gift recipients" rows={summary.top_gift_recipients} />
-      <StateLocalRankList title="Top campaign spend actors" rows={summary.top_expenditure_actors} />
+      <StateLocalRankList
+        title="Top gift donors"
+        rows={summary.top_gift_donors}
+        onOpenEntityProfile={onOpenEntityProfile}
+      />
+      <StateLocalRankList
+        title="Top gift recipients"
+        rows={summary.top_gift_recipients}
+        onOpenEntityProfile={onOpenEntityProfile}
+      />
+      <StateLocalRankList
+        title="Top campaign spend actors"
+        rows={summary.top_expenditure_actors}
+        onOpenEntityProfile={onOpenEntityProfile}
+      />
       <StateLocalContextList title="Top ECQ election events" rows={summary.top_events} />
       <StateLocalContextList
         title="Top local electorates named"
@@ -876,10 +902,12 @@ function StateLocalSummaryPanel({
 
 function StateLocalRankList({
   title,
-  rows
+  rows,
+  onOpenEntityProfile
 }: {
   title: string;
   rows: StateLocalSummaryEntityRow[];
+  onOpenEntityProfile: (entityId: number, label: string) => void;
 }) {
   return (
     <div className="state-summary-list">
@@ -887,16 +915,37 @@ function StateLocalRankList({
       {rows.length === 0 ? (
         <p className="muted">No rows returned for this slice.</p>
       ) : (
-        rows.map((row) => (
-          <div className="state-summary-row" key={`${title}:${row.entity_id ?? row.name}`}>
-            <strong>{row.name || "Source not identified"}</strong>
-            <span>
-              {row.event_count.toLocaleString("en-AU")} records ·{" "}
-              {formatMoney(row.reported_amount_total)} ·{" "}
-              {row.identifier_backed ? "ECQ-backed ID" : "source free-text name"}
-            </span>
-          </div>
-        ))
+        rows.map((row) => {
+          const label = row.name || "Source not identified";
+          const body = (
+            <>
+              <strong>{label}</strong>
+              <span>
+                {row.event_count.toLocaleString("en-AU")} records ·{" "}
+                {formatMoney(row.reported_amount_total)} ·{" "}
+                {row.identifier_backed ? "ECQ-backed ID" : "source free-text name"}
+              </span>
+            </>
+          );
+          if (row.entity_id) {
+            return (
+              <button
+                type="button"
+                className="state-summary-row state-summary-row-button"
+                key={`${title}:${row.entity_id}`}
+                onClick={() => onOpenEntityProfile(row.entity_id as number, label)}
+                title={`Open entity profile for ${label}`}
+              >
+                {body}
+              </button>
+            );
+          }
+          return (
+            <div className="state-summary-row" key={`${title}:${label}`}>
+              {body}
+            </div>
+          );
+        })
       )}
     </div>
   );

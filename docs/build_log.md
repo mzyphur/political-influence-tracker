@@ -129,6 +129,10 @@ Completed:
   exposes top events/local electorates, and the frontend splits gift/donation
   totals from electoral campaign-spend totals so users do not read campaign
   expenditure as personal receipt.
+- Made QLD State/Council summary actor rows actionable. Rows with a resolved
+  disclosure entity now open the existing entity profile and influence graph
+  surfaces from State or Council mode, while source-only free-text rows remain
+  displayed as unresolved source names.
 
 Verification:
 
