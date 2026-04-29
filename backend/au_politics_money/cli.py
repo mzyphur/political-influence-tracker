@@ -15,6 +15,7 @@ from au_politics_money.db.load import (
     load_influence_events,
     load_processed_artifacts,
     load_postcode_electorate_crosswalk,
+    load_qld_ecq_eds_from_pipeline_manifest,
     load_qld_ecq_eds_contexts,
     load_qld_ecq_eds_money_flows,
     load_qld_ecq_eds_participants,
@@ -645,6 +646,20 @@ def load_qld_ecq_eds_contexts_command(skip_influence_events: bool, jsonl_path: s
     return 0
 
 
+def load_state_local_pipeline_manifest_command(
+    manifest_path: str,
+    skip_influence_events: bool,
+) -> int:
+    with connect() as conn:
+        summary = load_qld_ecq_eds_from_pipeline_manifest(
+            conn,
+            Path(manifest_path),
+            include_influence_events=not skip_influence_events,
+        )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
 def load_postcode_electorate_crosswalk_command() -> int:
     with connect() as conn:
         summary = load_postcode_electorate_crosswalk(conn)
@@ -1024,6 +1039,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Load QLD ECQ event/local-electorate context without rebuilding influence_event.",
     )
 
+    load_state_local_manifest_parser = subparsers.add_parser(
+        "load-state-local-pipeline-manifest"
+    )
+    load_state_local_manifest_parser.add_argument("manifest_path")
+    load_state_local_manifest_parser.add_argument(
+        "--skip-influence-events",
+        action="store_true",
+        help="Load manifest-selected state/local artifacts without rebuilding influence_event.",
+    )
+
     subparsers.add_parser("load-postcode-electorate-crosswalk")
 
     review_parser = subparsers.add_parser("export-review-queue")
@@ -1273,6 +1298,11 @@ def main() -> int:
         return load_qld_ecq_eds_participants_command(args.jsonl_path)
     if args.command == "load-qld-ecq-eds-contexts":
         return load_qld_ecq_eds_contexts_command(args.skip_influence_events, args.jsonl_path)
+    if args.command == "load-state-local-pipeline-manifest":
+        return load_state_local_pipeline_manifest_command(
+            args.manifest_path,
+            args.skip_influence_events,
+        )
     if args.command == "load-postcode-electorate-crosswalk":
         return load_postcode_electorate_crosswalk_command()
     if args.command == "export-review-queue":

@@ -1673,6 +1673,93 @@ def load_qld_ecq_eds_money_flows(conn, jsonl_path: Path | None = None) -> dict[s
     return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="qld_ecq_eds")
 
 
+def _pipeline_step_output(manifest: dict[str, Any], step_name: str) -> Path:
+    steps = manifest.get("steps")
+    if not isinstance(steps, list):
+        raise ValueError("Pipeline manifest is missing a steps array")
+    for step in steps:
+        if not isinstance(step, dict):
+            continue
+        if step.get("name") == step_name:
+            if step.get("status") != "succeeded":
+                raise ValueError(f"Pipeline step {step_name} did not succeed")
+            output = step.get("output")
+            if not output:
+                raise ValueError(f"Pipeline step {step_name} has no output path")
+            return Path(str(output))
+    raise ValueError(f"Pipeline manifest is missing step {step_name}")
+
+
+def _jsonl_path_from_summary(summary_path: Path, expected_normalizer: str) -> Path:
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("normalizer_name") != expected_normalizer:
+        raise ValueError(
+            f"Unexpected normalizer in {summary_path}: {summary.get('normalizer_name')!r}"
+        )
+    jsonl_path = summary.get("jsonl_path")
+    if not jsonl_path:
+        raise ValueError(f"Summary is missing jsonl_path: {summary_path}")
+    return Path(str(jsonl_path))
+
+
+def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, Path]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("pipeline_name") != "state_local":
+        raise ValueError("Expected a state_local pipeline manifest")
+    parameters = manifest.get("parameters")
+    if not isinstance(parameters, dict) or parameters.get("source_family") != "qld_ecq_eds":
+        raise ValueError("Expected a QLD ECQ EDS state/local manifest")
+    if parameters.get("loads_database") is not False:
+        raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+
+    money_summary_path = _pipeline_step_output(manifest, "normalize_qld_ecq_eds_money_flows")
+    participants_summary_path = _pipeline_step_output(
+        manifest,
+        "normalize_qld_ecq_eds_participants",
+    )
+    contexts_summary_path = _pipeline_step_output(manifest, "normalize_qld_ecq_eds_contexts")
+
+    return {
+        "money_flows": _jsonl_path_from_summary(money_summary_path, "qld_ecq_eds_money_flow_normalizer"),
+        "participants": _jsonl_path_from_summary(
+            participants_summary_path,
+            "qld_ecq_eds_participant_normalizer",
+        ),
+        "contexts": _jsonl_path_from_summary(
+            contexts_summary_path,
+            "qld_ecq_eds_context_normalizer",
+        ),
+    }
+
+
+def load_qld_ecq_eds_from_pipeline_manifest(
+    conn,
+    manifest_path: Path,
+    *,
+    include_influence_events: bool = True,
+) -> dict[str, Any]:
+    paths = qld_ecq_eds_paths_from_pipeline_manifest(manifest_path)
+    summary: dict[str, Any] = {
+        "pipeline_manifest_path": str(manifest_path),
+        "artifact_paths": {key: str(value) for key, value in paths.items()},
+        "qld_ecq_eds_money_flows": load_qld_ecq_eds_money_flows(
+            conn,
+            jsonl_path=paths["money_flows"],
+        ),
+        "qld_ecq_eds_participants": load_qld_ecq_eds_participants(
+            conn,
+            jsonl_path=paths["participants"],
+        ),
+        "qld_ecq_eds_contexts": load_qld_ecq_eds_contexts(
+            conn,
+            jsonl_path=paths["contexts"],
+        ),
+    }
+    if include_influence_events:
+        summary["influence_events"] = load_influence_events(conn)
+    return summary
+
+
 def _latest_qld_contexts_jsonl() -> Path:
     return latest_file(PROCESSED_DIR / "qld_ecq_eds_contexts", "*.jsonl")
 

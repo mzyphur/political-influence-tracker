@@ -1,5 +1,6 @@
 from datetime import date
 import json
+from pathlib import Path
 
 import pytest
 
@@ -25,6 +26,7 @@ from au_politics_money.db.load import (
     parse_date,
     parse_datetime,
     parse_financial_year_bounds,
+    qld_ecq_eds_paths_from_pipeline_manifest,
     senate_api_name_to_canonical,
 )
 
@@ -194,6 +196,102 @@ def test_default_load_refreshes_official_identifiers_before_influence_events(mon
 
     assert calls == ["official_identifiers", "influence_events"]
     assert list(summary) == ["schema_applied", "official_identifiers", "influence_events"]
+
+
+def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> None:
+    money_jsonl = tmp_path / "money.jsonl"
+    participants_jsonl = tmp_path / "participants.jsonl"
+    contexts_jsonl = tmp_path / "contexts.jsonl"
+    for path in (money_jsonl, participants_jsonl, contexts_jsonl):
+        path.write_text("", encoding="utf-8")
+
+    def write_summary(name: str, jsonl_path: Path) -> Path:
+        summary_path = tmp_path / f"{name}.summary.json"
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "normalizer_name": name,
+                    "jsonl_path": str(jsonl_path),
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        return summary_path
+
+    money_summary = write_summary("qld_ecq_eds_money_flow_normalizer", money_jsonl)
+    participants_summary = write_summary(
+        "qld_ecq_eds_participant_normalizer",
+        participants_jsonl,
+    )
+    contexts_summary = write_summary("qld_ecq_eds_context_normalizer", contexts_jsonl)
+    manifest_path = tmp_path / "state_local_qld_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "qld_ecq_eds",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_qld_ecq_eds_money_flows",
+                        "status": "succeeded",
+                        "output": str(money_summary),
+                    },
+                    {
+                        "name": "normalize_qld_ecq_eds_participants",
+                        "status": "succeeded",
+                        "output": str(participants_summary),
+                    },
+                    {
+                        "name": "normalize_qld_ecq_eds_contexts",
+                        "status": "succeeded",
+                        "output": str(contexts_summary),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert qld_ecq_eds_paths_from_pipeline_manifest(manifest_path) == {
+        "money_flows": money_jsonl,
+        "participants": participants_jsonl,
+        "contexts": contexts_jsonl,
+    }
+
+
+def test_qld_pipeline_manifest_rejects_failed_steps(tmp_path) -> None:
+    manifest_path = tmp_path / "state_local_qld_failed.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "qld_ecq_eds",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_qld_ecq_eds_money_flows",
+                        "status": "failed",
+                        "output": "/tmp/money.summary.json",
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="did not succeed"):
+        qld_ecq_eds_paths_from_pipeline_manifest(manifest_path)
 
 
 def test_display_geometry_repair_buffer_validates_range() -> None:

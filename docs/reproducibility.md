@@ -45,8 +45,8 @@ is being generalized, but it now has its own manifest-producing runner:
 
 ```bash
 cd backend
-.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction qld
-.venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-money-flows
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction qld)
+.venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 ```
 
 `run-state-local-pipeline` performs acquisition and normalization only. It does
@@ -58,6 +58,8 @@ MP, or councillor. Loading remains explicit through
 `load-qld-ecq-eds-money-flows`. The runner passes the exact fetched page,
 export, and lookup metadata paths into downstream normalizers so the normalized
 artifacts can be traced to the same run instead of an unrelated "latest" file.
+The manifest loader reads the referenced normalizer summaries and loads those
+exact JSONL artifacts into Postgres.
 
 The export fetcher does not depend on a manual browser download. It reads the
 latest archived ECQ EDS public map and expenditure pages, extracts their current

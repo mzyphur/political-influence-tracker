@@ -337,7 +337,9 @@ Current implementation status:
   attribution remain separate auditable stages. The QLD runner passes exact
   fetched metadata paths into later export and normalization steps, which is the
   reproducibility standard future adapters should follow rather than relying on
-  ambient latest-file lookup during a run.
+  ambient latest-file lookup during a run. The paired
+  `load-state-local-pipeline-manifest` command loads the exact JSONL artifacts
+  named by the manifest, closing the acquisition-to-load reproducibility loop.
 - The historical disclosure-return archive currently returned HTTP 401 during
   reproducible fetch. Treat it as a blocked/pending source until an official
   public access path is confirmed.

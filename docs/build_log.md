@@ -11,7 +11,9 @@ Completed:
   database loading and public attribution remain separate downstream steps.
   Follow-up hardening now passes exact fetched metadata paths between QLD
   runner steps so a manifest is tied to the artifacts it normalized rather than
-  whichever source snapshot happens to be latest.
+  whichever source snapshot happens to be latest. Added
+  `load-state-local-pipeline-manifest` so scheduled loads can load the exact
+  processed JSONL artifacts referenced by that manifest.
 - Added a reproducible AEC Electorate Finder postcode crosswalk pipeline:
   archived AEC postcode search pages, normalized source-backed postcode to
   electorate-candidate rows with ambiguity/confidence/locality metadata, added

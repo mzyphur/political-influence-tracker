@@ -69,9 +69,9 @@ single manifest-producing command:
 
 ```bash
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
-.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction qld
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction qld)
 .venv/bin/dotenv -f .env run -- \
-  .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-money-flows
+  .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 ```
 
 The state/local pipeline writes a reproducibility manifest under
@@ -82,7 +82,9 @@ separate so database mutation remains an explicit step after source acquisition
 and normalization have succeeded. Within the runner, later steps receive the
 exact metadata paths produced by earlier steps rather than re-reading an
 ambient "latest" snapshot; this keeps a manifest tied to the artifacts it
-actually normalized.
+actually normalized. `load-state-local-pipeline-manifest` then reads that same
+manifest, opens the normalizer summaries it references, and loads those exact
+processed JSONL files.
 
 The fetcher archives raw CSV bodies and metadata under
 `data/raw/qld_ecq_eds_map_export_csv/` and
@@ -113,7 +115,9 @@ For exact replay from a reviewed artifact bundle, the QLD loader commands also
 accept explicit processed JSONL paths: `--money-flows-path`,
 `--participants-path`, `--contexts-path`, and `--jsonl-path` on the individual
 participant/context loaders. Omit those flags only when loading the most recent
-processed artifacts is intentional.
+processed artifacts is intentional. Prefer `load-state-local-pipeline-manifest`
+for normal scheduled QLD refreshes because it performs that exact-artifact
+selection from the pipeline manifest.
 
 Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command
