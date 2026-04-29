@@ -4,6 +4,7 @@ from pathlib import Path
 from au_politics_money.ingest.qld_ecq_eds import (
     form_fields_from_html,
     normalize_qld_ecq_eds_money_flows,
+    normalize_qld_ecq_eds_participants,
 )
 
 
@@ -49,6 +50,28 @@ def _write_raw_csv(raw_dir: Path, source_id: str, csv_text: str) -> Path:
             {
                 "body_path": str(body_path),
                 "content_type": "text/csv",
+                "fetched_at": "20260429T000000Z",
+                "ok": True,
+                "source": {"source_id": source_id},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return metadata_path
+
+
+def _write_raw_json(raw_dir: Path, source_id: str, payload: object) -> Path:
+    target_dir = raw_dir / source_id / "20260429T000000Z"
+    target_dir.mkdir(parents=True)
+    body_path = target_dir / "body.json"
+    body_path.write_text(json.dumps(payload), encoding="utf-8")
+    metadata_path = target_dir / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "body_path": str(body_path),
+                "content_type": "application/json",
                 "fetched_at": "20260429T000000Z",
                 "ok": True,
                 "source": {"source_id": source_id},
@@ -108,3 +131,46 @@ def test_normalize_qld_ecq_eds_money_flows(tmp_path: Path) -> None:
     assert records[2]["flow_kind"] == "qld_electoral_expenditure"
     assert records[2]["jurisdiction_level"] == "local"
     assert records[2]["campaign_support_attribution"]["not_personal_receipt"] is True
+
+
+def test_normalize_qld_ecq_eds_participants(tmp_path: Path) -> None:
+    raw_dir = tmp_path / "raw"
+    processed_dir = tmp_path / "processed"
+    _write_raw_json(
+        raw_dir,
+        "qld_ecq_eds_api_political_electors",
+        [{"electorId": 123, "fullName": "Candidate Name"}],
+    )
+    _write_raw_json(
+        raw_dir,
+        "qld_ecq_eds_api_political_parties",
+        [{"politicalPartyId": 456, "partyName": "Example Party (Queensland)"}],
+    )
+    _write_raw_json(
+        raw_dir,
+        "qld_ecq_eds_api_associated_entities",
+        [{"organisationId": 789, "name": "Example Associated Entity Pty Ltd"}],
+    )
+    _write_raw_json(
+        raw_dir,
+        "qld_ecq_eds_api_local_groups",
+        [{"localGroupId": 321, "name": "Example Local Group"}],
+    )
+
+    summary_path = normalize_qld_ecq_eds_participants(
+        raw_dir=raw_dir,
+        processed_dir=processed_dir,
+    )
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    records = [
+        json.loads(line)
+        for line in Path(summary["jsonl_path"]).read_text(encoding="utf-8").splitlines()
+    ]
+    assert summary["total_count"] == 4
+    assert records[0]["source_record_type"] == "qld_ecq_political_elector"
+    assert records[0]["identifiers"] == [
+        {"identifier_type": "qld_ecq_elector_id", "identifier_value": "123"}
+    ]
+    assert records[1]["aliases"] == ["Example Party"]
+    assert records[1]["normalized_name"] == "example party queensland"

@@ -119,6 +119,41 @@ export type CoverageResponse = {
   caveat: string;
 };
 
+export type StateLocalSummaryEntityRow = {
+  entity_id: number | null;
+  name: string | null;
+  event_count: number;
+  reported_amount_total: number | null;
+  identifier_count: number;
+  identifier_backed: boolean | null;
+};
+
+export type StateLocalSummaryTotalRow = {
+  jurisdiction_name: string;
+  jurisdiction_level: string;
+  jurisdiction_code: string;
+  money_flow_count: number;
+  gift_or_donation_count: number;
+  electoral_expenditure_count: number;
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  source_identifier_backed_count: number;
+  recipient_identifier_backed_count: number;
+};
+
+export type StateLocalSummaryResponse = {
+  status: string;
+  source_family: string;
+  jurisdiction: string;
+  requested_level: string;
+  db_level: string;
+  totals_by_level: StateLocalSummaryTotalRow[];
+  top_gift_donors: StateLocalSummaryEntityRow[];
+  top_gift_recipients: StateLocalSummaryEntityRow[];
+  top_expenditure_actors: StateLocalSummaryEntityRow[];
+  caveat: string;
+};
+
 export type RepresentativeEventSummary = {
   event_family: string;
   event_count: number;

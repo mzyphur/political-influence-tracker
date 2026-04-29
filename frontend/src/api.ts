@@ -5,7 +5,8 @@ import type {
   InfluenceGraph,
   PartyProfile,
   RepresentativeProfile,
-  SearchResponse
+  SearchResponse,
+  StateLocalSummaryResponse
 } from "./types";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || "";
@@ -57,6 +58,21 @@ export async function fetchElectorateMap(options: {
 
 export async function fetchCoverage(signal?: AbortSignal): Promise<CoverageResponse> {
   return fetchJson<CoverageResponse>(apiUrl("/api/coverage"), signal);
+}
+
+export async function fetchStateLocalSummary(options: {
+  level?: "state" | "council" | "local";
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<StateLocalSummaryResponse> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 8)
+  });
+  if (options.level) params.set("level", options.level);
+  return fetchJson<StateLocalSummaryResponse>(
+    apiUrl("/api/state-local/summary", params),
+    options.signal
+  );
 }
 
 export async function fetchRepresentativeProfile(

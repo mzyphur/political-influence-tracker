@@ -13,6 +13,7 @@ from au_politics_money.db.load import (
     load_influence_events,
     load_processed_artifacts,
     load_qld_ecq_eds_money_flows,
+    load_qld_ecq_eds_participants,
 )
 from au_politics_money.db.review import (
     REVIEW_SUBJECT_TYPES,
@@ -79,6 +80,7 @@ from au_politics_money.ingest.qld_ecq_eds import (
     QLD_ECQ_EDS_EXPORTS,
     fetch_qld_ecq_eds_exports,
     normalize_qld_ecq_eds_money_flows,
+    normalize_qld_ecq_eds_participants,
 )
 from au_politics_money.ingest.senate_interests import (
     extract_senate_interest_records,
@@ -229,6 +231,12 @@ def fetch_qld_ecq_eds_exports_command(export_names: list[str] | None) -> int:
 
 def normalize_qld_ecq_eds_money_flows_command() -> int:
     summary_path = normalize_qld_ecq_eds_money_flows()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def normalize_qld_ecq_eds_participants_command() -> int:
+    summary_path = normalize_qld_ecq_eds_participants()
     print(str(Path(summary_path).resolve()))
     return 0
 
@@ -509,9 +517,17 @@ def load_qld_ecq_eds_money_flows_command(skip_influence_events: bool) -> int:
     with connect() as conn:
         summary: dict[str, object] = {
             "qld_ecq_eds_money_flows": load_qld_ecq_eds_money_flows(conn),
+            "qld_ecq_eds_participants": load_qld_ecq_eds_participants(conn),
         }
         if not skip_influence_events:
             summary["influence_events"] = load_influence_events(conn)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def load_qld_ecq_eds_participants_command() -> int:
+    with connect() as conn:
+        summary = load_qld_ecq_eds_participants(conn)
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
@@ -605,6 +621,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Fetch one QLD ECQ EDS CSV export. Repeat for multiple exports; omit for all.",
     )
     subparsers.add_parser("normalize-qld-ecq-eds-money-flows")
+
+    subparsers.add_parser("normalize-qld-ecq-eds-participants")
 
     subparsers.add_parser("extract-house-interest-sections")
 
@@ -710,6 +728,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Load QLD ECQ EDS money_flow rows without rebuilding influence_event.",
     )
+    subparsers.add_parser("load-qld-ecq-eds-participants")
 
     review_parser = subparsers.add_parser("export-review-queue")
     review_parser.add_argument("queue_name", choices=review_queue_names())
@@ -803,6 +822,8 @@ def main() -> int:
         return fetch_qld_ecq_eds_exports_command(args.export)
     if args.command == "normalize-qld-ecq-eds-money-flows":
         return normalize_qld_ecq_eds_money_flows_command()
+    if args.command == "normalize-qld-ecq-eds-participants":
+        return normalize_qld_ecq_eds_participants_command()
     if args.command == "extract-house-interest-sections":
         return extract_house_interest_sections_command()
     if args.command == "extract-house-interest-records":
@@ -870,6 +891,8 @@ def main() -> int:
         return migrate_postgres_command()
     if args.command == "load-qld-ecq-eds-money-flows":
         return load_qld_ecq_eds_money_flows_command(args.skip_influence_events)
+    if args.command == "load-qld-ecq-eds-participants":
+        return load_qld_ecq_eds_participants_command()
     if args.command == "export-review-queue":
         return export_review_queue_command(args.queue_name, args.limit)
     if args.command == "suggest-sector-policy-links":

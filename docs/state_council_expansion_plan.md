@@ -307,16 +307,30 @@ Current implementation status:
   `state_local_electoral_expenditure`, because electoral expenditure is campaign
   activity, not personal receipt by a representative.
 - Public lookup API snapshots for electors, parties, associated entities,
-  events, local groups, and local electorates have been archived for later
-  linking, filtering, and candidate/party/entity enrichment.
+  events, local groups, and local electorates have been archived. Elector,
+  party, associated-entity, and local-group snapshots are now normalized into a
+  participant identifier artifact and applied to existing QLD money-flow
+  entities only when the lookup name is unique, the QLD disclosure actor match
+  is exact, and the participant type is political party, associated entity, or
+  local group. Candidate/elector name-only matches are retained for manual
+  review until event/electorate/role evidence supports the identity.
+- The first enrichment pass normalized 6,360 ECQ participant lookup records and
+  auto-accepted 48 exact unique party/entity/group matches. Ambiguous
+  duplicate-name matches and 1,618 candidate/elector name-only matches remain
+  in the official-identifier observation/review layer rather than being forced
+  onto a donor, recipient, party, or candidate.
+- `/api/state-local/summary` and the frontend State/Council summary panel now
+  expose QLD ECQ disclosure totals, identifier-backed counts, top gift
+  donors/recipients, and top electoral-expenditure actors before state/council
+  boundary maps are ready.
 - The historical disclosure-return archive currently returned HTTP 401 during
   reproducible fetch. Treat it as a blocked/pending source until an official
   public access path is confirmed.
 
-Next adapter task: use the archived QLD lookup API snapshots to replace free-text
-actors with ECQ-backed participant identifiers where possible, then map
-candidate/group/electorate records into state and local electoral districts
-without reclassifying campaign expenditure as personal receipt.
+Next adapter task: map candidate/group/electorate records into state and local
+electoral districts without reclassifying campaign expenditure as personal
+receipt, then build QLD state/local map layers and representative/candidate
+drilldowns.
 
 ## Data Model Requirements
 

@@ -58,6 +58,10 @@ http://127.0.0.1:8008/docs
   for frontend graph views. Party graph money edges use reviewed
   `party_entity_link` rows only; `include_candidates=true` adds candidate
   party/entity link edges with `evidence_status="candidate_requires_review"`.
+- `GET /api/state-local/summary` - first state/local summary surface for QLD
+  ECQ EDS disclosures. It returns source-family totals, ECQ identifier-backed
+  counts, top gift donors/recipients, and top campaign-spend actors while
+  state/council maps and representative joins remain under construction.
 
 ## Search Behaviour
 
@@ -175,6 +179,38 @@ fill the same dimensions where legally/publicly available: actors, offices,
 boundaries, money flows, gifts/hospitality/travel, interests/assets/roles,
 lobbying access, votes/proceedings, entity identifiers, and industry
 classifications.
+
+## State/Local Summary
+
+`/api/state-local/summary` is the first public API surface for non-federal data.
+It currently supports the Queensland ECQ Electronic Disclosure System source
+family.
+
+Useful parameters:
+
+- `level=state|council|local`; `council` and `local` both select ECQ local
+  government rows. Omit `level` to aggregate all loaded QLD state/local rows.
+- `limit=1..25` controls each top-actor list.
+
+The response includes:
+
+- `totals_by_level`: money-flow row counts, gift/donation counts, electoral
+  expenditure counts, reported amount totals, and source/recipient row counts
+  where that side of the row is backed by an ECQ participant identifier. These
+  are row-side counts, not counts of distinct ECQ IDs.
+- `top_gift_donors` and `top_gift_recipients`: disclosed gift/donation actors.
+- `top_expenditure_actors`: electoral expenditure actors, which are
+  campaign-support context rather than personal receipt.
+
+ECQ identifiers are attached only when the archived public lookup APIs provide
+an evidence-backed participant ID and the loader can make an exact unique match
+to a QLD money-flow entity. Political party, associated-entity, and local-group
+matches can be auto-accepted under that rule. Candidate/elector name-only
+matches stay in the manual-review layer unless future event, electorate, or
+role context supports the identity. The endpoint does not claim that every donor
+has an ECQ identifier; many donor names remain free text because the archived
+lookup APIs identify political participants, parties, associated entities, and
+local groups rather than all donors.
 
 ## Representative Profiles
 

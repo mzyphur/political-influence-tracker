@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
+  BadgeCheck,
   Banknote,
   BookOpen,
   Building2,
   CircleDot,
+  Gift,
   Landmark,
   Layers,
   Loader2,
@@ -12,6 +14,7 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   PanelRightOpen,
+  ReceiptText,
   Search,
   Users
 } from "lucide-react";
@@ -22,6 +25,7 @@ import {
   fetchInfluenceGraph,
   fetchPartyProfile,
   fetchRepresentativeProfile,
+  fetchStateLocalSummary,
   searchDatabase
 } from "./api";
 import { MapCanvas } from "./components/MapCanvas";
@@ -44,7 +48,9 @@ import type {
   LoadState,
   PartyProfile,
   RepresentativeProfile,
-  SearchResult
+  SearchResult,
+  StateLocalSummaryEntityRow,
+  StateLocalSummaryResponse
 } from "./types";
 
 const states = ["All", "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"];
@@ -80,6 +86,11 @@ function App() {
   const [pendingSearchResult, setPendingSearchResult] = useState<SearchResult | null>(null);
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null);
   const [coverageStatus, setCoverageStatus] = useState<LoadState>("idle");
+  const [stateLocalSummary, setStateLocalSummary] =
+    useState<StateLocalSummaryResponse | null>(null);
+  const [stateLocalSummaryStatus, setStateLocalSummaryStatus] =
+    useState<LoadState>("idle");
+  const [stateLocalSummaryError, setStateLocalSummaryError] = useState("");
   const [selectedPersonId, setSelectedPersonId] = useState<number | null>(null);
   const [contactPersonId, setContactPersonId] = useState<number | null>(null);
   const [representativeProfileRefreshKey, setRepresentativeProfileRefreshKey] = useState(0);
@@ -105,6 +116,11 @@ function App() {
   const detailsCollapseButtonRef = useRef<HTMLButtonElement | null>(null);
   const previousControlsCollapsedRef = useRef(controlsCollapsed);
   const previousDetailsCollapsedRef = useRef(detailsCollapsed);
+  const selectedCoverageLayer = coverage?.coverage_layers.find(
+    (item) => item.level === dataLevel
+  );
+  const selectedCoverageRows = numberValue(selectedCoverageLayer?.counts.money_flow_rows);
+  const selectedLevelHasPartialData = dataLevel !== "federal" && selectedCoverageRows > 0;
 
   useEffect(() => {
     if (dataLevel !== "federal") {
@@ -159,6 +175,35 @@ function App() {
       });
     return () => controller.abort();
   }, []);
+
+  useEffect(() => {
+    if (dataLevel === "federal") {
+      setStateLocalSummary(null);
+      setStateLocalSummaryStatus("idle");
+      setStateLocalSummaryError("");
+      return;
+    }
+    const controller = new AbortController();
+    setStateLocalSummary(null);
+    setStateLocalSummaryStatus("loading");
+    setStateLocalSummaryError("");
+    fetchStateLocalSummary({
+      level: dataLevel,
+      limit: 5,
+      signal: controller.signal
+    })
+      .then((payload) => {
+        setStateLocalSummary(payload);
+        setStateLocalSummaryStatus("ready");
+      })
+      .catch((error: Error) => {
+        if (controller.signal.aborted) return;
+        setStateLocalSummary(null);
+        setStateLocalSummaryError(error.message);
+        setStateLocalSummaryStatus("error");
+      });
+    return () => controller.abort();
+  }, [dataLevel]);
 
   useEffect(() => {
     if (!pendingSearchResult || dataLevel !== "federal") return;
@@ -419,7 +464,9 @@ function App() {
               <p className="eyebrow">
                 {dataLevel === "federal"
                   ? `${chamber === "senate" ? "Federal Senate" : "Federal House"} beta`
-                  : `${levelLabels[dataLevel]} pipeline planned`}
+                  : selectedLevelHasPartialData
+                    ? `${levelLabels[dataLevel]} QLD summary beta`
+                    : `${levelLabels[dataLevel]} pipeline planned`}
               </p>
               <h1>Political Influence Explorer</h1>
             </div>
@@ -500,7 +547,9 @@ function App() {
               placeholder={
                 dataLevel === "federal"
                   ? "Search representatives, electorates, parties, entities, sectors"
-                  : `${levelLabels[dataLevel]} search will activate after ingestion`
+                  : selectedLevelHasPartialData
+                    ? `${levelLabels[dataLevel]} map/search drilldown is pending`
+                    : `${levelLabels[dataLevel]} search will activate after ingestion`
               }
               aria-label="Search the political influence database"
             />
@@ -544,26 +593,25 @@ function App() {
             </label>
           </div>
 
-          {dataLevel !== "federal" && (
-            <div className="scope-notice">
-              <strong>{levelLabels[dataLevel]} scope is reserved.</strong>
-              <span>
-                The interface is ready for this level, but the source pipelines and
-                database layers are not loaded yet.
-              </span>
+          {dataLevel === "federal" ? (
+            <div className="metric-grid" aria-label="Current map totals">
+              <Metric
+                icon={<MapPin size={17} />}
+                label={chamber === "senate" ? "Regions" : "Electorates"}
+                value={totals.electorates.toLocaleString("en-AU")}
+              />
+              <Metric icon={<Users size={17} />} label="Reps" value={totals.representatives.toLocaleString("en-AU")} />
+              <Metric icon={<Building2 size={17} />} label="Rep records" value={totals.events.toLocaleString("en-AU")} />
+              <Metric icon={<Banknote size={17} />} label="Rep reported" value={formatMoney(totals.reported)} />
             </div>
-          )}
-
-          <div className="metric-grid" aria-label="Current map totals">
-            <Metric
-              icon={<MapPin size={17} />}
-              label={chamber === "senate" ? "Regions" : "Electorates"}
-              value={totals.electorates.toLocaleString("en-AU")}
+          ) : (
+            <StateLocalSummaryPanel
+              level={dataLevel}
+              summary={stateLocalSummary}
+              status={stateLocalSummaryStatus}
+              error={stateLocalSummaryError}
             />
-            <Metric icon={<Users size={17} />} label="Reps" value={totals.representatives.toLocaleString("en-AU")} />
-            <Metric icon={<Building2 size={17} />} label="Rep records" value={totals.events.toLocaleString("en-AU")} />
-            <Metric icon={<Banknote size={17} />} label="Rep reported" value={formatMoney(totals.reported)} />
-          </div>
+          )}
 
           <CoveragePanel coverage={coverage} status={coverageStatus} />
 
@@ -706,6 +754,170 @@ function Metric({
       <span>{label}</span>
       <strong>{value}</strong>
     </div>
+  );
+}
+
+function StateLocalSummaryPanel({
+  level,
+  summary,
+  status,
+  error
+}: {
+  level: DataLevel;
+  summary: StateLocalSummaryResponse | null;
+  status: LoadState;
+  error: string;
+}) {
+  const levelName = level === "council" ? "local/council" : level;
+  if (status === "idle" || status === "loading") {
+    return (
+      <div className="state-local-summary" aria-label="State and local disclosure summary">
+        <div className="state-summary-header">
+          <strong>QLD ECQ disclosures</strong>
+          <span>
+            <Loader2 size={13} className="spin" aria-hidden="true" />
+            Loading
+          </span>
+        </div>
+      </div>
+    );
+  }
+  if (status === "error") {
+    return (
+      <div className="inline-alert" role="alert">
+        <AlertCircle size={16} />
+        <span>QLD disclosure summary failed: {error}</span>
+      </div>
+    );
+  }
+  if (!summary || summary.totals_by_level.length === 0) {
+    return (
+      <div className="scope-notice">
+        <strong>{levelLabels[level]} map drilldown is being built.</strong>
+        <span>
+          QLD ECQ disclosure ingestion is wired, but no rows were returned for this level.
+        </span>
+      </div>
+    );
+  }
+
+  const totals = rollupStateLocalTotals(summary);
+  const identifierBackedRowSides =
+    totals.sourceIdentifierBacked + totals.recipientIdentifierBacked;
+
+  return (
+    <div className="state-local-summary" aria-label="State and local disclosure summary">
+      <div className="state-summary-header">
+        <strong>QLD ECQ disclosures</strong>
+        <span>{levelName} partial data</span>
+      </div>
+      <div className="state-summary-grid">
+        <Metric
+          icon={<ReceiptText size={16} />}
+          label="Rows"
+          value={totals.moneyFlowCount.toLocaleString("en-AU")}
+        />
+        <Metric
+          icon={<Gift size={16} />}
+          label="Gifts"
+          value={totals.giftOrDonationCount.toLocaleString("en-AU")}
+        />
+        <Metric
+          icon={<Banknote size={16} />}
+          label="Spend"
+          value={totals.electoralExpenditureCount.toLocaleString("en-AU")}
+        />
+        <Metric
+          icon={<BadgeCheck size={16} />}
+          label="ID-backed sides"
+          value={identifierBackedRowSides.toLocaleString("en-AU")}
+        />
+      </div>
+      <div className="state-summary-id-row">
+        <span>Source ID-backed rows</span>
+        <strong>{totals.sourceIdentifierBacked.toLocaleString("en-AU")}</strong>
+        <span>Recipient ID-backed rows</span>
+        <strong>{totals.recipientIdentifierBacked.toLocaleString("en-AU")}</strong>
+      </div>
+      <div className="state-summary-money-row">
+        <span>Reported total</span>
+        <strong>{formatMoney(totals.reportedAmountTotal)}</strong>
+      </div>
+      <StateLocalRankList title="Top gift donors" rows={summary.top_gift_donors} />
+      <StateLocalRankList title="Top gift recipients" rows={summary.top_gift_recipients} />
+      <StateLocalRankList title="Top campaign spend actors" rows={summary.top_expenditure_actors} />
+      <details className="coverage-caveat">
+        <summary>State/local caveat</summary>
+        <p>{summary.caveat}</p>
+        <p>
+          Map drilldown is pending. These rows are source-family disclosure coverage,
+          not claims that a current MP personally received the money.
+        </p>
+      </details>
+    </div>
+  );
+}
+
+function StateLocalRankList({
+  title,
+  rows
+}: {
+  title: string;
+  rows: StateLocalSummaryEntityRow[];
+}) {
+  return (
+    <div className="state-summary-list">
+      <h3>{title}</h3>
+      {rows.length === 0 ? (
+        <p className="muted">No rows returned for this slice.</p>
+      ) : (
+        rows.map((row) => (
+          <div className="state-summary-row" key={`${title}:${row.entity_id ?? row.name}`}>
+            <strong>{row.name || "Source not identified"}</strong>
+            <span>
+              {row.event_count.toLocaleString("en-AU")} records ·{" "}
+              {formatMoney(row.reported_amount_total)} ·{" "}
+              {row.identifier_backed ? "ECQ-backed ID" : "free-text match"}
+            </span>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
+  moneyFlowCount: number;
+  giftOrDonationCount: number;
+  electoralExpenditureCount: number;
+  sourceIdentifierBacked: number;
+  recipientIdentifierBacked: number;
+  reportedAmountTotal: number | null;
+} {
+  return summary.totals_by_level.reduce(
+    (acc, row) => {
+      acc.moneyFlowCount += numberValue(row.money_flow_count);
+      acc.giftOrDonationCount += numberValue(row.gift_or_donation_count);
+      acc.electoralExpenditureCount += numberValue(row.electoral_expenditure_count);
+      acc.sourceIdentifierBacked += numberValue(row.source_identifier_backed_count);
+      acc.recipientIdentifierBacked += numberValue(row.recipient_identifier_backed_count);
+      if (row.reported_amount_total !== null && row.reported_amount_total !== undefined) {
+        acc.reportedAmountTotal = (
+          acc.reportedAmountTotal === null
+            ? row.reported_amount_total
+            : acc.reportedAmountTotal + row.reported_amount_total
+        );
+      }
+      return acc;
+    },
+    {
+      moneyFlowCount: 0,
+      giftOrDonationCount: 0,
+      electoralExpenditureCount: 0,
+      sourceIdentifierBacked: 0,
+      recipientIdentifierBacked: 0,
+      reportedAmountTotal: null as number | null
+    }
   );
 }
 

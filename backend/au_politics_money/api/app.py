@@ -106,6 +106,14 @@ def coverage() -> dict:
     return queries.get_data_coverage()
 
 
+@app.get("/api/state-local/summary")
+def state_local_summary(
+    level: Annotated[str | None, Query(pattern="^(state|council|local)$")] = None,
+    limit: Annotated[int, Query(ge=1, le=25)] = 8,
+) -> dict:
+    return queries.get_state_local_summary(level=level, limit=limit)
+
+
 @app.get("/api/representatives/{person_id}")
 def representative_profile(person_id: int) -> dict:
     profile = queries.get_representative_profile(person_id)

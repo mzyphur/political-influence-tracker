@@ -121,6 +121,33 @@ def test_coverage_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     assert response.json()["active_country"] == "AU"
 
 
+def test_state_local_summary_endpoint_delegates_to_query_layer(monkeypatch) -> None:
+    captured = {}
+
+    def fake_summary(level=None, limit=8):
+        captured["level"] = level
+        captured["limit"] = limit
+        return {
+            "status": "ok",
+            "source_family": "qld_ecq_eds",
+            "requested_level": level,
+            "totals_by_level": [],
+            "top_gift_donors": [],
+            "top_gift_recipients": [],
+            "top_expenditure_actors": [],
+            "caveat": "fixture",
+        }
+
+    monkeypatch.setattr(queries, "get_state_local_summary", fake_summary)
+    client = TestClient(app)
+
+    response = client.get("/api/state-local/summary", params={"level": "council", "limit": 5})
+
+    assert response.status_code == 200
+    assert response.json()["source_family"] == "qld_ecq_eds"
+    assert captured == {"level": "council", "limit": 5}
+
+
 def test_influence_graph_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     def fake_get_influence_graph(
         *,

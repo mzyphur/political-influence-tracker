@@ -19,6 +19,7 @@ from au_politics_money.ingest.fetch import (
     _suffix_for_content,
     fetch_source,
 )
+from au_politics_money.ingest.official_identifiers import normalize_name
 from au_politics_money.ingest.sources import get_source
 
 
@@ -27,6 +28,17 @@ class QldEcqExportSpec:
     export_name: str
     page_source_id: str
     export_source_id: str
+
+
+@dataclass(frozen=True)
+class QldEcqLookupSpec:
+    source_id: str
+    source_record_type: str
+    id_field: str
+    name_field: str
+    identifier_type: str
+    entity_type: str
+    level: str
 
 
 QLD_ECQ_EDS_EXPORTS: tuple[QldEcqExportSpec, ...] = (
@@ -42,8 +54,49 @@ QLD_ECQ_EDS_EXPORTS: tuple[QldEcqExportSpec, ...] = (
     ),
 )
 
+QLD_ECQ_EDS_PARTICIPANT_LOOKUPS: tuple[QldEcqLookupSpec, ...] = (
+    QldEcqLookupSpec(
+        source_id="qld_ecq_eds_api_political_electors",
+        source_record_type="qld_ecq_political_elector",
+        id_field="electorId",
+        name_field="fullName",
+        identifier_type="qld_ecq_elector_id",
+        entity_type="candidate_or_elector",
+        level="state_council",
+    ),
+    QldEcqLookupSpec(
+        source_id="qld_ecq_eds_api_political_parties",
+        source_record_type="qld_ecq_political_party",
+        id_field="politicalPartyId",
+        name_field="partyName",
+        identifier_type="qld_ecq_political_party_id",
+        entity_type="political_party",
+        level="state_council",
+    ),
+    QldEcqLookupSpec(
+        source_id="qld_ecq_eds_api_associated_entities",
+        source_record_type="qld_ecq_associated_entity",
+        id_field="organisationId",
+        name_field="name",
+        identifier_type="qld_ecq_organisation_id",
+        entity_type="associated_entity",
+        level="state_council",
+    ),
+    QldEcqLookupSpec(
+        source_id="qld_ecq_eds_api_local_groups",
+        source_record_type="qld_ecq_local_group",
+        id_field="localGroupId",
+        name_field="name",
+        identifier_type="qld_ecq_local_group_id",
+        entity_type="local_group",
+        level="council",
+    ),
+)
+
 PARSER_NAME = "qld_ecq_eds_money_flow_normalizer"
 PARSER_VERSION = "1"
+PARTICIPANT_PARSER_NAME = "qld_ecq_eds_participant_normalizer"
+PARTICIPANT_PARSER_VERSION = "1"
 SOURCE_DATASET = "qld_ecq_eds"
 
 
@@ -417,6 +470,131 @@ def normalize_qld_ecq_eds_money_flows(
         "table_counts": table_counts,
         "normalizer_name": PARSER_NAME,
         "normalizer_version": PARSER_VERSION,
+    }
+    summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    return summary_path
+
+
+def _latest_lookup_metadata(source_id: str, raw_dir: Path) -> Path:
+    metadata_path = _latest_metadata(source_id, raw_dir=raw_dir)
+    if metadata_path is None:
+        source = get_source(source_id)
+        metadata_path = fetch_source(source, raw_dir=raw_dir)
+    return metadata_path
+
+
+def _participant_aliases(display_name: str) -> list[str]:
+    aliases: list[str] = []
+    if "(" in display_name and ")" in display_name:
+        before_parenthesis = display_name.split("(", maxsplit=1)[0].strip()
+        if before_parenthesis and before_parenthesis != display_name:
+            aliases.append(before_parenthesis)
+    return aliases
+
+
+def _participant_record(
+    *,
+    spec: QldEcqLookupSpec,
+    source_metadata_path: Path,
+    source_body_path: Path,
+    raw_record: dict[str, object],
+) -> dict[str, object] | None:
+    external_id = str(raw_record.get(spec.id_field) or "").strip()
+    display_name = str(raw_record.get(spec.name_field) or "").strip()
+    normalized = normalize_name(display_name)
+    if not external_id or not normalized:
+        return None
+
+    identifier = {
+        "identifier_type": spec.identifier_type,
+        "identifier_value": external_id,
+    }
+    return {
+        "parser_name": PARTICIPANT_PARSER_NAME,
+        "parser_version": PARTICIPANT_PARSER_VERSION,
+        "schema_version": "qld_ecq_eds_participant_v1",
+        "source_dataset": SOURCE_DATASET,
+        "source_id": spec.source_id,
+        "source_record_type": spec.source_record_type,
+        "source_metadata_path": str(source_metadata_path),
+        "source_body_path": str(source_body_path),
+        "stable_key": f"{spec.source_id}:{spec.source_record_type}:{external_id}",
+        "external_id": external_id,
+        "display_name": display_name,
+        "normalized_name": normalized,
+        "entity_type": spec.entity_type,
+        "public_sector": "unknown",
+        "confidence": "exact_identifier",
+        "status": "active",
+        "evidence_note": (
+            "Queensland ECQ Electronic Disclosure System lookup API participant record."
+        ),
+        "identifiers": [identifier],
+        "aliases": _participant_aliases(display_name),
+        "raw_record": raw_record,
+        "metadata": {
+            "jurisdiction_name": "Queensland",
+            "level": spec.level,
+            "identifier_type": spec.identifier_type,
+            "source_lookup": "qld_ecq_eds_public_api",
+        },
+    }
+
+
+def normalize_qld_ecq_eds_participants(
+    raw_dir: Path = RAW_DIR,
+    processed_dir: Path = PROCESSED_DIR,
+) -> Path:
+    timestamp = _timestamp()
+    target_dir = processed_dir / "qld_ecq_eds_participants"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    jsonl_path = target_dir / f"{timestamp}.jsonl"
+    summary_path = target_dir / f"{timestamp}.summary.json"
+
+    total_count = 0
+    skipped_count = 0
+    source_counts: dict[str, int] = {}
+    source_metadata_paths: dict[str, str] = {}
+    with jsonl_path.open("w", encoding="utf-8") as handle:
+        for spec in QLD_ECQ_EDS_PARTICIPANT_LOOKUPS:
+            metadata_path = _latest_lookup_metadata(spec.source_id, raw_dir=raw_dir)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+            body_path = Path(metadata["body_path"])
+            rows = json.loads(body_path.read_text(encoding="utf-8"))
+            if not isinstance(rows, list):
+                raise RuntimeError(f"Expected JSON list in {body_path}")
+            source_metadata_paths[spec.source_id] = str(metadata_path)
+            source_count = 0
+            for row in rows:
+                if not isinstance(row, dict):
+                    skipped_count += 1
+                    continue
+                record = _participant_record(
+                    spec=spec,
+                    source_metadata_path=metadata_path,
+                    source_body_path=body_path,
+                    raw_record=row,
+                )
+                if record is None:
+                    skipped_count += 1
+                    continue
+                handle.write(json.dumps(record, sort_keys=True) + "\n")
+                source_count += 1
+                total_count += 1
+            source_counts[spec.source_id] = source_count
+
+    if total_count == 0:
+        raise RuntimeError("No QLD ECQ EDS participant records normalized from lookup APIs")
+
+    summary = {
+        "generated_at": timestamp,
+        "jsonl_path": str(jsonl_path),
+        "source_metadata_paths": source_metadata_paths,
+        "total_count": total_count,
+        "skipped_count": skipped_count,
+        "source_counts": source_counts,
+        "normalizer_name": PARTICIPANT_PARSER_NAME,
+        "normalizer_version": PARTICIPANT_PARSER_VERSION,
     }
     summary_path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return summary_path

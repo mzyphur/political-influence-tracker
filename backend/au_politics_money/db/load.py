@@ -45,6 +45,10 @@ from au_politics_money.ingest.official_identifiers import (
     OFFICIAL_IDENTIFIER_PARSER_NAME,
     latest_official_identifier_jsonl_paths,
 )
+from au_politics_money.ingest.qld_ecq_eds import (
+    PARTICIPANT_PARSER_NAME as QLD_ECQ_PARTICIPANT_PARSER_NAME,
+    QLD_ECQ_EDS_PARTICIPANT_LOOKUPS,
+)
 from au_politics_money.ingest.they_vote_for_you import latest_they_vote_for_you_divisions_jsonl
 
 STATE_CODES = {
@@ -79,6 +83,17 @@ CAMPAIGN_SUPPORT_FLOW_KINDS = {
     "election_public_funding_paid",
     "election_third_party_campaign_expenditure",
     "qld_electoral_expenditure",
+}
+QLD_ECQ_AUTO_ACCEPT_PARTICIPANT_ENTITY_TYPES = {
+    "associated_entity",
+    "local_group",
+    "political_party",
+}
+QLD_ECQ_OFFICIAL_PARTICIPANT_ENTITY_TYPES = {
+    "associated_entity",
+    "candidate_or_elector",
+    "local_group",
+    "political_party",
 }
 
 REPRESENTATIVE_RETURN_TITLE_TOKENS = {
@@ -1125,6 +1140,301 @@ def load_qld_ecq_eds_money_flows(conn, jsonl_path: Path | None = None) -> dict[s
             "skipped_reason": "no_processed_qld_ecq_eds_money_flows",
         }
     return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="qld_ecq_eds")
+
+
+def _qld_ecq_eds_entity_ids_by_normalized_name(conn, normalized_name: str) -> list[int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT entity.id
+            FROM entity
+            WHERE entity.normalized_name = %s
+              AND EXISTS (
+                  SELECT 1
+                  FROM money_flow
+                  WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+                    AND (
+                        money_flow.source_entity_id = entity.id
+                        OR money_flow.recipient_entity_id = entity.id
+                    )
+              )
+            ORDER BY entity.id
+            """,
+            (normalized_name,),
+        )
+        return [int(row[0]) for row in cur.fetchall()]
+
+
+def _qld_identifier_coverage_counts(conn) -> dict[str, int]:
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT
+                count(*) FILTER (
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM entity_identifier
+                        WHERE entity_identifier.entity_id = money_flow.source_entity_id
+                          AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
+                    )
+                ) AS source_identifier_backed_rows,
+                count(*) FILTER (
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM entity_identifier
+                        WHERE entity_identifier.entity_id = money_flow.recipient_entity_id
+                          AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
+                    )
+                ) AS recipient_identifier_backed_rows
+            FROM money_flow
+            WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+            """
+        )
+        row = cur.fetchone()
+    return {
+        "source_identifier_backed_money_flows": int(row[0] or 0),
+        "recipient_identifier_backed_money_flows": int(row[1] or 0),
+    }
+
+
+def load_qld_ecq_eds_participants(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(PROCESSED_DIR / "qld_ecq_eds_participants", "*.jsonl")
+    except FileNotFoundError:
+        return {
+            "participant_records": 0,
+            "skipped_reason": "no_processed_qld_ecq_eds_participants",
+        }
+
+    records: list[dict[str, Any]] = []
+    source_doc_cache: dict[str, int] = {}
+    expected_source_scope = {
+        (spec.source_id, spec.source_record_type)
+        for spec in QLD_ECQ_EDS_PARTICIPANT_LOOKUPS
+    }
+    observed_source_scope: set[tuple[str, str]] = set()
+    normalized_counts: Counter[str] = Counter()
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            record = json.loads(line)
+            records.append(record)
+            observed_source_scope.add((record["source_id"], record["source_record_type"]))
+            normalized_counts[record["normalized_name"]] += 1
+
+    stale_entity_ids: set[int] = set()
+    with conn.cursor() as cur:
+        for source_id, source_record_type in sorted(expected_source_scope):
+            cur.execute(
+                """
+                DELETE FROM entity_identifier
+                WHERE metadata->>'official_parser_name' = %s
+                  AND metadata->>'source_id' = %s
+                  AND metadata->>'source_record_type' = %s
+                RETURNING entity_id
+                """,
+                (QLD_ECQ_PARTICIPANT_PARSER_NAME, source_id, source_record_type),
+            )
+            stale_entity_ids.update(int(row[0]) for row in cur.fetchall())
+            cur.execute(
+                """
+                DELETE FROM entity_alias
+                WHERE metadata->>'official_parser_name' = %s
+                  AND metadata->>'source_id' = %s
+                  AND metadata->>'source_record_type' = %s
+                """,
+                (QLD_ECQ_PARTICIPANT_PARSER_NAME, source_id, source_record_type),
+            )
+            cur.execute(
+                """
+                DELETE FROM entity_match_candidate
+                WHERE observation_id IN (
+                    SELECT id
+                    FROM official_identifier_observation
+                    WHERE source_id = %s
+                      AND source_record_type = %s
+                )
+                """,
+                (source_id, source_record_type),
+            )
+            cur.execute(
+                """
+                DELETE FROM official_identifier_observation
+                WHERE source_id = %s
+                  AND source_record_type = %s
+                  AND metadata->>'official_parser_name' = %s
+                """,
+                (source_id, source_record_type, QLD_ECQ_PARTICIPANT_PARSER_NAME),
+            )
+        for entity_id in sorted(stale_entity_ids):
+            cur.execute(
+                """
+                UPDATE entity
+                SET entity_type = 'unknown'
+                WHERE id = %s
+                  AND entity_type IN (
+                      'associated_entity',
+                      'candidate_or_elector',
+                      'local_group',
+                      'political_party'
+                  )
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM entity_identifier
+                      WHERE entity_identifier.entity_id = entity.id
+                        AND entity_identifier.metadata->>'official_parser_name' = %s
+                  )
+                """,
+                (entity_id, QLD_ECQ_PARTICIPANT_PARSER_NAME),
+            )
+
+    observed = 0
+    auto_accepted = 0
+    needs_review = 0
+    identifiers_inserted = 0
+    aliases_inserted = 0
+    observations_without_qld_money_flow_match = 0
+    duplicate_lookup_names_skipped = 0
+    candidate_or_elector_name_only_matches_needing_review = 0
+    source_counts: Counter[str] = Counter()
+    for record in records:
+        metadata_path = record.get("source_metadata_path")
+        source_document_id = None
+        if metadata_path:
+            if metadata_path not in source_doc_cache:
+                source_doc_cache[metadata_path] = upsert_source_document(conn, Path(metadata_path))
+            source_document_id = source_doc_cache[metadata_path]
+
+        observation_id = _insert_official_identifier_observation(conn, record, source_document_id)
+        observed += 1
+        source_counts[record["source_record_type"]] += 1
+
+        candidate_entity_ids = _qld_ecq_eds_entity_ids_by_normalized_name(
+            conn,
+            record["normalized_name"],
+        )
+        if normalized_counts[record["normalized_name"]] != 1:
+            duplicate_lookup_names_skipped += 1
+            for candidate_entity_id in candidate_entity_ids:
+                _insert_match_candidate(
+                    conn,
+                    entity_id=candidate_entity_id,
+                    observation_id=observation_id,
+                    match_method="qld_ecq_exact_name_duplicate_lookup",
+                    confidence="unresolved",
+                    status="needs_review",
+                    evidence_note=(
+                        "QLD ECQ lookup has duplicate normalized participant names; "
+                        "manual review is required before attaching the identifier."
+                    ),
+                    metadata={
+                        "candidate_count": len(candidate_entity_ids),
+                        "lookup_name_count": normalized_counts[record["normalized_name"]],
+                    },
+                )
+                needs_review += 1
+            continue
+
+        if len(candidate_entity_ids) != 1:
+            if candidate_entity_ids:
+                needs_review += len(candidate_entity_ids)
+            else:
+                observations_without_qld_money_flow_match += 1
+            for candidate_entity_id in candidate_entity_ids:
+                _insert_match_candidate(
+                    conn,
+                    entity_id=candidate_entity_id,
+                    observation_id=observation_id,
+                    match_method="qld_ecq_exact_name_context_ambiguous",
+                    confidence="unresolved",
+                    status="needs_review",
+                    evidence_note=(
+                        "Exact QLD ECQ participant name matched multiple QLD disclosure entities."
+                    ),
+                    metadata={"candidate_count": len(candidate_entity_ids)},
+                )
+            continue
+
+        entity_id = candidate_entity_ids[0]
+        if record.get("entity_type") not in QLD_ECQ_AUTO_ACCEPT_PARTICIPANT_ENTITY_TYPES:
+            _insert_match_candidate(
+                conn,
+                entity_id=entity_id,
+                observation_id=observation_id,
+                match_method="qld_ecq_exact_name_requires_participant_context",
+                confidence="unresolved",
+                status="needs_review",
+                evidence_note=(
+                    "Exact QLD ECQ participant name matched one QLD disclosure entity, "
+                    "but candidate/elector identity still requires event, electorate, "
+                    "or role context before attaching the ECQ identifier."
+                ),
+                metadata={
+                    "candidate_count": 1,
+                    "entity_type": record.get("entity_type"),
+                    "auto_accept_blocked_reason": "name_only_candidate_or_elector_match",
+                },
+            )
+            needs_review += 1
+            candidate_or_elector_name_only_matches_needing_review += 1
+            continue
+
+        _insert_match_candidate(
+            conn,
+            entity_id=entity_id,
+            observation_id=observation_id,
+            match_method="qld_ecq_exact_name_in_disclosure_context",
+            confidence="exact_name_context",
+            status="auto_accepted",
+            evidence_note=(
+                "Exact normalized participant name matched one entity already present "
+                "in QLD ECQ disclosure rows."
+            ),
+            metadata={"candidate_count": 1},
+        )
+        auto_accepted += 1
+        _update_entity_type_from_official(conn, entity_id, record.get("entity_type", ""))
+        for identifier in record.get("identifiers") or []:
+            if _insert_entity_identifier(
+                conn,
+                entity_id=entity_id,
+                identifier=identifier,
+                source_document_id=source_document_id,
+                record=record,
+            ):
+                identifiers_inserted += 1
+        aliases_inserted += _insert_entity_aliases(
+            conn,
+            entity_id=entity_id,
+            aliases=record.get("aliases") or [],
+            source_document_id=source_document_id,
+            record=record,
+        )
+
+    conn.commit()
+    coverage_counts = _qld_identifier_coverage_counts(conn)
+    return {
+        "participant_records": observed,
+        "auto_accepted_matches": auto_accepted,
+        "needs_review_matches": needs_review,
+        "observations_without_qld_money_flow_match": observations_without_qld_money_flow_match,
+        "duplicate_lookup_names_skipped": duplicate_lookup_names_skipped,
+        "candidate_or_elector_name_only_matches_needing_review": (
+            candidate_or_elector_name_only_matches_needing_review
+        ),
+        "identifiers_inserted": identifiers_inserted,
+        "aliases_inserted": aliases_inserted,
+        "source_record_type_counts": dict(sorted(source_counts.items())),
+        "expected_source_scope": [
+            {"source_id": source_id, "source_record_type": source_record_type}
+            for source_id, source_record_type in sorted(expected_source_scope)
+        ],
+        "observed_source_scope": [
+            {"source_id": source_id, "source_record_type": source_record_type}
+            for source_id, source_record_type in sorted(observed_source_scope)
+        ],
+        "jsonl_path": str(path),
+        **coverage_counts,
+    }
 
 
 def _person_lookup(conn) -> dict[str, int]:
@@ -4413,6 +4723,7 @@ def load_processed_artifacts(
             summary["election_money_flows"] = load_aec_election_money_flows(conn)
             summary["public_funding_money_flows"] = load_aec_public_funding_money_flows(conn)
             summary["qld_ecq_eds_money_flows"] = load_qld_ecq_eds_money_flows(conn)
+            summary["qld_ecq_eds_participants"] = load_qld_ecq_eds_participants(conn)
         if include_house_interests:
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:

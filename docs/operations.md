@@ -69,8 +69,13 @@ archived page form fields, and normalize them into money-flow artifacts:
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_public_map
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_expenditures
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_electors
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_parties
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_associated_entities
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_local_groups
 .venv/bin/python -m au_politics_money.cli fetch-qld-ecq-eds-exports
 .venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-money-flows
+.venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-participants
 .venv/bin/dotenv -f .env run -- \
   .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-money-flows
 ```
@@ -78,16 +83,38 @@ cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Dr
 The fetcher archives raw CSV bodies and metadata under
 `data/raw/qld_ecq_eds_map_export_csv/` and
 `data/raw/qld_ecq_eds_expenditure_export_csv/`. The normalized JSONL artifact
-is written under `data/processed/qld_ecq_eds_money_flows/`.
+is written under `data/processed/qld_ecq_eds_money_flows/`. Participant lookup
+normalization reads the archived ECQ APIs for political electors/candidates,
+political parties, associated entities, and local groups, then writes
+`data/processed/qld_ecq_eds_participants/`. The participant normalizer can
+fetch a missing lookup snapshot, but reproducible runs should fetch the lookup
+source IDs explicitly first so raw acquisition remains visible in the audit log.
 `load-qld-ecq-eds-money-flows` refreshes just this source family and rebuilds
-the derived `influence_event` surface. Use `--skip-influence-events` only for a
-fast money-flow-table inspection where the public API does not need to be
-current yet. The full `load-postgres` command also loads QLD ECQ EDS rows when
-money-flow loading is enabled.
+the derived `influence_event` surface. It also applies the latest participant
+identifier artifact when present. To refresh identifiers only after reviewing a
+new lookup snapshot, run:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-participants
+```
+
+Use `--skip-influence-events` only for a fast money-flow-table inspection where
+the public API does not need to be current yet. The full `load-postgres` command
+also loads QLD ECQ EDS rows and participant identifiers when money-flow loading
+is enabled.
 
 ECQ gift/donation rows are money records. ECQ expenditure rows are
 campaign-support records with event type `state_local_electoral_expenditure`;
 they are campaign activity, not personal receipt by a representative.
+ECQ lookup identifiers are evidence-backed for participants exposed by those
+public lookup APIs. Political party, associated-entity, and local-group
+identifiers are auto-attached only for exact unique lookup-to-disclosure-actor
+matches. Candidate/elector lookup matches stay in the manual-review layer unless
+future event/electorate/role evidence strengthens the match. Donor names remain
+free-text unless the donor also matches an accepted ECQ participant lookup
+record; this is a source limitation, not a manual redaction.
 
 ## Frontend Development
 

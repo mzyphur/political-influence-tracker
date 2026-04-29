@@ -47,8 +47,13 @@ is being generalized.
 cd backend
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_public_map
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_expenditures
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_electors
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_political_parties
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_associated_entities
+.venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_api_local_groups
 .venv/bin/python -m au_politics_money.cli fetch-qld-ecq-eds-exports
 .venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-money-flows
+.venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-participants
 .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-money-flows
 ```
 
@@ -68,6 +73,8 @@ The normalizer writes:
 ```text
 data/processed/qld_ecq_eds_money_flows/<timestamp>.jsonl
 data/processed/qld_ecq_eds_money_flows/<timestamp>.summary.json
+data/processed/qld_ecq_eds_participants/<timestamp>.jsonl
+data/processed/qld_ecq_eds_participants/<timestamp>.summary.json
 ```
 
 Current normalized coverage is 49,839 rows: 22,726 gift/donation rows and
@@ -77,10 +84,25 @@ Electoral expenditure rows are normalized as `campaign_support` with event type
 `state_local_electoral_expenditure`; they must not be described as money
 received personally by a representative.
 
+The participant normalizer uses archived ECQ lookup APIs for
+political electors/candidates, political parties, associated entities, and local
+groups. The normalizer can fetch a missing lookup snapshot, but reproducible
+runs should fetch the lookup source IDs explicitly before normalization. The
+loader stores all lookup rows as official identifier observations. It
+auto-accepts political-party, associated-entity, and local-group identifiers
+onto an existing QLD money-flow entity only when the lookup name is unique and
+exactly one existing QLD entity has the same normalized name. Candidate/elector
+name-only matches remain `needs_review` until event, electorate, or role context
+supports the identity. Duplicate lookup names and ambiguous matches also remain
+`needs_review`; the original free-text money-flow evidence is not overwritten.
+Donors are ECQ-identifier-backed only when they also appear in an accepted ECQ
+participant lookup record.
+
 The targeted serving-database loader refreshes just the QLD ECQ EDS
-`money_flow` rows and then rebuilds the unified `influence_event` surface. The
-general database loader also includes the latest processed QLD ECQ EDS artifact
-when money-flow loading is enabled:
+`money_flow` rows, applies the latest participant identifier artifact when
+present, and then rebuilds the unified `influence_event` surface. The general
+database loader also includes the latest processed QLD ECQ EDS money-flow and
+participant artifacts when money-flow loading is enabled:
 
 ```bash
 cd backend

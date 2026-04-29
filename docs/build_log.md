@@ -103,6 +103,26 @@ Completed:
   command for the new QLD source family. It avoids re-upserting every federal
   money-flow artifact while still rebuilding the derived `influence_event`
   surface by default.
+- Added QLD ECQ participant identifier enrichment from the archived lookup APIs
+  for political electors/candidates, political parties, associated entities,
+  and local groups. The first local enrichment pass normalized 6,360 lookup
+  records and, after review hardening, auto-accepted 48 exact unique
+  party/associated-entity/local-group matches against existing QLD money-flow
+  entities. A further 1,618 candidate/elector name-only matches are retained for
+  manual review rather than published as ECQ-ID-backed identities.
+- Added `GET /api/state-local/summary` and the first State/Council frontend
+  summary panel. State and Council modes now show QLD ECQ disclosure totals,
+  gift/donation rows, electoral-expenditure rows, ECQ-ID coverage, top gift
+  donors/recipients, and top campaign-spend actors while maps and
+  representative joins for those levels are still being built.
+- Tightened the state/local summary after review: top-actor rankings no longer
+  duplicate rows when an entity carries multiple ECQ identifiers, and the
+  frontend labels identifier coverage as row-side coverage rather than distinct
+  ID counts.
+- Tightened QLD ECQ participant enrichment after review: candidate/elector
+  name-only matches now remain `needs_review` unless future event,
+  electorate, or role context supports the identity, while exact unique
+  party/associated-entity/local-group matches can still be auto-accepted.
 
 Verification:
 
@@ -131,6 +151,10 @@ Verification:
   campaign-support separation.
 - Postgres integration coverage now asserts that QLD ECQ EDS rows surface as
   `partial_levels` for state and council while `active_levels` remains federal.
+- Focused QLD participant, API, DB-loader, and frontend production-build checks
+  passed. A live local DB query confirmed QLD state totals of 34,002 rows and
+  QLD local/council totals of 15,837 rows through the new state/local summary
+  API.
 
 ## 2026-04-28
 

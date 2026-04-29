@@ -1340,6 +1340,155 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
     )
 
 
+def _qld_summary_rows(
+    conn,
+    *,
+    role: str,
+    flow_kind: str,
+    db_level: str | None,
+    limit: int,
+) -> list[dict[str, Any]]:
+    if role not in {"source", "recipient"}:
+        raise ValueError("role must be source or recipient")
+    entity_column = "source_entity_id" if role == "source" else "recipient_entity_id"
+    raw_name_column = "source_raw_name" if role == "source" else "recipient_raw_name"
+    level_filter = "AND jurisdiction.level = %s" if db_level else ""
+    params: tuple[Any, ...] = (
+        (flow_kind, db_level, limit) if db_level else (flow_kind, limit)
+    )
+    return _fetch_dicts(
+        conn,
+        f"""
+        SELECT
+            entity.id AS entity_id,
+            COALESCE(entity.canonical_name, money_flow.{raw_name_column}) AS name,
+            count(*) AS event_count,
+            sum(money_flow.amount) AS reported_amount_total,
+            COALESCE(max(identifier_counts.identifier_count), 0) AS identifier_count,
+            bool_or(COALESCE(identifier_counts.identifier_count, 0) > 0)
+                AS identifier_backed
+        FROM money_flow
+        JOIN jurisdiction
+          ON jurisdiction.id = money_flow.jurisdiction_id
+        LEFT JOIN entity
+          ON entity.id = money_flow.{entity_column}
+        LEFT JOIN LATERAL (
+            SELECT count(*) AS identifier_count
+            FROM entity_identifier
+            WHERE entity_identifier.entity_id = entity.id
+              AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
+        ) identifier_counts ON TRUE
+        WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+          AND money_flow.metadata->>'flow_kind' = %s
+          {level_filter}
+        GROUP BY entity.id, COALESCE(entity.canonical_name, money_flow.{raw_name_column})
+        ORDER BY sum(money_flow.amount) DESC NULLS LAST, count(*) DESC, name
+        LIMIT %s
+        """,
+        params,
+    )
+
+
+def get_state_local_summary(
+    *,
+    level: str | None = None,
+    limit: int = 8,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    level_map = {"state": "state", "council": "local", "local": "local"}
+    db_level = level_map.get(level or "") if level else None
+    if level and db_level is None:
+        raise ValueError("level must be state, council, local, or omitted")
+
+    with connect(database_url) as conn:
+        level_filter = "AND jurisdiction.level = %s" if db_level else ""
+        params: tuple[Any, ...] = (db_level,) if db_level else ()
+        totals_rows = _fetch_dicts(
+            conn,
+            f"""
+            SELECT
+                jurisdiction.name AS jurisdiction_name,
+                jurisdiction.level AS jurisdiction_level,
+                jurisdiction.code AS jurisdiction_code,
+                count(*) AS money_flow_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = 'qld_gift'
+                ) AS gift_or_donation_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                ) AS electoral_expenditure_count,
+                count(*) FILTER (WHERE money_flow.amount IS NOT NULL)
+                    AS reported_amount_event_count,
+                sum(money_flow.amount) FILTER (WHERE money_flow.amount IS NOT NULL)
+                    AS reported_amount_total,
+                count(*) FILTER (
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM entity_identifier
+                        WHERE entity_identifier.entity_id = money_flow.source_entity_id
+                          AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
+                    )
+                ) AS source_identifier_backed_count,
+                count(*) FILTER (
+                    WHERE EXISTS (
+                        SELECT 1
+                        FROM entity_identifier
+                        WHERE entity_identifier.entity_id = money_flow.recipient_entity_id
+                          AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
+                    )
+                ) AS recipient_identifier_backed_count
+            FROM money_flow
+            JOIN jurisdiction
+              ON jurisdiction.id = money_flow.jurisdiction_id
+            WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+              {level_filter}
+            GROUP BY jurisdiction.name, jurisdiction.level, jurisdiction.code
+            ORDER BY jurisdiction.level, jurisdiction.name
+            """,
+            params,
+        )
+        top_gift_donors = _qld_summary_rows(
+            conn,
+            role="source",
+            flow_kind="qld_gift",
+            db_level=db_level,
+            limit=limit,
+        )
+        top_gift_recipients = _qld_summary_rows(
+            conn,
+            role="recipient",
+            flow_kind="qld_gift",
+            db_level=db_level,
+            limit=limit,
+        )
+        top_expenditure_actors = _qld_summary_rows(
+            conn,
+            role="source",
+            flow_kind="qld_electoral_expenditure",
+            db_level=db_level,
+            limit=limit,
+        )
+
+    return _jsonable(
+        {
+            "status": "ok",
+            "source_family": "qld_ecq_eds",
+            "jurisdiction": "Queensland",
+            "requested_level": level or "all",
+            "db_level": db_level or "all",
+            "totals_by_level": totals_rows,
+            "top_gift_donors": top_gift_donors,
+            "top_gift_recipients": top_gift_recipients,
+            "top_expenditure_actors": top_expenditure_actors,
+            "caveat": (
+                "Queensland ECQ EDS rows are state/local disclosure records. "
+                "Gift and donation rows are source-backed money records; electoral "
+                "expenditure rows are campaign-support context and not personal receipt."
+            ),
+        }
+    )
+
+
 def _get_senate_map(
     *,
     state: str | None = None,

@@ -20,6 +20,7 @@ from au_politics_money.db.load import (
     connect,
     link_aec_direct_representative_money_flows,
     load_influence_events,
+    load_qld_ecq_eds_participants,
 )
 from au_politics_money.db.party_entity_suggestions import (
     materialize_party_entity_link_candidates,
@@ -890,6 +891,17 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
                 """
             )
             recipient_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity_identifier (
+                    entity_id, identifier_type, identifier_value, source_document_id
+                )
+                VALUES
+                    (%s, 'qld_ecq_elector_id', 'pytest-qld-donor', %s),
+                    (%s, 'qld_ecq_political_party_id', 'pytest-qld-recipient', %s)
+                """,
+                (donor_id, source_document_id, recipient_id, source_document_id),
+            )
 
             qld_rows = (
                 (
@@ -969,6 +981,200 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert layers["local_council_disclosures"]["jurisdiction"] == "QLD-LOCAL"
     assert layers["local_council_disclosures"]["counts"]["money_flow_rows"] == 1
     assert layers["local_council_disclosures"]["counts"]["electoral_expenditure_rows"] == 1
+
+    state_summary_response = client.get(
+        "/api/state-local/summary",
+        params={"level": "state", "limit": "3"},
+    )
+    assert state_summary_response.status_code == 200
+    state_summary = state_summary_response.json()
+    assert state_summary["totals_by_level"][0]["money_flow_count"] == 1
+    assert state_summary["totals_by_level"][0]["gift_or_donation_count"] == 1
+    assert state_summary["totals_by_level"][0]["source_identifier_backed_count"] == 1
+    assert state_summary["totals_by_level"][0]["recipient_identifier_backed_count"] == 1
+    assert state_summary["top_gift_donors"][0]["name"] == "QLD Donor"
+    assert state_summary["top_gift_donors"][0]["identifier_backed"] is True
+
+    council_summary_response = client.get(
+        "/api/state-local/summary",
+        params={"level": "council", "limit": "3"},
+    )
+    assert council_summary_response.status_code == 200
+    council_summary = council_summary_response.json()
+    assert council_summary["totals_by_level"][0]["jurisdiction_level"] == "local"
+    assert council_summary["totals_by_level"][0]["electoral_expenditure_count"] == 1
+    assert council_summary["top_expenditure_actors"][0]["name"] == "QLD Donor"
+
+
+def test_qld_participant_loader_requires_review_for_candidate_name_only_matches(
+    integration_db: IntegrationDatabase,
+    tmp_path: Path,
+) -> None:
+    jsonl_path = tmp_path / "qld_participants.jsonl"
+
+    def participant_record(
+        *,
+        source_id: str,
+        source_record_type: str,
+        external_id: str,
+        display_name: str,
+        normalized_name: str,
+        entity_type: str,
+        identifier_type: str,
+    ) -> dict:
+        return {
+            "schema_version": "qld_ecq_eds_participant_v1",
+            "parser_name": "qld_ecq_eds_participant_normalizer",
+            "parser_version": "1",
+            "source_id": source_id,
+            "source_record_type": source_record_type,
+            "external_id": external_id,
+            "stable_key": f"{source_id}:{source_record_type}:{external_id}",
+            "display_name": display_name,
+            "normalized_name": normalized_name,
+            "entity_type": entity_type,
+            "public_sector": "unknown",
+            "confidence": "exact_identifier",
+            "status": "observed",
+            "source_updated_at": None,
+            "evidence_note": "Pytest QLD participant lookup record.",
+            "identifiers": [
+                {
+                    "identifier_type": identifier_type,
+                    "identifier_value": external_id,
+                }
+            ],
+            "aliases": [],
+            "raw_record": {},
+            "metadata": {},
+        }
+
+    records = [
+        participant_record(
+            source_id="qld_ecq_eds_api_political_electors",
+            source_record_type="political_elector",
+            external_id="pytest-elector-1",
+            display_name="Jane Candidate",
+            normalized_name="jane candidate",
+            entity_type="candidate_or_elector",
+            identifier_type="qld_ecq_elector_id",
+        ),
+        participant_record(
+            source_id="qld_ecq_eds_api_political_parties",
+            source_record_type="political_party",
+            external_id="pytest-party-1",
+            display_name="Example Party Queensland",
+            normalized_name="example party queensland",
+            entity_type="political_party",
+            identifier_type="qld_ecq_political_party_id",
+        ),
+    ]
+    jsonl_path.write_text(
+        "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO jurisdiction (name, level, code)
+                VALUES ('Queensland', 'state', 'QLD')
+                ON CONFLICT (name) DO UPDATE SET code = EXCLUDED.code
+                RETURNING id
+                """
+            )
+            qld_jurisdiction_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity (canonical_name, normalized_name, entity_type)
+                VALUES ('Jane Candidate', 'jane candidate', 'unknown')
+                RETURNING id
+                """
+            )
+            candidate_entity_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity (canonical_name, normalized_name, entity_type)
+                VALUES ('Example Party Queensland', 'example party queensland', 'unknown')
+                RETURNING id
+                """
+            )
+            party_entity_id = cur.fetchone()[0]
+            for external_key, entity_id, raw_name in (
+                ("pytest-qld-candidate-name-only", candidate_entity_id, "Jane Candidate"),
+                ("pytest-qld-party-name-only", party_entity_id, "Example Party Queensland"),
+            ):
+                cur.execute(
+                    """
+                    INSERT INTO money_flow (
+                        external_key, source_entity_id, source_raw_name,
+                        recipient_entity_id, recipient_raw_name, amount,
+                        receipt_type, disclosure_category, jurisdiction_id,
+                        source_document_id, source_row_ref, original_text,
+                        confidence, metadata
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, 100, 'Gift', 'qld_gift', %s,
+                        %s, %s, '{}', 'resolved', %s
+                    )
+                    """,
+                    (
+                        external_key,
+                        entity_id,
+                        raw_name,
+                        party_entity_id,
+                        "Example Party Queensland",
+                        qld_jurisdiction_id,
+                        source_document_id,
+                        external_key,
+                        Jsonb({"source_dataset": "qld_ecq_eds", "flow_kind": "qld_gift"}),
+                    ),
+                )
+        conn.commit()
+
+        summary = load_qld_ecq_eds_participants(conn, jsonl_path=jsonl_path)
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT identifier_type
+                FROM entity_identifier
+                WHERE entity_id = %s
+                """,
+                (candidate_entity_id,),
+            )
+            candidate_identifiers = [row[0] for row in cur.fetchall()]
+            cur.execute(
+                """
+                SELECT identifier_type
+                FROM entity_identifier
+                WHERE entity_id = %s
+                """,
+                (party_entity_id,),
+            )
+            party_identifiers = [row[0] for row in cur.fetchall()]
+            cur.execute(
+                """
+                SELECT status, match_method
+                FROM entity_match_candidate
+                WHERE entity_id = %s
+                """,
+                (candidate_entity_id,),
+            )
+            candidate_match = cur.fetchone()
+
+    assert summary["auto_accepted_matches"] == 1
+    assert summary["candidate_or_elector_name_only_matches_needing_review"] == 1
+    assert summary["identifiers_inserted"] == 1
+    assert candidate_identifiers == []
+    assert party_identifiers == ["qld_ecq_political_party_id"]
+    assert candidate_match == (
+        "needs_review",
+        "qld_ecq_exact_name_requires_participant_context",
+    )
 
 
 def test_campaign_support_stays_separate_from_direct_money_totals(
