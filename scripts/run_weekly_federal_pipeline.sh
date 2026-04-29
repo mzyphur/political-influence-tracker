@@ -45,6 +45,12 @@ fi
 
 .venv/bin/dotenv -f .env run -- \
   .venv/bin/python -m au_politics_money.cli qa-serving-database \
+    --min-current-influence-events 100000 \
+    --min-person-linked-influence-events 5000 \
+    --min-current-money-flows 100000 \
+    --min-current-gift-interests 4000 \
+    --min-current-house-office-terms 140 \
+    --min-current-senate-office-terms 70 \
   > "${LOG_DIR}/weekly_federal_qa_${TIMESTAMP}.stdout.log" \
   2> "${LOG_DIR}/weekly_federal_qa_${TIMESTAMP}.stderr.log"
 

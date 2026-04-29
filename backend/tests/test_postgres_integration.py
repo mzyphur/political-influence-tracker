@@ -1577,6 +1577,7 @@ def test_serving_database_quality_gate_reports_pass_and_failures(
             ServingDatabaseQualityConfig(
                 boundary_set="pytest_boundary_set",
                 expected_house_boundary_count=150,
+                min_current_influence_events=999,
             ),
         )
         assert failing_summary["status"] == "fail"
@@ -1584,6 +1585,7 @@ def test_serving_database_quality_gate_reports_pass_and_failures(
             check["id"] for check in failing_summary["checks"] if check["status"] == "fail"
         }
         assert "house_boundary_count" in failed_ids
+        assert "minimum_current_influence_events" in failed_ids
 
 
 def test_qld_participant_loader_requires_review_for_candidate_name_only_matches(

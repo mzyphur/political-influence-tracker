@@ -709,11 +709,23 @@ def qa_serving_database_command(
     boundary_set: str,
     expected_house_boundary_count: int,
     max_official_unmatched_votes: int,
+    min_current_influence_events: int,
+    min_person_linked_influence_events: int,
+    min_current_money_flows: int,
+    min_current_gift_interests: int,
+    min_current_house_office_terms: int,
+    min_current_senate_office_terms: int,
 ) -> int:
     config = ServingDatabaseQualityConfig(
         boundary_set=boundary_set,
         expected_house_boundary_count=expected_house_boundary_count,
         max_official_unmatched_votes=max_official_unmatched_votes,
+        min_current_influence_events=min_current_influence_events,
+        min_person_linked_influence_events=min_person_linked_influence_events,
+        min_current_money_flows=min_current_money_flows,
+        min_current_gift_interests=min_current_gift_interests,
+        min_current_house_office_terms=min_current_house_office_terms,
+        min_current_senate_office_terms=min_current_senate_office_terms,
     )
     with connect() as conn:
         summary = run_serving_database_quality_checks(conn, config)
@@ -950,6 +962,12 @@ def build_parser() -> argparse.ArgumentParser:
     qa_parser.add_argument("--boundary-set", default="aec_federal_2025_current")
     qa_parser.add_argument("--expected-house-boundary-count", type=int, default=150)
     qa_parser.add_argument("--max-official-unmatched-votes", type=int, default=25)
+    qa_parser.add_argument("--min-current-influence-events", type=int, default=0)
+    qa_parser.add_argument("--min-person-linked-influence-events", type=int, default=0)
+    qa_parser.add_argument("--min-current-money-flows", type=int, default=0)
+    qa_parser.add_argument("--min-current-gift-interests", type=int, default=0)
+    qa_parser.add_argument("--min-current-house-office-terms", type=int, default=0)
+    qa_parser.add_argument("--min-current-senate-office-terms", type=int, default=0)
 
     pipeline_parser = subparsers.add_parser("run-federal-foundation-pipeline")
     pipeline_parser.add_argument("--smoke", action="store_true")
@@ -1140,6 +1158,12 @@ def main() -> int:
             args.boundary_set,
             args.expected_house_boundary_count,
             args.max_official_unmatched_votes,
+            args.min_current_influence_events,
+            args.min_person_linked_influence_events,
+            args.min_current_money_flows,
+            args.min_current_gift_interests,
+            args.min_current_house_office_terms,
+            args.min_current_senate_office_terms,
         )
     if args.command == "run-federal-foundation-pipeline":
         return run_pipeline_command(

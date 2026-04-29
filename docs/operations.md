@@ -174,6 +174,10 @@ weekly run before the database is treated as releasable if core serving
 invariants break, including missing House boundaries, active events pointing at
 non-current source rows, obvious House form/OCR boilerplate in public events,
 official APH vote-count mismatches, or unexpected unmatched official APH votes.
+The weekly runner also passes conservative minimum serving-count thresholds for
+current influence events, person-linked events, current money-flow rows, current
+interest rows, and current House/Senate office terms so a sharp source-refresh
+drop fails loudly instead of publishing an empty-looking interface.
 Official APH vote QA reads only current `vote_division` rows; withdrawn or
 corrected official rows remain auditable but do not fail serving checks. The
 default unmatched-vote tolerance is 25 rows, currently above the 11 known

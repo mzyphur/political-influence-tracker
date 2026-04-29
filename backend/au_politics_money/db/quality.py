@@ -9,6 +9,12 @@ class ServingDatabaseQualityConfig:
     boundary_set: str = "aec_federal_2025_current"
     expected_house_boundary_count: int = 150
     max_official_unmatched_votes: int = 25
+    min_current_influence_events: int = 0
+    min_person_linked_influence_events: int = 0
+    min_current_money_flows: int = 0
+    min_current_gift_interests: int = 0
+    min_current_house_office_terms: int = 0
+    min_current_senate_office_terms: int = 0
 
 
 FORM_NOISE_DESCRIPTIONS = (
@@ -40,6 +46,25 @@ def _check(
             "metric": metric,
             "message": message,
         }
+    )
+
+
+def _min_count_check(
+    checks: list[dict[str, Any]],
+    *,
+    check_id: str,
+    metric: int,
+    minimum: int,
+    label: str,
+) -> None:
+    if minimum <= 0:
+        return
+    _check(
+        checks,
+        check_id=check_id,
+        status="pass" if metric >= minimum else "fail",
+        metric=metric,
+        message=f"{label} count is {metric}; configured minimum is {minimum}.",
     )
 
 
@@ -190,6 +215,97 @@ def run_serving_database_quality_checks(
             f"{official_unmatched_votes} official APH votes are unmatched to the "
             f"current roster; allowed maximum is {cfg.max_official_unmatched_votes}."
         ),
+    )
+
+    current_influence_events = _scalar(
+        conn,
+        """
+        SELECT count(*)
+        FROM influence_event
+        WHERE review_status <> 'rejected'
+        """,
+    )
+    _min_count_check(
+        checks,
+        check_id="minimum_current_influence_events",
+        metric=current_influence_events,
+        minimum=cfg.min_current_influence_events,
+        label="Non-rejected influence events",
+    )
+
+    person_linked_influence_events = _scalar(
+        conn,
+        """
+        SELECT count(*)
+        FROM influence_event
+        WHERE review_status <> 'rejected'
+          AND recipient_person_id IS NOT NULL
+        """,
+    )
+    _min_count_check(
+        checks,
+        check_id="minimum_person_linked_influence_events",
+        metric=person_linked_influence_events,
+        minimum=cfg.min_person_linked_influence_events,
+        label="Person-linked non-rejected influence events",
+    )
+
+    current_money_flows = _scalar(
+        conn,
+        "SELECT count(*) FROM money_flow WHERE is_current IS TRUE",
+    )
+    _min_count_check(
+        checks,
+        check_id="minimum_current_money_flows",
+        metric=current_money_flows,
+        minimum=cfg.min_current_money_flows,
+        label="Current money_flow rows",
+    )
+
+    current_gift_interests = _scalar(
+        conn,
+        "SELECT count(*) FROM gift_interest WHERE is_current IS TRUE",
+    )
+    _min_count_check(
+        checks,
+        check_id="minimum_current_gift_interests",
+        metric=current_gift_interests,
+        minimum=cfg.min_current_gift_interests,
+        label="Current gift_interest rows",
+    )
+
+    current_house_office_terms = _scalar(
+        conn,
+        """
+        SELECT count(*)
+        FROM office_term
+        WHERE chamber = 'house'
+          AND term_end IS NULL
+        """,
+    )
+    _min_count_check(
+        checks,
+        check_id="minimum_current_house_office_terms",
+        metric=current_house_office_terms,
+        minimum=cfg.min_current_house_office_terms,
+        label="Current House office terms",
+    )
+
+    current_senate_office_terms = _scalar(
+        conn,
+        """
+        SELECT count(*)
+        FROM office_term
+        WHERE chamber = 'senate'
+          AND term_end IS NULL
+        """,
+    )
+    _min_count_check(
+        checks,
+        check_id="minimum_current_senate_office_terms",
+        metric=current_senate_office_terms,
+        minimum=cfg.min_current_senate_office_terms,
+        label="Current Senate office terms",
     )
 
     failed = [check for check in checks if check["status"] == "fail"]

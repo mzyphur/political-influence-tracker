@@ -225,6 +225,10 @@ Completed:
   party/entity link candidates, exports party/entity and sector-policy review
   queues, runs sector-policy suggestions, and writes a manifest for reviewers
   without turning candidates into public claims.
+- Added configurable minimum-count checks to `qa-serving-database` and wired
+  conservative thresholds into the weekly federal runner for influence events,
+  person-linked rows, current money flows, current interest rows, and current
+  House/Senate office terms.
 
 Verification:
 
