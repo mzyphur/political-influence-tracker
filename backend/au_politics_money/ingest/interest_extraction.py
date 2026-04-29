@@ -16,6 +16,11 @@ PROVIDER_PHRASES = (
     "sponsored by",
     "funded by",
     "paid by",
+    "paid for by",
+    "facilitated by",
+    "arranged by",
+    "organised by",
+    "organized by",
     "as guest of",
     "guest of",
     "at invitation of",
@@ -60,6 +65,12 @@ PROVIDER_PATTERN = re.compile(
     r"\b(?P<phrase>"
     + "|".join(re.escape(phrase) for phrase in PROVIDER_PHRASES)
     + r")\s+(?P<name>[^.;\n]+)",
+    flags=re.IGNORECASE,
+)
+SUBJECT_PROVIDER_PATTERN = re.compile(
+    r"\b(?P<name>[A-Z][A-Za-z0-9&'’.,() -]{2,120}?)\s+"
+    r"(?P<verb>provided|supplied|hosted|sponsored|funded|paid\s+for|"
+    r"donated|gifted|facilitated|arranged|organised|organized|invited)\b",
     flags=re.IGNORECASE,
 )
 
@@ -117,6 +128,18 @@ TEXTUAL_DATE_PATTERN = re.compile(
     rf"(?P<month>{MONTH_PATTERN})\s+(?P<year>(?:19|20)\d{{2}})\b",
     flags=re.IGNORECASE,
 )
+TEXTUAL_DATE_RANGE_PATTERN = re.compile(
+    rf"\b(?P<start_day>[0-3]?\d)(?:st|nd|rd|th)?\s*"
+    rf"(?:-|–|to)\s*[0-3]?\d(?:st|nd|rd|th)?\s+"
+    rf"(?P<month>{MONTH_PATTERN})\s+(?P<year>(?:19|20)\d{{2}})\b",
+    flags=re.IGNORECASE,
+)
+MONTH_FIRST_DATE_PATTERN = re.compile(
+    rf"\b(?P<month>{MONTH_PATTERN})\s+"
+    rf"(?P<day>[0-3]?\d)(?:st|nd|rd|th)?(?:,)?\s+"
+    rf"(?P<year>(?:19|20)\d{{2}})\b",
+    flags=re.IGNORECASE,
+)
 
 
 def _clean_text(value: str) -> str:
@@ -154,6 +177,23 @@ def _looks_like_travel_route(description: str, match: re.Match[str]) -> bool:
     )
 
 
+def _generic_subject_provider(value: str) -> bool:
+    normalized = re.sub(r"[^a-z0-9]+", " ", value.lower()).strip()
+    return normalized in {
+        "",
+        "i",
+        "me",
+        "self",
+        "the member",
+        "member",
+        "my office",
+        "parliament house",
+        "tickets",
+        "travel",
+        "hospitality",
+    }
+
+
 def extract_provider(description: str, *, fields: dict[str, Any] | None = None) -> dict[str, Any]:
     texts: list[tuple[str, str]] = []
     if fields:
@@ -177,6 +217,21 @@ def extract_provider(description: str, *, fields: dict[str, Any] | None = None) 
                 "value": provider[:250],
                 "source_field": field_name,
                 "method": f"explicit_provider_phrase:{match.group('phrase').lower()}",
+                "raw_span": match.group(0).strip(),
+            }
+    for field_name, text in texts:
+        for match in SUBJECT_PROVIDER_PATTERN.finditer(text):
+            provider = _clean_provider_name(match.group("name"))
+            if not provider or _generic_subject_provider(provider):
+                continue
+            if provider.lower() in GENERIC_PROVIDER_VALUES:
+                continue
+            if len(provider) < 3 or provider.isdigit():
+                continue
+            return {
+                "value": provider[:250],
+                "source_field": field_name,
+                "method": f"subject_provider_verb:{match.group('verb').lower()}",
                 "raw_span": match.group(0).strip(),
             }
     for field_name, text in texts:
@@ -239,6 +294,23 @@ def extract_event_date(description: str) -> dict[str, Any]:
         if parsed is not None:
             return _date_payload(parsed, "explicit_numeric_event_date", match.group(0))
 
+    match = TEXTUAL_DATE_RANGE_PATTERN.search(text)
+    if match:
+        try:
+            parsed = date(
+                int(match.group("year")),
+                MONTHS[match.group("month").lower()],
+                int(match.group("start_day")),
+            )
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            return _date_payload(
+                parsed,
+                "explicit_textual_event_date_range_start",
+                match.group(0),
+            )
+
     match = TEXTUAL_DATE_PATTERN.search(text)
     if match:
         try:
@@ -251,6 +323,19 @@ def extract_event_date(description: str) -> dict[str, Any]:
             parsed = None
         if parsed is not None:
             return _date_payload(parsed, "explicit_textual_event_date", match.group(0))
+
+    match = MONTH_FIRST_DATE_PATTERN.search(text)
+    if match:
+        try:
+            parsed = date(
+                int(match.group("year")),
+                MONTHS[match.group("month").lower()],
+                int(match.group("day")),
+            )
+        except ValueError:
+            parsed = None
+        if parsed is not None:
+            return _date_payload(parsed, "explicit_month_first_event_date", match.group(0))
 
     return {"value": "", "method": "", "raw_span": ""}
 

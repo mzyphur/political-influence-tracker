@@ -340,3 +340,37 @@ Self Virgin Club membership
     assert records[0]["counterparty_extraction"]["method"] == (
         "known_brand_provider:virgin_australia"
     )
+
+
+def test_records_from_house_section_extracts_subject_provider_and_range_date() -> None:
+    section = {
+        "source_id": "source-1",
+        "source_name": "Example PDF",
+        "source_metadata_path": "/tmp/metadata.json",
+        "body_path": "/tmp/body.pdf",
+        "url": "https://example.test/example.pdf",
+        "member_name": "Example Member",
+        "family_name": "Member",
+        "given_names": "Example",
+        "electorate": "Example",
+        "state": "Victoria",
+        "section_number": "12",
+        "section_title": "Sponsored travel or hospitality",
+        "section_text": """
+12. Sponsored travel or hospitality
+Self Commonwealth Bank hosted AFL Grand Final hospitality 12-14 April 2025 valued at $1,200
+""",
+    }
+
+    records = records_from_house_section(section)
+
+    assert len(records) == 1
+    assert records[0]["counterparty_raw_name"] == "Commonwealth Bank"
+    assert records[0]["counterparty_extraction"]["method"] == (
+        "subject_provider_verb:hosted"
+    )
+    assert records[0]["event_date"] == "2025-04-12"
+    assert records[0]["event_date_extraction"]["method"] == (
+        "explicit_textual_event_date_range_start"
+    )
+    assert records[0]["estimated_value"] == "1200"

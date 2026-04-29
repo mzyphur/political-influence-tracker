@@ -58,6 +58,12 @@ Completed:
   "worth $X" or "estimated at $X", branded providers for Qantas/Virgin airline
   lounge memberships and similar named benefits, and richer subtypes for
   private jets/flights and sporting or cultural tickets.
+- Added a further benefit-extraction hardening pass for source text that names
+  the provider before the verb, such as "Commonwealth Bank hosted..." or
+  "Example Foundation provided..."; date parsing now handles day-range starts
+  and month-first dates. Regenerated the House/Senate interest artifacts and
+  narrowly refreshed local `gift_interest` plus `influence_event` records
+  without rebuilding map geometry.
 - Added `docs/theory_of_influence.md` as the standing theory/methodology layer
   connecting engineering decisions to mechanisms of influence, democratic
   transparency, operating hypotheses, allowed claims, non-claims, and the
