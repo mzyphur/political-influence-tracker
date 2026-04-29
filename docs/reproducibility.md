@@ -49,6 +49,7 @@ cd backend
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_expenditures
 .venv/bin/python -m au_politics_money.cli fetch-qld-ecq-eds-exports
 .venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-money-flows
+.venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-money-flows
 ```
 
 The export fetcher does not depend on a manual browser download. It reads the
@@ -76,7 +77,9 @@ Electoral expenditure rows are normalized as `campaign_support` with event type
 `state_local_electoral_expenditure`; they must not be described as money
 received personally by a representative.
 
-The serving database loader includes the latest processed QLD ECQ EDS artifact
+The targeted serving-database loader refreshes just the QLD ECQ EDS
+`money_flow` rows and then rebuilds the unified `influence_event` surface. The
+general database loader also includes the latest processed QLD ECQ EDS artifact
 when money-flow loading is enabled:
 
 ```bash

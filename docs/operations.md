@@ -71,13 +71,19 @@ cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Dr
 .venv/bin/python -m au_politics_money.cli fetch-source qld_ecq_eds_expenditures
 .venv/bin/python -m au_politics_money.cli fetch-qld-ecq-eds-exports
 .venv/bin/python -m au_politics_money.cli normalize-qld-ecq-eds-money-flows
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-qld-ecq-eds-money-flows
 ```
 
 The fetcher archives raw CSV bodies and metadata under
 `data/raw/qld_ecq_eds_map_export_csv/` and
 `data/raw/qld_ecq_eds_expenditure_export_csv/`. The normalized JSONL artifact
-is written under `data/processed/qld_ecq_eds_money_flows/` and is loaded by
-`load-postgres` when money-flow loading is enabled.
+is written under `data/processed/qld_ecq_eds_money_flows/`.
+`load-qld-ecq-eds-money-flows` refreshes just this source family and rebuilds
+the derived `influence_event` surface. Use `--skip-influence-events` only for a
+fast money-flow-table inspection where the public API does not need to be
+current yet. The full `load-postgres` command also loads QLD ECQ EDS rows when
+money-flow loading is enabled.
 
 ECQ gift/donation rows are money records. ECQ expenditure rows are
 campaign-support records with event type `state_local_electoral_expenditure`;

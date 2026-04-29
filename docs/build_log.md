@@ -99,6 +99,10 @@ Completed:
   now show partial active coverage when QLD ECQ EDS rows are loaded. The map
   remains federal-only for now and tells users that state/local map drilldown is
   still being built rather than implying there are no state/local records.
+- Added `load-qld-ecq-eds-money-flows` as a targeted incremental DB refresh
+  command for the new QLD source family. It avoids re-upserting every federal
+  money-flow artifact while still rebuilding the derived `influence_event`
+  surface by default.
 
 Verification:
 

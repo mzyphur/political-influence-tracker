@@ -10,7 +10,9 @@ from au_politics_money.db.load import (
     apply_migrations,
     connect,
     load_electorate_boundary_display_geometries,
+    load_influence_events,
     load_processed_artifacts,
+    load_qld_ecq_eds_money_flows,
 )
 from au_politics_money.db.review import (
     REVIEW_SUBJECT_TYPES,
@@ -503,6 +505,17 @@ def migrate_postgres_command() -> int:
     return 0
 
 
+def load_qld_ecq_eds_money_flows_command(skip_influence_events: bool) -> int:
+    with connect() as conn:
+        summary: dict[str, object] = {
+            "qld_ecq_eds_money_flows": load_qld_ecq_eds_money_flows(conn),
+        }
+        if not skip_influence_events:
+            summary["influence_events"] = load_influence_events(conn)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
 def export_review_queue_command(queue_name: str, limit: int | None) -> int:
     with connect() as conn:
         summary_path = export_review_queue(conn, queue_name, limit=limit)
@@ -691,6 +704,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("migrate-postgres")
 
+    load_qld_parser = subparsers.add_parser("load-qld-ecq-eds-money-flows")
+    load_qld_parser.add_argument(
+        "--skip-influence-events",
+        action="store_true",
+        help="Load QLD ECQ EDS money_flow rows without rebuilding influence_event.",
+    )
+
     review_parser = subparsers.add_parser("export-review-queue")
     review_parser.add_argument("queue_name", choices=review_queue_names())
     review_parser.add_argument("--limit", type=int)
@@ -848,6 +868,8 @@ def main() -> int:
         )
     if args.command == "migrate-postgres":
         return migrate_postgres_command()
+    if args.command == "load-qld-ecq-eds-money-flows":
+        return load_qld_ecq_eds_money_flows_command(args.skip_influence_events)
     if args.command == "export-review-queue":
         return export_review_queue_command(args.queue_name, args.limit)
     if args.command == "suggest-sector-policy-links":
