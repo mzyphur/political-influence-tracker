@@ -221,6 +221,10 @@ Completed:
   `/api/state-local/summary` and the summary panel. Users can now inspect
   source/recipient names, reported amounts, ECQ event/local-electorate context,
   row references, and source links even before state/local map drilldown exists.
+- Added `prepare-review-bundle`, a reproducible CLI wrapper that materializes
+  party/entity link candidates, exports party/entity and sector-policy review
+  queues, runs sector-policy suggestions, and writes a manifest for reviewers
+  without turning candidates into public claims.
 
 Verification:
 

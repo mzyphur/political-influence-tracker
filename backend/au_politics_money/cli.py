@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import argparse
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
+from au_politics_money.config import AUDIT_DIR
 from au_politics_money.db.load import (
     DEFAULT_COASTLINE_REPAIR_BUFFER_METERS,
     MAX_COASTLINE_REPAIR_BUFFER_METERS,
@@ -627,6 +629,59 @@ def materialize_party_entity_links_command(limit_per_party: int | None) -> int:
     return 0
 
 
+def prepare_review_bundle_command(limit: int | None, limit_per_party: int | None) -> int:
+    if limit is not None and limit < 1:
+        raise ValueError("--limit must be positive when supplied.")
+    if limit_per_party is not None and limit_per_party < 1:
+        raise ValueError("--limit-per-party must be positive when supplied.")
+
+    with connect() as conn:
+        party_entity_materialize_summary = materialize_party_entity_link_candidates(
+            conn,
+            limit_per_party=limit_per_party,
+        )
+        party_entity_queue_summary_path = export_review_queue(
+            conn,
+            "party-entity-links",
+            limit=limit,
+        )
+        sector_policy_queue_summary_path = export_review_queue(
+            conn,
+            "sector-policy-links",
+            limit=limit,
+        )
+    sector_policy_suggestions_summary_path = export_sector_policy_link_suggestions(limit=limit)
+
+    timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    target_dir = AUDIT_DIR / "review_bundles"
+    target_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = target_dir / f"party_entity_sector_policy_review_bundle_{timestamp}.summary.json"
+    manifest = {
+        "generated_at": timestamp,
+        "schema_version": "review_bundle_manifest_v1",
+        "description": (
+            "Reproducible review bundle for indirect party/entity paths and "
+            "sector-policy topic links. These files are review inputs only; "
+            "public network claims require accepted review decisions with "
+            "supporting sources."
+        ),
+        "limit": limit,
+        "limit_per_party": limit_per_party,
+        "party_entity_materialize_summary": party_entity_materialize_summary,
+        "party_entity_queue_summary_path": str(party_entity_queue_summary_path),
+        "sector_policy_queue_summary_path": str(sector_policy_queue_summary_path),
+        "sector_policy_suggestions_summary_path": str(sector_policy_suggestions_summary_path),
+        "review_rules": [
+            "party_entity_link accept/revise decisions require supporting_sources with evidence_role='party_entity_relationship'.",
+            "sector_policy_topic_link accept/revise decisions require supporting_sources with topic_scope and sector_material_interest evidence roles.",
+            "Generated candidates do not mutate reviewed public graph claims until accepted decisions are imported.",
+        ],
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(str(manifest_path.resolve()))
+    return 0
+
+
 def import_review_decisions_command(input_path: str, apply: bool) -> int:
     with connect() as conn:
         summary = import_review_decisions(conn, Path(input_path), apply=apply)
@@ -867,6 +922,10 @@ def build_parser() -> argparse.ArgumentParser:
     party_entity_parser = subparsers.add_parser("materialize-party-entity-links")
     party_entity_parser.add_argument("--limit-per-party", type=int)
 
+    review_bundle_parser = subparsers.add_parser("prepare-review-bundle")
+    review_bundle_parser.add_argument("--limit", type=int)
+    review_bundle_parser.add_argument("--limit-per-party", type=int)
+
     import_review_parser = subparsers.add_parser("import-review-decisions")
     import_review_parser.add_argument("input_path")
     import_review_parser.add_argument(
@@ -1066,6 +1125,8 @@ def main() -> int:
         return suggest_sector_policy_links_command(args.limit)
     if args.command == "materialize-party-entity-links":
         return materialize_party_entity_links_command(args.limit_per_party)
+    if args.command == "prepare-review-bundle":
+        return prepare_review_bundle_command(args.limit, args.limit_per_party)
     if args.command == "import-review-decisions":
         return import_review_decisions_command(args.input_path, args.apply)
     if args.command == "reapply-review-decisions":
