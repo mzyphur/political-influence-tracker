@@ -835,6 +835,142 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert context_payload["rows"][0]["relationship"] == "direct_material_interest"
 
 
+def test_coverage_reports_partial_qld_state_and_local_levels(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO source_document (
+                    source_id, source_name, source_type, jurisdiction, url, fetched_at,
+                    http_status, content_type, sha256, storage_path, metadata
+                )
+                VALUES (
+                    'qld_ecq_eds_map_export_csv', 'ECQ EDS Gift Map CSV Export',
+                    'state_local_financial_disclosure_export_csv', 'Queensland',
+                    'https://disclosures.ecq.qld.gov.au/Map/ExportCsv', now(),
+                    200, 'text/csv', 'pytest-qld-sha256', '/tmp/qld.csv', '{}'::jsonb
+                )
+                RETURNING id
+                """
+            )
+            source_document_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO jurisdiction (name, level, code)
+                VALUES ('Queensland', 'state', 'QLD')
+                RETURNING id
+                """
+            )
+            qld_state_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO jurisdiction (name, level, code)
+                VALUES ('Queensland local governments', 'local', 'QLD-LOCAL')
+                RETURNING id
+                """
+            )
+            qld_local_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO entity (canonical_name, normalized_name, entity_type)
+                VALUES ('QLD Donor', 'qld donor', 'organisation')
+                RETURNING id
+                """
+            )
+            donor_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity (canonical_name, normalized_name, entity_type)
+                VALUES ('QLD Recipient', 'qld recipient', 'organisation')
+                RETURNING id
+                """
+            )
+            recipient_id = cur.fetchone()[0]
+
+            qld_rows = (
+                (
+                    "pytest-qld-state-gift",
+                    "QLD Donor",
+                    "QLD Recipient",
+                    100,
+                    "Gift",
+                    "qld_gift",
+                    qld_state_id,
+                ),
+                (
+                    "pytest-qld-local-expenditure",
+                    "QLD Donor",
+                    "QLD Recipient",
+                    200,
+                    "Electoral Expenditure",
+                    "qld_electoral_expenditure",
+                    qld_local_id,
+                ),
+            )
+            for row in qld_rows:
+                (
+                    external_key,
+                    source_name,
+                    recipient_name,
+                    amount,
+                    receipt_type,
+                    flow_kind,
+                    jurisdiction_id,
+                ) = row
+                cur.execute(
+                    """
+                    INSERT INTO money_flow (
+                        external_key, source_entity_id, source_raw_name,
+                        recipient_entity_id, recipient_raw_name, amount,
+                        receipt_type, disclosure_category, jurisdiction_id,
+                        source_document_id, source_row_ref, original_text,
+                        confidence, metadata
+                    )
+                    VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        'resolved', %s
+                    )
+                    """,
+                    (
+                        external_key,
+                        donor_id,
+                        source_name,
+                        recipient_id,
+                        recipient_name,
+                        amount,
+                        receipt_type,
+                        flow_kind,
+                        jurisdiction_id,
+                        source_document_id,
+                        external_key,
+                        "{}",
+                        Jsonb({"source_dataset": "qld_ecq_eds", "flow_kind": flow_kind}),
+                    ),
+                )
+        conn.commit()
+
+    client = TestClient(app)
+    response = client.get("/api/coverage")
+    assert response.status_code == 200
+    payload = response.json()
+
+    assert payload["active_levels"] == ["federal"]
+    assert payload["partial_levels"] == ["state", "council"]
+    layers = {layer["id"]: layer for layer in payload["coverage_layers"]}
+    assert layers["state_territory_disclosures"]["status"] == "partial"
+    assert layers["state_territory_disclosures"]["jurisdiction"] == "QLD"
+    assert layers["state_territory_disclosures"]["counts"]["money_flow_rows"] == 1
+    assert layers["state_territory_disclosures"]["counts"]["gift_or_donation_rows"] == 1
+    assert layers["local_council_disclosures"]["status"] == "partial"
+    assert layers["local_council_disclosures"]["jurisdiction"] == "QLD-LOCAL"
+    assert layers["local_council_disclosures"]["counts"]["money_flow_rows"] == 1
+    assert layers["local_council_disclosures"]["counts"]["electoral_expenditure_rows"] == 1
+
+
 def test_campaign_support_stays_separate_from_direct_money_totals(
     integration_db: IntegrationDatabase,
 ) -> None:

@@ -129,6 +129,8 @@ Verification:
   existing DB loader tests. A local DB reload confirmed the new QLD rows extend
   the unified `influence_event` surface while preserving the direct-money versus
   campaign-support separation.
+- Postgres integration coverage now asserts that QLD ECQ EDS rows surface as
+  `partial_levels` for state and council while `active_levels` remains federal.
 
 ## 2026-04-28
 
