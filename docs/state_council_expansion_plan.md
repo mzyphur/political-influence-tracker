@@ -299,7 +299,7 @@ Current implementation status:
 - Active reproducible exports:
   - `qld_ecq_eds_map_export_csv` for current gift/donation map rows;
   - `qld_ecq_eds_expenditure_export_csv` for electoral expenditure rows.
-- The current normalized artifact contains 49,839 rows: 22,726 gift/donation
+- The current normalized artifact contains 49,838 rows: 22,725 gift/donation
   rows and 27,113 electoral expenditure rows.
 - The gift/donation export is loaded as source-backed state/local money records
   at the actor level supported by the ECQ export fields.

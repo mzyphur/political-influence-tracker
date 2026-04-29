@@ -175,8 +175,8 @@ Completed:
   `normalize-qld-ecq-eds-money-flows` converts those exports into normalized
   state/local influence-event input records.
 - Loaded the current Queensland ECQ EDS exports into the local PostgreSQL
-  database. The normalized artifact contains 49,839 source-backed rows:
-  22,726 gift/donation rows from the public map export and 27,113 electoral
+  database. The normalized artifact contains 49,838 source-backed rows:
+  22,725 gift/donation rows from the public map export and 27,113 electoral
   expenditure rows from the expenditure export. Expenditure rows are loaded as
   `campaign_support` / `state_local_electoral_expenditure`, not as personal
   receipt by a representative.

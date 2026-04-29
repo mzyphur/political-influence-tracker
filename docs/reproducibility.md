@@ -83,7 +83,7 @@ data/processed/qld_ecq_eds_contexts/<timestamp>.jsonl
 data/processed/qld_ecq_eds_contexts/<timestamp>.summary.json
 ```
 
-Current normalized coverage is 49,839 rows: 22,726 gift/donation rows and
+Current normalized coverage is 49,838 rows: 22,725 gift/donation rows and
 27,113 electoral expenditure rows. Gift/donation rows are normalized as
 state/local money records at the actor level supported by the ECQ export.
 Electoral expenditure rows are normalized as `campaign_support` with event type
