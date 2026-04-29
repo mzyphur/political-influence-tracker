@@ -167,6 +167,10 @@ STATE_ABBREVIATIONS = {
     "western australia": "wa",
 }
 STATE_ABBREVIATION_VALUES = set(STATE_ABBREVIATIONS.values())
+MONTH_NAME_PATTERN = (
+    "january|february|march|april|may|june|july|august|september|october|"
+    "november|december"
+)
 
 
 def _timestamp() -> str:
@@ -208,16 +212,15 @@ def _is_noise_line(line: str) -> bool:
         return True
     if re.fullmatch(r"\d+", normalized):
         return True
-    if len(normalized) <= 2:
-        return True
     if normalized in {"australia", "australi"}:
         return True
-    if normalized in {"a u", "db", "1 jk", "1 australia j"}:
+    if normalized in {"a u", "db", "1 jk", "1 australia j", "grayndler nsw"}:
         return True
     tokens = normalized.split()
     if (
         tokens
         and tokens[-1] in STATE_ABBREVIATION_VALUES
+        and "state" in tokens
         and len(tokens) <= 5
         and cleaned.upper() == cleaned
     ):
@@ -229,11 +232,15 @@ def _is_noise_line(line: str) -> bool:
     if normalized in _normalized_non_values():
         return True
     value_probe = lowered.strip(" -–—")
-    if re.match(r"^(?:valued at|value|at)\s+\$?\d", value_probe):
+    money_value_pattern = r"\$?\d[\d,]*(?:\.\d{1,2})?"
+    if re.fullmatch(rf"(?:valued at|value|at)\s+{money_value_pattern}", value_probe):
         return True
-    if re.match(r"^(?:\d{4}|[a-z]+\s+\d{4})\s+[-–]\s+valued at", value_probe):
+    if re.fullmatch(
+        rf"(?:\d{{4}}|[a-z]+\s+\d{{4}})\s+[-–]\s+valued at\s+{money_value_pattern}",
+        value_probe,
+    ):
         return True
-    if re.fullmatch(r"[a-z]+\s+(?:19|20)\d{2}", normalized):
+    if re.fullmatch(rf"(?:{MONTH_NAME_PATTERN})\s+(?:19|20)\d{{2}}", normalized):
         return True
     if normalized == "self entries":
         return True

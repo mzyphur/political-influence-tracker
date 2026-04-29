@@ -63,20 +63,20 @@ Completed:
   and OCR artifacts, including inline `GIVEN NAMES`, `FAMILY NAME`,
   electorate/state labels, `N/A`, `Value: Unknown`, standalone value fragments,
   and short parliamentary form-tail lines. After regenerating House records and
-  refreshing `gift_interest`/`influence_event`, the local DB now has 5,818
-  current House interest records and 1,360 benefit events; known form artifacts
+  refreshing `gift_interest`/`influence_event`, the local DB now has 5,844
+  current House interest records and 1,362 benefit events; known form artifacts
   such as `GIVEN NAMES`, `FAMILY NAME`, `48TH PARLIAMENT`, `N/A`,
   `Value: Unknown`, and `GRAYNDLER NSW` are absent from benefit events. A
   cleaned federal review bundle was then generated at
-  `data/audit/review_bundles/federal_review_bundle_20260429T163520Z.summary.json`
-  with 1,340 benefit-event review rows.
+  `data/audit/review_bundles/federal_review_bundle_20260429T164609Z.summary.json`
+  with 1,342 benefit-event review rows.
 - Expanded the serving-database QA gate so future runs fail if known House
   form/OCR artifacts reappear through exact or regex matches. The current
   local serving QA run passes with 150 House boundaries, zero public events
   from non-current source rows, zero obvious form-noise events, 11 unmatched
-  official APH roster votes under the configured maximum of 25, 314,012
-  non-rejected influence events, 7,803 person-linked influence events, 303,230
-  current money-flow rows, 7,570 current gift-interest rows, 150 current House
+  official APH roster votes under the configured maximum of 25, 314,038
+  non-rejected influence events, 7,829 person-linked influence events, 303,230
+  current money-flow rows, 7,596 current gift-interest rows, 150 current House
   office terms, and 76 current Senate office terms.
 - Hardened ACT annual-return receipt handling after review. Broad annual
   `act_annual_receipt` rows are now loaded as state source-row context with

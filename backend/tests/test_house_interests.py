@@ -292,6 +292,41 @@ Self Ticket from Example Association
     ]
 
 
+def test_records_from_house_section_keeps_value_first_and_short_disclosures() -> None:
+    section = {
+        "source_id": "source-1",
+        "source_name": "Example PDF",
+        "source_metadata_path": "/tmp/metadata.json",
+        "body_path": "/tmp/body.pdf",
+        "url": "https://example.test/example.pdf",
+        "member_name": "Example Member",
+        "family_name": "Member",
+        "given_names": "Example",
+        "electorate": "Example",
+        "state": "Victoria",
+        "section_number": "12",
+        "section_title": "Sponsored travel or hospitality",
+        "section_text": """
+12. Sponsored travel or hospitality
+Self valued at $20 dinner from Example Association
+Self Oasis 2025
+Self AFL GRAND FINAL VIC
+Self AI
+""",
+    }
+
+    records = records_from_house_section(section)
+
+    assert [record["description"] for record in records] == [
+        "valued at $20 dinner from Example Association",
+        "Oasis 2025",
+        "AFL GRAND FINAL VIC",
+        "AI",
+    ]
+    assert records[0]["estimated_value"] == "20"
+    assert records[0]["counterparty_raw_name"] == "Example Association"
+
+
 def test_records_from_house_section_handles_spouse_slash_prefix() -> None:
     section = {
         "source_id": "source-1",
