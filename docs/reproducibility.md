@@ -41,8 +41,9 @@ a small subset. It is for CI/development only, not production data publication.
 
 The active state/local adapters are deliberately separate from the federal
 foundation command while the state/council framework is being generalized.
-Queensland ECQ EDS, NSW aggregate donor-location context, ACT gift returns, and
-the Victoria VEC funding register now have manifest-producing runners:
+Queensland ECQ EDS, NSW aggregate donor-location context, ACT gift returns,
+Northern Territory NTEC annual gift returns, and the Victoria VEC funding
+register now have manifest-producing runners:
 
 ```bash
 cd backend
@@ -52,6 +53,9 @@ MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --
 MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction act)
 .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction nt)
+.venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+
 MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction vic)
 .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 ```
@@ -59,10 +63,11 @@ MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --
 `run-state-local-pipeline` performs acquisition and normalization only. It does
 not mutate the serving database. Its manifest records `loads_database: false`
 and the claim boundary that ECQ gift/donation rows, electoral expenditure rows,
-participants, and disclosure contexts are source-backed state/local disclosure
-records, and VEC funding rows are public-funding/admin/policy context, not
-automatic claims about personal receipt by an MP, senator, state MP, or
-councillor. Loading remains explicit through
+participants, disclosure contexts, ACT gifts, and NT annual gifts are
+source-backed state/local disclosure records. VEC funding rows are
+public-funding/admin/policy context, not private donations, gifts, personal
+income, or automatic claims about personal receipt by an MP, senator, state MP,
+or councillor. Loading remains explicit through
 `load-state-local-pipeline-manifest` or a source-specific loader. The runner
 passes the exact fetched page, export, lookup, or document metadata paths into
 downstream normalizers so the normalized artifacts can be traced to the same
@@ -149,6 +154,23 @@ during the relevant period. Individual rows may therefore be below $1,000. The
 normalizer and manifest loader preserve and verify source metadata, source body,
 summary, and JSONL SHA-256 hashes before loading.
 
+The NT adapter archives the official NTEC 2024-2025 annual return gifts page
+and normalizes recipient-side "gifts received over the threshold" tables into
+`data/processed/nt_ntec_annual_gift_money_flows/`. Current normalized coverage
+from the 2026-04-29 run is 78 rows with $1,066,817.76 in reported annual gift
+value. The source table does not publish per-row gift transaction dates, so the
+records store the return received date as `date_reported` where available and
+carry an explicit date caveat. The normalizer checks parsed row sums against
+the source-published table totals. These rows are marked
+`jurisdictional_cross_disclosure_observation`: state/local source-family totals
+show the reported NTEC values, but consolidated influence totals exclude them
+until cross-source deduplication against Commonwealth and donor-side returns is
+implemented. Raw artifacts preserve public address text from the official page;
+the generic state/local records API does not echo address-bearing
+`original_text` by default. The loader verifies manifest summary hashes, JSONL
+hashes, source metadata hashes, source body hashes, source ID, source dataset,
+non-zero counts, and row counts before inserting rows.
+
 The VEC funding-register adapter archives the official VEC funding-register
 page and the linked DOCX files, then normalizes public funding, administrative
 expenditure funding, and policy development funding rows. Current normalized
@@ -232,11 +254,12 @@ They Vote For You API key is configured.
 
 Federal-only scheduled loads use `load-postgres --skip-qld-ecq
 --skip-nsw-aggregates --skip-act-gift-returns
---skip-vic-vec-funding-register` unless the relevant state/local
-fetch/normalize steps also ran. QLD, ACT, and VIC state/local public summaries
-filter to current `money_flow` rows, and NSW aggregate summaries filter to
-current `aggregate_context_observation` rows, but the schedule should still
-avoid refreshing a state/local source family from stale processed artifacts.
+--skip-nt-ntec-annual-gifts --skip-vic-vec-funding-register` unless the
+relevant state/local fetch/normalize steps also ran. QLD, ACT, NT, and VIC
+state/local public summaries filter to current `money_flow` rows, and NSW
+aggregate summaries filter to current `aggregate_context_observation` rows, but
+the schedule should still avoid refreshing a state/local source family from
+stale processed artifacts.
 
 Routine update jobs should run the serving-database QA gate after loading:
 

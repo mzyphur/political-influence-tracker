@@ -49,6 +49,7 @@ def test_subnational_seed_sources_exist() -> None:
         "waec_returns_reports",
         "tas_tec_disclosure_funding",
         "nt_ntec_annual_returns",
+        "nt_ntec_annual_returns_gifts_2024_2025",
         "act_elections_funding_disclosure",
         "act_gift_returns_2025_2026",
         "vic_vec_funding_register",
@@ -65,6 +66,7 @@ def test_subnational_seed_sources_exist() -> None:
     assert "historical" in sources["qld_ecq_disclosure_return_archives"].notes.lower()
     assert "campaign context" in sources["act_elections_funding_disclosure"].notes
     assert "cumulative gifts" in sources["act_gift_returns_2025_2026"].notes
+    assert "threshold" in sources["nt_ntec_annual_returns_gifts_2024_2025"].notes
     assert "public funding" in sources["vic_vec_funding_register"].notes
 
 

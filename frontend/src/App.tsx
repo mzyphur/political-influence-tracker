@@ -65,6 +65,7 @@ type StateLocalFlowFilter =
   | "all"
   | "act_gift_in_kind"
   | "act_gift_of_money"
+  | "nt_annual_gift"
   | "qld_gift"
   | "qld_electoral_expenditure"
   | "vic_administrative_funding_entitlement"
@@ -103,6 +104,7 @@ const stateLocalFlowFilterOptions: Array<{
   { value: "qld_gift", label: "QLD gifts" },
   { value: "act_gift_of_money", label: "ACT money gifts" },
   { value: "act_gift_in_kind", label: "ACT in-kind gifts" },
+  { value: "nt_annual_gift", label: "NT gifts" },
   { value: "qld_electoral_expenditure", label: "QLD spend" },
   { value: "vic_public_funding_payment", label: "VIC public funding" },
   { value: "vic_administrative_funding_entitlement", label: "VIC admin funding" },
@@ -1341,6 +1343,7 @@ function stateLocalRecordKind(row: StateLocalSummaryRecord): string {
   if (row.flow_kind === "qld_electoral_expenditure") return "Campaign spend incurred";
   if (row.flow_kind === "act_gift_in_kind") return "Gift-in-kind value";
   if (row.flow_kind === "act_gift_of_money") return "Gift of money";
+  if (row.flow_kind === "nt_annual_gift") return "Annual gift over threshold";
   if (row.flow_kind === "vic_administrative_funding_entitlement") {
     return "Administrative funding entitlement";
   }
@@ -1358,6 +1361,9 @@ function stateLocalRecordHeadline(row: StateLocalSummaryRecord): string {
   }
   if (row.flow_kind === "act_gift_in_kind") {
     return `${source} provided a gift-in-kind to ${row.recipient_name || "recipient not identified"}`;
+  }
+  if (row.flow_kind === "nt_annual_gift") {
+    return `${source} gave an annual gift to ${row.recipient_name || "recipient not identified"}`;
   }
   if (
     row.flow_kind === "vic_administrative_funding_entitlement" ||
@@ -1400,6 +1406,9 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
       : null,
     row.flow_kind === "qld_electoral_expenditure"
       ? "Interpretation: expenditure incurred, not money received by the named actor."
+      : null,
+    row.flow_kind === "nt_annual_gift"
+      ? "Interpretation: NTEC annual gift received over the threshold; per-row gift date is not published in the source table."
       : null,
     row.flow_kind?.startsWith("vic_")
       ? "Interpretation: VEC public funding/admin/policy-funding context, not private donation or personal income."

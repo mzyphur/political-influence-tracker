@@ -1646,6 +1646,97 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert act_records["records"][0]["description_of_goods_or_services"] == "GIK-Theatre Tickets"
     assert act_records["records"][0]["source_document_sha256"] == "pytest-act-sha256"
 
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO source_document (
+                    source_id, source_name, source_type, jurisdiction, url, fetched_at,
+                    http_status, content_type, sha256, storage_path, metadata
+                )
+                VALUES (
+                    'nt_ntec_annual_returns_gifts_2024_2025',
+                    'NTEC Annual Returns Gifts 2024-2025',
+                    'state_financial_disclosure_gift_return_table',
+                    'Northern Territory',
+                    'https://ntec.nt.gov.au/financial-disclosure/published-annual-returns/2024-2025-annual-returns-gifts',
+                    now(), 200, 'text/html', 'pytest-nt-sha256', '/tmp/nt.html', '{}'::jsonb
+                )
+                RETURNING id
+                """
+            )
+            nt_source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO jurisdiction (name, level, code)
+                VALUES ('Northern Territory', 'state', 'NT')
+                RETURNING id
+                """
+            )
+            nt_state_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO money_flow (
+                    external_key, source_raw_name, recipient_raw_name, amount,
+                    date_reported, financial_year, receipt_type,
+                    disclosure_category, jurisdiction_id, source_document_id,
+                    source_row_ref, original_text, confidence, is_current, metadata
+                )
+                VALUES (
+                    'pytest-nt-annual-gift', 'Example NT Donor',
+                    'Example NT Party', 1500, DATE '2025-07-30', '2024-2025',
+                    'Gift received over threshold', 'nt_annual_gift', %s, %s,
+                    'nt_ntec_annual_returns_gifts_2024_2025_html:t1:r2:abc12345',
+                    '{"address":"1 Public Street DARWIN NT 0800"}',
+                    'unresolved', TRUE, %s
+                )
+                RETURNING id
+                """,
+                (
+                    nt_state_id,
+                    nt_source_document_id,
+                    Jsonb(
+                        {
+                            "flow_kind": "nt_annual_gift",
+                            "public_amount_counting_role": (
+                                "jurisdictional_cross_disclosure_observation"
+                            ),
+                            "source_dataset": "nt_ntec_annual_returns_gifts",
+                            "transaction_kind": "gift",
+                        }
+                    ),
+                ),
+            )
+            nt_money_flow_id = cur.fetchone()[0]
+        conn.commit()
+        load_influence_events(conn)
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT amount_status, missing_data_flags
+                FROM influence_event
+                WHERE money_flow_id = %s
+                """,
+                (nt_money_flow_id,),
+            )
+            nt_event_status, nt_flags = cur.fetchone()
+    assert nt_event_status == "not_applicable"
+    assert "jurisdictional_cross_disclosure_not_counted_in_reported_total" in nt_flags
+
+    nt_records_response = client.get(
+        "/api/state-local/records",
+        params={"level": "state", "flow_kind": "nt_annual_gift", "limit": "5"},
+    )
+    assert nt_records_response.status_code == 200
+    nt_records = nt_records_response.json()
+    assert nt_records["total_count"] == 1
+    assert nt_records["records"][0]["source_dataset"] == "nt_ntec_annual_returns_gifts"
+    assert nt_records["records"][0]["amount"] == 1500
+    assert nt_records["records"][0]["original_text"] is None
+    assert nt_records["records"][0]["public_amount_counting_role"] == (
+        "jurisdictional_cross_disclosure_observation"
+    )
+
     invalid_cursor_response = client.get(
         "/api/state-local/records",
         params={"level": "state", "cursor": "not-a-valid-cursor"},

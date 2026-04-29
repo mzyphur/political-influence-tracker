@@ -22,6 +22,7 @@ LOAD_ARGS=(
   --skip-qld-ecq
   --skip-nsw-aggregates
   --skip-act-gift-returns
+  --skip-nt-ntec-annual-gifts
   --skip-vic-vec-funding-register
 )
 if .venv/bin/dotenv -f .env run -- \

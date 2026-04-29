@@ -70,6 +70,10 @@ from au_politics_money.ingest.nsw_electoral import (
     normalize_nsw_pre_election_donor_location_heatmap,
     resolve_nsw_heatmap_url_from_pre_election_page,
 )
+from au_politics_money.ingest.nt_ntec import (
+    ANNUAL_GIFTS_SOURCE_ID as NT_NTEC_ANNUAL_GIFTS_SOURCE_ID,
+    normalize_nt_ntec_annual_gifts,
+)
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
 from au_politics_money.ingest.qld_ecq_eds import (
     QLD_ECQ_EDS_CONTEXT_LOOKUPS,
@@ -536,16 +540,20 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         "queensland",
         "nsw",
         "new south wales",
+        "nt",
+        "northern territory",
         "vic",
         "victoria",
     }:
         raise ValueError(
-            "Unsupported state/local jurisdiction. Currently supported: act, qld, nsw, vic."
+            "Unsupported state/local jurisdiction. Currently supported: act, qld, nsw, nt, vic."
         )
     if normalized_jurisdiction in {"act", "australian capital territory"}:
         return _run_act_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"nsw", "new south wales"}:
         return _run_nsw_state_local_pipeline(smoke=smoke)
+    if normalized_jurisdiction in {"nt", "northern territory"}:
+        return _run_nt_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"vic", "victoria"}:
         return _run_vic_state_local_pipeline(smoke=smoke)
 
@@ -836,6 +844,67 @@ def _run_vic_state_local_pipeline(*, smoke: bool = False) -> Path:
             "normalize_vic_vec_funding_registers",
             lambda: normalize_vic_vec_funding_registers(
                 document_summary_path=vic_artifacts["document_summary_path"],
+            ),
+        ),
+    ]
+
+    try:
+        for name, func in steps:
+            manifest.steps.append(_run_step(name, func))
+        manifest.status = "succeeded"
+    except PipelineStepError as exc:
+        manifest.steps.append(exc.result)
+        manifest.status = "failed"
+    finally:
+        finished = utc_now()
+        manifest.finished_at = finished.isoformat()
+        manifest.duration_seconds = (finished - started).total_seconds()
+
+    manifest_path = _write_manifest(manifest)
+    if manifest.status == "failed":
+        raise RuntimeError(f"Pipeline failed. Manifest: {manifest_path}")
+    return manifest_path
+
+
+def _run_nt_state_local_pipeline(*, smoke: bool = False) -> Path:
+    started = utc_now()
+    nt_artifacts: dict[str, Path] = {}
+
+    def fetch_nt_sources() -> dict[str, Any]:
+        metadata_path = fetch_source(get_source(NT_NTEC_ANNUAL_GIFTS_SOURCE_ID))
+        nt_artifacts["annual_gifts_metadata_path"] = Path(metadata_path)
+        return {
+            "source_count": 1,
+            "metadata_paths": {NT_NTEC_ANNUAL_GIFTS_SOURCE_ID: str(metadata_path)},
+        }
+
+    manifest = PipelineManifest(
+        pipeline_name="state_local",
+        run_id=f"state_local_nt_{timestamp(started)}",
+        status="running",
+        started_at=started.isoformat(),
+        git_commit=_git_commit(),
+        dependency_versions=_dependency_versions(),
+        parameters={
+            "jurisdiction": "nt",
+            "source_family": "nt_ntec_annual_returns_gifts",
+            "smoke": smoke,
+            "loads_database": False,
+            "claim_boundary": (
+                "Fetch and normalize NTEC 2024-2025 annual gift-return rows. Rows "
+                "are source-backed donor-to-recipient gifts over the threshold in "
+                "recipient-side annual disclosure tables; they are not claims of "
+                "wrongdoing, causation, quid pro quo, or improper influence."
+            ),
+        },
+    )
+
+    steps: list[tuple[str, Callable[[], Any]]] = [
+        ("fetch_nt_ntec_annual_gift_source", fetch_nt_sources),
+        (
+            "normalize_nt_ntec_annual_gifts",
+            lambda: normalize_nt_ntec_annual_gifts(
+                metadata_path=nt_artifacts["annual_gifts_metadata_path"],
             ),
         ),
     ]

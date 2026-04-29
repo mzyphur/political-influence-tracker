@@ -82,6 +82,7 @@ export async function fetchStateLocalRecords(options: {
   flowKind?:
     | "act_gift_in_kind"
     | "act_gift_of_money"
+    | "nt_annual_gift"
     | "qld_gift"
     | "qld_electoral_expenditure"
     | "vic_administrative_funding_entitlement"

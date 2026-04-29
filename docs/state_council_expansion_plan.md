@@ -193,6 +193,23 @@ Notes:
 - NTEC records include published annual returns and gift returns. The adapter
   should preserve the distinction between annual gifts, annual financial returns,
   and election-period expenditure.
+- First implemented adapter:
+  `run-state-local-pipeline --jurisdiction nt` archives the official NTEC
+  2024-2025 annual gift-return page and normalizes recipient-side "gifts
+  received over the threshold" HTML tables into
+  `data/processed/nt_ntec_annual_gift_money_flows/`. Current coverage is 78
+  annual gift rows with $1,066,817.76 in reported value. These rows are
+  source-backed donor-to-recipient gift observations. The source table does not
+  publish per-row gift transaction dates, so the normalized records retain the
+  return received date as `date_reported` where available and carry an explicit
+  date caveat. The row sums are checked against source-published table totals.
+  These rows are shown in NT state/local source-family totals, but are excluded
+  from consolidated influence totals until cross-source deduplication against
+  Commonwealth and donor-side returns exists.
+- The next NT task is to add party/associated-entity annual financial return
+  tables, donor-side annual return tables, candidate returns, and election
+  expenditure returns without double-counting the same gift from both recipient
+  and donor disclosure tables.
 
 ### ACT
 
@@ -236,7 +253,8 @@ Notes:
 3. Start with NSW, Victoria, and Queensland because they provide the clearest
    immediate coverage across state-level donations, expenditure, and searchable
    disclosure systems.
-4. Add ACT and WA next because their party/candidate expenditure records are
+4. Continue ACT/NT coverage beyond the first gift adapters, and add WA next
+   because its party/candidate expenditure and reimbursement records are
    theoretically valuable for party-channelled campaign support.
 5. Add South Australia, Tasmania, and Northern Territory with careful regime-date
    caveats and source-specific parsers.

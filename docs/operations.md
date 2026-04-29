@@ -127,9 +127,10 @@ Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command
 also loads QLD ECQ EDS rows and participant identifiers by default, but
 federal-only scheduled runs use `load-postgres --skip-qld-ecq
---skip-nsw-aggregates --skip-act-gift-returns` so stale state/local artifacts
-are not promoted when the state/local fetch/normalize steps did not run. Public
-QLD API summaries read only `money_flow.is_current = true` rows.
+--skip-nsw-aggregates --skip-act-gift-returns --skip-nt-ntec-annual-gifts
+--skip-vic-vec-funding-register` so stale state/local artifacts are not
+promoted when the state/local fetch/normalize steps did not run. Public
+state/local API summaries read only current rows.
 
 NSW is now wired as an aggregate-context state adapter:
 
@@ -177,6 +178,33 @@ must not be described as each independently above threshold. The loader
 validates manifest summary hashes, JSONL hashes, source metadata hashes, source
 body hashes, source ID, source dataset, non-zero counts, and row counts before
 inserting rows.
+
+Northern Territory is wired as a current annual gift-return state adapter:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction nt)
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli migrate-postgres
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+```
+
+The NT runner archives the official NTEC 2024-2025 annual return gifts page and
+normalizes recipient-side "gifts received over the threshold" tables into
+`data/processed/nt_ntec_annual_gift_money_flows/`. Rows are loaded into
+`money_flow` as NT state gift disclosure records. The current 2026-04-29
+artifact has 78 annual gift rows and $1,066,817.76 in reported value. The NTEC
+table does not publish per-row gift transaction dates; normalized rows retain
+the return received date as `date_reported` where available and carry a date
+caveat so the UI does not imply transaction-day precision. The normalizer
+checks extracted row sums against the source-published table totals. NT rows
+are marked as jurisdictional cross-disclosure observations: state/local
+source-family totals show the reported NTEC values, but consolidated influence
+totals exclude those amounts until cross-source deduplication is available.
+Raw artifacts preserve the official public address text, while the generic
+state/local records API does not echo address-bearing `original_text` by
+default.
 
 Victoria is wired as a VEC funding-register state adapter:
 
@@ -253,8 +281,9 @@ as AEC postcode lookups, current AEC boundaries, and official APH
 decision-record documents are fetched again instead of being silently reused.
 The weekly federal load also uses
 `--skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns
---skip-vic-vec-funding-register`; QLD, NSW, ACT, and VIC state/local rows
-should be refreshed by the jurisdiction-specific commands above.
+--skip-nt-ntec-annual-gifts --skip-vic-vec-funding-register`; QLD, NSW, ACT,
+NT, and VIC state/local rows should be refreshed by the jurisdiction-specific
+commands above.
 After loading, the script runs `qa-serving-database`. That QA gate fails the
 weekly run before the database is treated as releasable if core serving
 invariants break, including missing House boundaries, active events pointing at
@@ -663,8 +692,9 @@ Current local baseline after the 2026-04-29 federal/state-local load:
 
 - `person`: 226, including one House-register-derived fallback person for Sussan Ley/Farrer because the APH contact CSV omitted that seat.
 - `office_term`: 226.
-- `money_flow`: 294,707 rows: AEC annual/election/public-funding records plus
-  active QLD ECQ state/local disclosure rows.
+- `money_flow`: 317,701 rows total; 295,211 current rows across AEC
+  annual/election/public-funding records plus active QLD ECQ, ACT Elections,
+  NT NTEC, and VEC state/local disclosure rows.
 - `gift_interest`: 7,639 total rows: 5,838 current House rows, 49
   non-current House rows retained for audit, and 1,752 current Senate rows.
   Non-current source rows are excluded from active public `influence_event`
@@ -674,7 +704,10 @@ Current local baseline after the 2026-04-29 federal/state-local load:
   travel/hospitality 263.
 - `electorate_boundary`: 150 current federal House boundaries in `aec_federal_2025_current`; all canonical source geometries are SRID 4326, valid, and non-empty.
 - `electorate_boundary_display_geometry`: 150 `land_clipped_display` rows for web-map use.
-- `influence_event`: 302,297 non-rejected derived rows: 217,531 money events, 77,176 campaign-support events, 1,406 benefit events, 4,700 private-interest events, 1,384 organisational-role events, and 100 other declared interests.
+- `influence_event`: 306,013 non-rejected derived rows: 217,814 money events,
+  77,176 campaign-support events, 202 grant events, 1,425 benefit events,
+  4,700 private-interest events, 1,384 organisational-role events, 3,212 access
+  events, and 100 other declared interests.
 - `influence_event` benefit subtypes include 386 membership/lounge access rows, 288 event ticket/pass rows, 69 private-aircraft/flight rows, 42 meal/reception rows, 24 accommodation rows, and 83 subscription/service rows; most benefit records do not disclose value.
 - `entity_industry_classification`: 35,874 generated rows from `public_interest_sector_rules_v1`.
 - `official_identifier_observation`: 3,591 unique official observations: 3,590 current lobbyist-register observations from 3,602 parsed rows plus one ABN Lookup web-service smoke record for BHP Group Limited.

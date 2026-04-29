@@ -59,6 +59,11 @@ from au_politics_money.ingest.nsw_electoral import (
     PARSER_NAME as NSW_HEATMAP_PARSER_NAME,
     SOURCE_DATASET as NSW_SOURCE_DATASET,
 )
+from au_politics_money.ingest.nt_ntec import (
+    ANNUAL_GIFTS_SOURCE_ID as NT_NTEC_ANNUAL_GIFTS_SOURCE_ID,
+    PARSER_NAME as NT_NTEC_ANNUAL_GIFTS_PARSER_NAME,
+    SOURCE_DATASET as NT_NTEC_SOURCE_DATASET,
+)
 from au_politics_money.ingest.qld_ecq_eds import (
     CONTEXT_PARSER_NAME as QLD_ECQ_CONTEXT_PARSER_NAME,
     PARSER_NAME as QLD_ECQ_MONEY_PARSER_NAME,
@@ -1782,6 +1787,27 @@ def load_vic_vec_funding_register_money_flows(
     )
 
 
+def load_nt_ntec_annual_gift_money_flows(
+    conn,
+    jsonl_path: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(
+            PROCESSED_DIR / "nt_ntec_annual_gift_money_flows",
+            "*.jsonl",
+        )
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_nt_ntec_annual_gift_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(
+        conn,
+        path,
+        default_source_dataset=NT_NTEC_SOURCE_DATASET,
+    )
+
+
 def _validate_nsw_aggregate_source_hashes(record: dict[str, Any]) -> None:
     metadata_path_value = str(record.get("source_metadata_path") or "")
     body_path_value = str(record.get("source_body_path") or "")
@@ -2384,6 +2410,89 @@ def vic_vec_funding_register_path_from_pipeline_manifest(manifest_path: Path) ->
     return path
 
 
+def nt_ntec_annual_gifts_path_from_pipeline_manifest(manifest_path: Path) -> Path:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("pipeline_name") != "state_local":
+        raise ValueError("Expected a state_local pipeline manifest")
+    parameters = manifest.get("parameters")
+    if (
+        not isinstance(parameters, dict)
+        or parameters.get("source_family") != NT_NTEC_SOURCE_DATASET
+    ):
+        raise ValueError("Expected an NTEC annual gift state/local manifest")
+    if parameters.get("loads_database") is not False:
+        raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+
+    summary_path, summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_nt_ntec_annual_gifts",
+    )
+    actual_summary_sha256 = _sha256_path(summary_path)
+    if summary_sha256 and actual_summary_sha256 != summary_sha256:
+        raise ValueError(
+            f"Summary hash mismatch for {summary_path}: "
+            f"manifest={summary_sha256} actual={actual_summary_sha256}"
+        )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("normalizer_name") != NT_NTEC_ANNUAL_GIFTS_PARSER_NAME:
+        raise ValueError(
+            f"Unexpected normalizer in {summary_path}: {summary.get('normalizer_name')!r}"
+        )
+    if summary.get("source_dataset") != NT_NTEC_SOURCE_DATASET:
+        raise ValueError(
+            f"Unexpected source_dataset in {summary_path}: {summary.get('source_dataset')!r}"
+        )
+    if summary.get("source_id") != NT_NTEC_ANNUAL_GIFTS_SOURCE_ID:
+        raise ValueError(f"Unexpected source_id in {summary_path}: {summary.get('source_id')!r}")
+    counts = summary.get("source_counts")
+    if counts != {NT_NTEC_ANNUAL_GIFTS_SOURCE_ID: summary.get("total_count")}:
+        raise ValueError(
+            f"NTEC annual gift source_counts do not match total_count in {summary_path}"
+        )
+    source_metadata_path = Path(str(summary.get("source_metadata_path") or ""))
+    source_body_path = Path(str(summary.get("source_body_path") or ""))
+    expected_source_metadata_sha256 = str(summary.get("source_metadata_sha256") or "")
+    expected_source_body_sha256 = str(summary.get("source_body_sha256") or "")
+    if not expected_source_metadata_sha256:
+        raise ValueError(f"Summary is missing source_metadata_sha256: {summary_path}")
+    if not expected_source_body_sha256:
+        raise ValueError(f"Summary is missing source_body_sha256: {summary_path}")
+    actual_source_metadata_sha256 = _sha256_path(source_metadata_path)
+    if actual_source_metadata_sha256 != expected_source_metadata_sha256:
+        raise ValueError(
+            f"Source metadata hash mismatch for {source_metadata_path}: "
+            f"summary={expected_source_metadata_sha256} "
+            f"actual={actual_source_metadata_sha256}"
+        )
+    actual_source_body_sha256 = _sha256_path(source_body_path)
+    if actual_source_body_sha256 != expected_source_body_sha256:
+        raise ValueError(
+            f"Source body hash mismatch for {source_body_path}: "
+            f"summary={expected_source_body_sha256} actual={actual_source_body_sha256}"
+        )
+    jsonl_path = summary.get("jsonl_path")
+    if not jsonl_path:
+        raise ValueError(f"Summary is missing jsonl_path: {summary_path}")
+    path = Path(str(jsonl_path))
+    expected_jsonl_sha256 = str(summary.get("jsonl_sha256") or "")
+    actual_jsonl_sha256 = _sha256_path(path)
+    if expected_jsonl_sha256 and actual_jsonl_sha256 != expected_jsonl_sha256:
+        raise ValueError(
+            f"JSONL hash mismatch for {path}: "
+            f"summary={expected_jsonl_sha256} actual={actual_jsonl_sha256}"
+        )
+    total_count = int(summary.get("total_count") or 0)
+    if total_count <= 0:
+        raise ValueError(f"Summary has no records: {summary_path}")
+    counted_records = _jsonl_line_count(path)
+    if counted_records != total_count:
+        raise ValueError(
+            f"Summary total_count does not match JSONL rows for {path}: "
+            f"summary={total_count} rows={counted_records}"
+        )
+    return path
+
+
 def load_qld_ecq_eds_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2464,6 +2573,26 @@ def load_vic_vec_from_pipeline_manifest(
     return summary
 
 
+def load_nt_ntec_from_pipeline_manifest(
+    conn,
+    manifest_path: Path,
+    *,
+    include_influence_events: bool = True,
+) -> dict[str, Any]:
+    path = nt_ntec_annual_gifts_path_from_pipeline_manifest(manifest_path)
+    summary: dict[str, Any] = {
+        "pipeline_manifest_path": str(manifest_path),
+        "artifact_paths": {"money_flows": str(path)},
+        "nt_ntec_annual_gift_money_flows": load_nt_ntec_annual_gift_money_flows(
+            conn,
+            jsonl_path=path,
+        ),
+    }
+    if include_influence_events:
+        summary["influence_events"] = load_influence_events(conn)
+    return summary
+
+
 def load_state_local_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2483,6 +2612,12 @@ def load_state_local_from_pipeline_manifest(
         return load_nsw_electoral_from_pipeline_manifest(conn, manifest_path)
     if source_family == ACT_GIFT_RETURN_SOURCE_DATASET:
         return load_act_elections_from_pipeline_manifest(
+            conn,
+            manifest_path,
+            include_influence_events=include_influence_events,
+        )
+    if source_family == NT_NTEC_SOURCE_DATASET:
+        return load_nt_ntec_from_pipeline_manifest(
             conn,
             manifest_path,
             include_influence_events=include_influence_events,
@@ -4473,6 +4608,9 @@ def load_influence_events(conn) -> dict[str, Any]:
         )
         public_amount_counting_role = base_metadata.get("public_amount_counting_role")
         duplicate_observation = public_amount_counting_role == "duplicate_observation"
+        jurisdictional_cross_disclosure_observation = (
+            public_amount_counting_role == "jurisdictional_cross_disclosure_observation"
+        )
         campaign_expenditure = event_type == "campaign_expenditure"
         flags = missing_money_flags(
             source_raw_name=source_raw_name or "",
@@ -4482,6 +4620,8 @@ def load_influence_events(conn) -> dict[str, Any]:
         )
         if duplicate_observation:
             flags.append("duplicate_disclosure_observation_not_counted_in_reported_total")
+        if jurisdictional_cross_disclosure_observation:
+            flags.append("jurisdictional_cross_disclosure_not_counted_in_reported_total")
         if campaign_support_record:
             flags.append("campaign_support_not_personal_receipt")
             if amount is not None:
@@ -4532,6 +4672,12 @@ def load_influence_events(conn) -> dict[str, Any]:
                 f"{recipient_raw_name or 'Unknown'}: {description_amount}; not a private "
                 "donation, gift, or personal income."
             )
+        elif jurisdictional_cross_disclosure_observation:
+            description = (
+                f"{source_raw_name or 'Unknown'} to {recipient_raw_name or 'Unknown'}: "
+                f"{description_amount}; jurisdictional disclosure observation not included "
+                "in consolidated reported amount totals until cross-source deduplication."
+            )
         else:
             description = (
                 f"{source_raw_name or 'Unknown'} to {recipient_raw_name or 'Unknown'}: "
@@ -4539,7 +4685,7 @@ def load_influence_events(conn) -> dict[str, Any]:
             )
         extraction_method = base_metadata.get("normalizer_name") or "aec_annual_money_flow_normalizer"
         disclosure_system = base_metadata.get("disclosure_system") or "aec_financial_disclosure"
-        if duplicate_observation:
+        if duplicate_observation or jurisdictional_cross_disclosure_observation:
             amount_status = "not_applicable"
         elif event_type in {
             "candidate_or_senate_group_nil_return",
@@ -7076,6 +7222,7 @@ def load_processed_artifacts(
     include_qld_ecq: bool = True,
     include_nsw_aggregates: bool = True,
     include_act_gift_returns: bool = True,
+    include_nt_ntec_annual_gifts: bool = True,
     include_vic_vec_funding_register: bool = True,
     include_house_interests: bool = True,
     include_senate_interests: bool = True,
@@ -7112,6 +7259,10 @@ def load_processed_artifacts(
                 summary["qld_ecq_eds_contexts"] = load_qld_ecq_eds_contexts(conn)
             if include_act_gift_returns:
                 summary["act_gift_return_money_flows"] = load_act_gift_return_money_flows(conn)
+            if include_nt_ntec_annual_gifts:
+                summary["nt_ntec_annual_gift_money_flows"] = (
+                    load_nt_ntec_annual_gift_money_flows(conn)
+                )
             if include_vic_vec_funding_register:
                 summary["vic_vec_funding_register_money_flows"] = (
                     load_vic_vec_funding_register_money_flows(conn)
