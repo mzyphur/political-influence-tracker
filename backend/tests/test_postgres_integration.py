@@ -123,6 +123,9 @@ def _assert_expected_indexes(conn) -> None:
             "entity_industry_public_sector_trgm_idx",
             "influence_event_recipient_entity_idx",
             "vote_division_external_id_idx",
+            "postcode_electorate_crosswalk_postcode_idx",
+            "postcode_electorate_crosswalk_electorate_idx",
+            "postcode_electorate_crosswalk_source_document_idx",
         ):
             cur.execute("SELECT to_regclass(%s)", (index_name,))
             assert cur.fetchone()[0] is not None, index_name
@@ -741,6 +744,79 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     assert broad_search_response.status_code == 200
     broad_search_types = {result["type"] for result in broad_search_response.json()["results"]}
     assert "policy_topic" in broad_search_types
+
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
+            jurisdiction_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO electorate (
+                    name, jurisdiction_id, chamber, state_or_territory, source_document_id
+                )
+                VALUES ('Canberra', %s, 'house', 'ACT', %s), ('Bean', %s, 'house', 'ACT', %s)
+                ON CONFLICT (name, jurisdiction_id, chamber) DO UPDATE SET
+                    state_or_territory = EXCLUDED.state_or_territory
+                """,
+                (jurisdiction_id, source_document_id, jurisdiction_id, source_document_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO postcode_electorate_crosswalk (
+                    postcode, electorate_id, state_or_territory, match_method,
+                    confidence, locality_count, localities, source_document_id,
+                    source_updated_text, metadata
+                )
+                SELECT '2600', electorate.id, 'ACT', 'aec_postcode_locality_search',
+                       0.5000, 3, %s, %s, '11 September 2025',
+                       %s
+                FROM electorate
+                WHERE electorate.name = 'Canberra'
+                  AND electorate.jurisdiction_id = %s
+                  AND electorate.chamber = 'house'
+                UNION ALL
+                SELECT '2600', electorate.id, 'ACT', 'aec_postcode_locality_search',
+                       0.5000, 1, %s, %s, '11 September 2025',
+                       %s
+                FROM electorate
+                WHERE electorate.name = 'Bean'
+                  AND electorate.jurisdiction_id = %s
+                  AND electorate.chamber = 'house'
+                """,
+                (
+                    Jsonb(["BARTON", "DEAKIN", "PARKES"]),
+                    source_document_id,
+                    Jsonb({"ambiguity": "ambiguous_postcode", "fixture": True}),
+                    jurisdiction_id,
+                    Jsonb(["HMAS HARMAN"]),
+                    source_document_id,
+                    Jsonb({"ambiguity": "ambiguous_postcode", "fixture": True}),
+                    jurisdiction_id,
+                ),
+            )
+        conn.commit()
+
+    postcode_search_response = client.get(
+        "/api/search",
+        params=[("q", "2600"), ("types", "postcode"), ("limit", "5")],
+    )
+    assert postcode_search_response.status_code == 200
+    postcode_payload = postcode_search_response.json()
+    assert postcode_payload["result_count"] == 2
+    assert [result["label"] for result in postcode_payload["results"]] == [
+        "2600 -> Canberra",
+        "2600 -> Bean",
+    ]
+    assert all(
+        result["metadata"]["match_method"] == "aec_postcode_locality_search"
+        for result in postcode_payload["results"]
+    )
+    assert {
+        result["metadata"]["electorate_name"]: result["metadata"]["locality_count"]
+        for result in postcode_payload["results"]
+    } == {"Canberra": 3, "Bean": 1}
 
     entity_search_response = client.get(
         "/api/search",

@@ -580,23 +580,49 @@ def _search_postcodes(
             crosswalk.postcode,
             crosswalk.match_method,
             crosswalk.confidence,
+            crosswalk.locality_count,
+            crosswalk.localities,
+            crosswalk.aec_division_ids,
+            crosswalk.source_updated_text,
+            crosswalk.source_boundary_context,
+            crosswalk.current_member_context,
+            crosswalk.metadata,
+            source_document.source_id,
+            source_document.url AS source_url,
             electorate.id AS electorate_id,
             electorate.name AS electorate_name,
             electorate.state_or_territory
         FROM postcode_electorate_crosswalk crosswalk
         JOIN electorate ON electorate.id = crosswalk.electorate_id
+        LEFT JOIN source_document ON source_document.id = crosswalk.source_document_id
         WHERE crosswalk.postcode = %s
-        ORDER BY crosswalk.confidence DESC, electorate.name
+        ORDER BY crosswalk.confidence DESC, crosswalk.locality_count DESC, electorate.name
         LIMIT %s
         """,
         (query, limit),
     )
+    if not rows:
+        limitations.append(
+            {
+                "feature": "postcode_search",
+                "status": "postcode_not_loaded",
+                "message": (
+                    "No source-backed AEC electorate-finder crosswalk row is loaded "
+                    f"for postcode {query}. The absence of a result is not evidence "
+                    "that the postcode has no federal electorate."
+                ),
+            }
+        )
+        return []
     return [
         _result(
             result_type="postcode",
             result_id=f"{row['postcode']}:{row['electorate_id']}",
             label=f"{row['postcode']} -> {row['electorate_name']}",
-            subtitle=row.get("state_or_territory") or "",
+            subtitle=(
+                f"{row.get('state_or_territory') or ''} · "
+                f"{row.get('locality_count') or 0} AEC localities"
+            ).strip(" ·"),
             rank=5,
             metadata=row,
         )
@@ -677,6 +703,13 @@ def search_database(
 
 def _search_result_sort_key(item: dict[str, Any]) -> tuple[Any, ...]:
     metadata = item.get("metadata") if isinstance(item.get("metadata"), dict) else {}
+    if item.get("type") == "postcode":
+        return (
+            item["rank"],
+            -float(metadata.get("confidence") or 0),
+            -int(metadata.get("locality_count") or 0),
+            item["label"].lower(),
+        )
     current_representatives = 0
     if item.get("type") == "party":
         current_representatives = int(metadata.get("current_representative_count") or 0)

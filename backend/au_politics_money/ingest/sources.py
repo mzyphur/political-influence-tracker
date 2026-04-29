@@ -200,6 +200,23 @@ SOURCES: tuple[SourceRecord, ...] = (
         notes="Current and superseded federal electoral boundary downloads.",
     ),
     SourceRecord(
+        source_id="aec_electorate_finder",
+        name="AEC Electorate Finder",
+        jurisdiction="Commonwealth",
+        level="federal",
+        source_type="postcode_locality_electorate_lookup",
+        url="https://electorate.aec.gov.au/",
+        expected_format="html",
+        update_frequency="redistribution_or_aec_update",
+        priority="high",
+        notes=(
+            "Official AEC electorate finder used for source-backed postcode and "
+            "locality candidate lookups. Postcodes can map to multiple electorates; "
+            "results are candidates, not address-level determinations, and may "
+            "reflect next-election boundaries rather than current member boundaries."
+        ),
+    ),
+    SourceRecord(
         source_id="natural_earth_admin0_countries_10m",
         name="Natural Earth 1:10m Admin 0 Countries",
         jurisdiction="Global",

@@ -12,6 +12,7 @@ from au_politics_money.db.load import (
     load_electorate_boundary_display_geometries,
     load_influence_events,
     load_processed_artifacts,
+    load_postcode_electorate_crosswalk,
     load_qld_ecq_eds_contexts,
     load_qld_ecq_eds_money_flows,
     load_qld_ecq_eds_participants,
@@ -32,6 +33,10 @@ from au_politics_money.ingest.discovered_sources import (
 from au_politics_money.ingest.aec_boundaries import (
     extract_current_aec_boundaries,
     fetch_current_aec_boundary_zip,
+)
+from au_politics_money.ingest.aec_electorate_finder import (
+    fetch_aec_electorate_finder_postcodes,
+    normalize_aec_electorate_finder_postcodes,
 )
 from au_politics_money.ingest.entity_classification import classify_entity_names
 from au_politics_money.ingest.discovery import (
@@ -221,6 +226,39 @@ def normalize_aec_election_command() -> int:
 
 def normalize_aec_public_funding_command() -> int:
     summary_path = normalize_aec_public_funding()
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def _postcode_inputs(postcodes: list[str] | None, postcodes_file: str | None) -> list[str]:
+    values = list(postcodes or [])
+    if postcodes_file:
+        for line in Path(postcodes_file).read_text(encoding="utf-8").splitlines():
+            cleaned = line.split("#", maxsplit=1)[0].strip()
+            if cleaned:
+                values.append(cleaned)
+    return values
+
+
+def fetch_aec_electorate_finder_postcodes_command(
+    postcodes: list[str],
+    postcodes_file: str | None,
+    refetch: bool,
+) -> int:
+    summary_path = fetch_aec_electorate_finder_postcodes(
+        _postcode_inputs(postcodes, postcodes_file),
+        refetch=refetch,
+    )
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def normalize_aec_electorate_finder_postcodes_command(
+    postcodes: list[str] | None,
+    postcodes_file: str | None,
+) -> int:
+    requested_postcodes = _postcode_inputs(postcodes, postcodes_file)
+    summary_path = normalize_aec_electorate_finder_postcodes(requested_postcodes or None)
     print(str(Path(summary_path).resolve()))
     return 0
 
@@ -490,6 +528,7 @@ def load_postgres_command(
     skip_official_decision_record_documents: bool,
     skip_official_aph_divisions: bool,
     include_vote_divisions: bool,
+    skip_postcode_crosswalk: bool,
     skip_party_entity_links: bool,
     skip_review_reapply: bool,
 ) -> int:
@@ -507,6 +546,7 @@ def load_postgres_command(
         include_official_decision_record_documents=not skip_official_decision_record_documents,
         include_official_aph_divisions=not skip_official_aph_divisions,
         include_vote_divisions=include_vote_divisions,
+        include_postcode_crosswalk=not skip_postcode_crosswalk,
         include_party_entity_links=not skip_party_entity_links,
         reapply_reviews=not skip_review_reapply,
     )
@@ -548,6 +588,13 @@ def load_qld_ecq_eds_contexts_command(skip_influence_events: bool) -> int:
         }
         if not skip_influence_events:
             summary["influence_events"] = load_influence_events(conn)
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def load_postcode_electorate_crosswalk_command() -> int:
+    with connect() as conn:
+        summary = load_postcode_electorate_crosswalk(conn)
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
@@ -632,6 +679,31 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.add_parser("normalize-aec-election-money-flows")
 
     subparsers.add_parser("normalize-aec-public-funding")
+
+    aec_postcode_fetch_parser = subparsers.add_parser("fetch-aec-electorate-finder-postcodes")
+    aec_postcode_fetch_parser.add_argument(
+        "--postcode",
+        action="append",
+        help="Four-digit postcode to fetch from the AEC electorate finder. Repeat for many.",
+    )
+    aec_postcode_fetch_parser.add_argument(
+        "--postcodes-file",
+        help="Text file of postcodes, one per line. Lines may include # comments.",
+    )
+    aec_postcode_fetch_parser.add_argument("--refetch", action="store_true")
+
+    aec_postcode_normalize_parser = subparsers.add_parser(
+        "normalize-aec-electorate-finder-postcodes"
+    )
+    aec_postcode_normalize_parser.add_argument(
+        "--postcode",
+        action="append",
+        help="Four-digit postcode to normalize. Repeat for many; omit to normalize all fetched postcodes.",
+    )
+    aec_postcode_normalize_parser.add_argument(
+        "--postcodes-file",
+        help="Text file of postcodes to normalize, one per line. Lines may include # comments.",
+    )
 
     qld_eds_exports_parser = subparsers.add_parser("fetch-qld-ecq-eds-exports")
     qld_eds_exports_parser.add_argument(
@@ -759,6 +831,8 @@ def build_parser() -> argparse.ArgumentParser:
         help="Load QLD ECQ event/local-electorate context without rebuilding influence_event.",
     )
 
+    subparsers.add_parser("load-postcode-electorate-crosswalk")
+
     review_parser = subparsers.add_parser("export-review-queue")
     review_parser.add_argument("queue_name", choices=review_queue_names())
     review_parser.add_argument("--limit", type=int)
@@ -815,6 +889,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Load processed They Vote For You division/vote artifacts if present.",
     )
+    load_parser.add_argument("--skip-postcode-crosswalk", action="store_true")
     load_parser.add_argument("--skip-party-entity-links", action="store_true")
     load_parser.add_argument("--skip-review-reapply", action="store_true")
 
@@ -847,6 +922,17 @@ def main() -> int:
         return normalize_aec_election_command()
     if args.command == "normalize-aec-public-funding":
         return normalize_aec_public_funding_command()
+    if args.command == "fetch-aec-electorate-finder-postcodes":
+        return fetch_aec_electorate_finder_postcodes_command(
+            args.postcode,
+            args.postcodes_file,
+            args.refetch,
+        )
+    if args.command == "normalize-aec-electorate-finder-postcodes":
+        return normalize_aec_electorate_finder_postcodes_command(
+            args.postcode,
+            args.postcodes_file,
+        )
     if args.command == "fetch-qld-ecq-eds-exports":
         return fetch_qld_ecq_eds_exports_command(args.export)
     if args.command == "normalize-qld-ecq-eds-money-flows":
@@ -926,6 +1012,8 @@ def main() -> int:
         return load_qld_ecq_eds_participants_command()
     if args.command == "load-qld-ecq-eds-contexts":
         return load_qld_ecq_eds_contexts_command(args.skip_influence_events)
+    if args.command == "load-postcode-electorate-crosswalk":
+        return load_postcode_electorate_crosswalk_command()
     if args.command == "export-review-queue":
         return export_review_queue_command(args.queue_name, args.limit)
     if args.command == "suggest-sector-policy-links":
@@ -964,6 +1052,7 @@ def main() -> int:
             args.skip_official_decision_record_documents,
             args.skip_official_aph_divisions,
             args.include_vote_divisions,
+            args.skip_postcode_crosswalk,
             args.skip_party_entity_links,
             args.skip_review_reapply,
         )

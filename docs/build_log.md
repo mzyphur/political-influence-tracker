@@ -4,6 +4,14 @@
 
 Completed:
 
+- Added a reproducible AEC Electorate Finder postcode crosswalk pipeline:
+  archived AEC postcode search pages, normalized source-backed postcode to
+  electorate-candidate rows with ambiguity/confidence/locality metadata, added
+  `postcode_electorate_crosswalk`, and connected `/api/search` to return loaded
+  postcode candidates rather than guessing a single electorate. Review
+  hardening added AEC division ids, next-election boundary context, deterministic
+  seed hashes, stale-row replacement on reload, and removal of local filesystem
+  paths from public API metadata.
 - Compact laptop map layout pass: narrowed the left controls and right details
   overlays, reduced panel spacing, made both overlays independently scrollable,
   and collapsed the long coverage caveat behind a disclosure control so map

@@ -16,6 +16,9 @@ from au_politics_money.ingest.aec_boundaries import (
     PARSER_VERSION as BOUNDARY_PARSER_VERSION,
     latest_aec_boundaries_geojson,
 )
+from au_politics_money.ingest.aec_electorate_finder import (
+    latest_aec_electorate_finder_postcodes_jsonl,
+)
 from au_politics_money.ingest.aph_decision_records import (
     latest_aph_decision_record_index_jsonl_paths,
     latest_aph_decision_record_documents_summary,
@@ -848,6 +851,210 @@ def get_or_create_entity(conn, raw_name: str, entity_type: str = "unknown") -> i
         )
         row = cur.fetchone()
     return int(row[0])
+
+
+def _find_house_electorate_id(
+    conn,
+    *,
+    electorate_name: str,
+    state_or_territory: str | None = None,
+) -> int | None:
+    normalized = normalize_electorate_name(electorate_name)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT electorate.id, electorate.name, electorate.state_or_territory
+            FROM electorate
+            JOIN jurisdiction ON jurisdiction.id = electorate.jurisdiction_id
+            WHERE jurisdiction.level = 'federal'
+              AND (
+                    jurisdiction.code IN ('CWLTH', 'Cth', 'AU')
+                 OR jurisdiction.name ILIKE 'Commonwealth%'
+              )
+              AND electorate.chamber = 'house'
+            ORDER BY electorate.id
+            """
+        )
+        for electorate_id, name, state in cur.fetchall():
+            if normalize_electorate_name(name) != normalized:
+                continue
+            if state_or_territory and state and state != state_or_territory:
+                continue
+            return int(electorate_id)
+    return None
+
+
+def _resolve_project_path(value: str | Path) -> Path:
+    path = Path(value)
+    return path if path.is_absolute() else PROJECT_ROOT / path
+
+
+def _postcode_artifact_postcodes(path: Path, records: list[dict[str, Any]]) -> set[str]:
+    summary_path = path.with_name(f"{path.stem}.summary.json")
+    if summary_path.exists():
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            summary = {}
+        postcodes = {
+            str(postcode)
+            for postcode in summary.get("postcodes_requested", [])
+            if str(postcode)
+        }
+        if postcodes:
+            return postcodes
+        postcodes = {
+            str(item.get("postcode"))
+            for item in summary.get("postcodes", [])
+            if isinstance(item, dict) and item.get("postcode")
+        }
+        if postcodes:
+            return postcodes
+    return {str(record.get("postcode")) for record in records if record.get("postcode")}
+
+
+def load_postcode_electorate_crosswalk(
+    conn,
+    jsonl_path: Path | None = None,
+) -> dict[str, Any]:
+    path = jsonl_path or latest_aec_electorate_finder_postcodes_jsonl()
+    if path is None:
+        return {
+            "postcode_electorate_crosswalk_rows": 0,
+            "skipped_reason": "no_processed_aec_electorate_finder_postcodes",
+        }
+    path = _resolve_project_path(path)
+
+    records: list[dict[str, Any]] = []
+    with path.open(encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                records.append(json.loads(line))
+    artifact_postcodes = _postcode_artifact_postcodes(path, records)
+    artifact_match_methods = {
+        str(record.get("match_method") or "aec_postcode_locality_search")
+        for record in records
+    } or {"aec_postcode_locality_search"}
+
+    if artifact_postcodes:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                DELETE FROM postcode_electorate_crosswalk
+                WHERE postcode = ANY(%s)
+                  AND match_method = ANY(%s)
+                """,
+                (sorted(artifact_postcodes), sorted(artifact_match_methods)),
+            )
+
+    source_doc_cache: dict[str, int] = {}
+    inserted_or_updated = 0
+    skipped_missing_electorate = 0
+    postcode_count: set[str] = set()
+    ambiguous_postcodes: set[str] = set()
+    for record in records:
+        postcode = str(record.get("postcode") or "")
+        electorate_name = str(record.get("electorate_name") or "")
+        state = str(record.get("state_or_territory") or "")
+        if not postcode or not electorate_name:
+            continue
+        electorate_id = _find_house_electorate_id(
+            conn,
+            electorate_name=electorate_name,
+            state_or_territory=state or None,
+        )
+        if electorate_id is None:
+            skipped_missing_electorate += 1
+            continue
+        metadata_path = str(record.get("source_metadata_path") or "")
+        source_document_id = None
+        if metadata_path:
+            if metadata_path not in source_doc_cache:
+                source_doc_cache[metadata_path] = upsert_source_document(
+                    conn,
+                    _resolve_project_path(metadata_path),
+                )
+            source_document_id = source_doc_cache[metadata_path]
+        metadata = {
+            "source_dataset": record.get("source_dataset"),
+            "normalizer_name": record.get("normalizer_name"),
+            "normalizer_version": record.get("normalizer_version"),
+            "caveat": record.get("caveat"),
+            "ambiguity": record.get("ambiguity"),
+            "source_boundary_context": record.get("source_boundary_context"),
+            "current_member_context": record.get("current_member_context"),
+            "aec_boundary_note": record.get("aec_boundary_note"),
+            "original_rows": record.get("original_rows", []),
+        }
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                    INSERT INTO postcode_electorate_crosswalk (
+                        postcode, electorate_id, state_or_territory, match_method,
+                        confidence, locality_count, localities,
+                        redistributed_electorates, other_localities,
+                        aec_division_ids, source_document_id, source_updated_text,
+                        source_boundary_context, current_member_context, metadata
+                    )
+                    VALUES (
+                        %(postcode)s, %(electorate_id)s, %(state_or_territory)s,
+                        %(match_method)s, %(confidence)s, %(locality_count)s,
+                        %(localities)s, %(redistributed_electorates)s,
+                        %(other_localities)s, %(aec_division_ids)s,
+                        %(source_document_id)s, %(source_updated_text)s,
+                        %(source_boundary_context)s, %(current_member_context)s,
+                        %(metadata)s
+                    )
+                    ON CONFLICT (postcode, electorate_id, match_method) DO UPDATE SET
+                        state_or_territory = EXCLUDED.state_or_territory,
+                        confidence = EXCLUDED.confidence,
+                        locality_count = EXCLUDED.locality_count,
+                        localities = EXCLUDED.localities,
+                        redistributed_electorates = EXCLUDED.redistributed_electorates,
+                        other_localities = EXCLUDED.other_localities,
+                        aec_division_ids = EXCLUDED.aec_division_ids,
+                        source_document_id = EXCLUDED.source_document_id,
+                        source_updated_text = EXCLUDED.source_updated_text,
+                        source_boundary_context = EXCLUDED.source_boundary_context,
+                        current_member_context = EXCLUDED.current_member_context,
+                        metadata = EXCLUDED.metadata
+                    """,
+                {
+                    "postcode": postcode,
+                    "electorate_id": electorate_id,
+                    "state_or_territory": state or None,
+                    "match_method": record.get("match_method") or "aec_postcode_locality_search",
+                    "confidence": Decimal(str(record.get("confidence") or "0")),
+                    "locality_count": int(record.get("locality_count") or 0),
+                    "localities": as_jsonb(record.get("localities") or []),
+                    "redistributed_electorates": as_jsonb(
+                        record.get("redistributed_electorates") or []
+                    ),
+                    "other_localities": as_jsonb(record.get("other_localities") or []),
+                    "aec_division_ids": as_jsonb(record.get("aec_division_ids") or []),
+                    "source_document_id": source_document_id,
+                    "source_updated_text": record.get("page_updated_text") or None,
+                    "source_boundary_context": record.get("source_boundary_context")
+                    or "next_federal_election_electorates",
+                    "current_member_context": record.get("current_member_context")
+                    or "previous_election_or_subsequent_by_election_member",
+                    "metadata": as_jsonb(metadata),
+                },
+            )
+        inserted_or_updated += 1
+        postcode_count.add(postcode)
+        if record.get("ambiguity") == "ambiguous_postcode":
+            ambiguous_postcodes.add(postcode)
+    conn.commit()
+    return {
+        "postcode_electorate_crosswalk_rows": inserted_or_updated,
+        "postcodes": len(postcode_count),
+        "postcodes_refreshed": len(artifact_postcodes),
+        "ambiguous_postcodes": len(ambiguous_postcodes),
+        "source_documents_upserted": len(source_doc_cache),
+        "skipped_missing_electorate": skipped_missing_electorate,
+        "jsonl_path": str(path),
+    }
 
 
 def get_or_create_industry_code(conn, scheme: str, code: str, label: str) -> int:
@@ -4931,6 +5138,7 @@ def load_processed_artifacts(
     include_official_decision_record_documents: bool = True,
     include_official_aph_divisions: bool = True,
     include_vote_divisions: bool = False,
+    include_postcode_crosswalk: bool = True,
     include_party_entity_links: bool = True,
     reapply_reviews: bool = True,
 ) -> dict[str, Any]:
@@ -4976,6 +5184,8 @@ def load_processed_artifacts(
             summary["official_aph_divisions"] = load_official_aph_divisions(conn)
         if include_vote_divisions:
             summary["vote_divisions"] = load_they_vote_for_you_divisions(conn)
+        if include_postcode_crosswalk:
+            summary["postcode_electorate_crosswalk"] = load_postcode_electorate_crosswalk(conn)
         if include_party_entity_links:
             from au_politics_money.db.party_entity_suggestions import (
                 materialize_party_entity_link_candidates,

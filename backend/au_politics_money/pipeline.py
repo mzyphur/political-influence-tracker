@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import platform
 import subprocess
@@ -11,10 +12,14 @@ from pathlib import Path
 from typing import Any
 
 from au_politics_money import __version__
-from au_politics_money.config import AUDIT_DIR
+from au_politics_money.config import AUDIT_DIR, PROJECT_ROOT
 from au_politics_money.ingest.aec_boundaries import (
     extract_current_aec_boundaries,
     fetch_current_aec_boundary_zip,
+)
+from au_politics_money.ingest.aec_electorate_finder import (
+    fetch_aec_electorate_finder_postcodes,
+    normalize_aec_electorate_finder_postcodes,
 )
 from au_politics_money.ingest.aec_annual import (
     normalize_aec_annual_money_flows,
@@ -79,6 +84,7 @@ DEPENDENCY_DISTRIBUTIONS = (
     "python-dotenv",
     "rapidfuzz",
 )
+POSTCODE_SEED_PATH = PROJECT_ROOT / "data" / "seeds" / "aec_postcode_search_seed.txt"
 
 
 def utc_now() -> datetime:
@@ -211,6 +217,26 @@ def _fetch_discovered(source_id: str, link_type: str | None = None, limit: int |
     }
 
 
+def _seed_postcodes() -> list[str]:
+    postcodes: list[str] = []
+    if not POSTCODE_SEED_PATH.exists():
+        raise FileNotFoundError(f"Postcode seed file not found: {POSTCODE_SEED_PATH}")
+    for line in POSTCODE_SEED_PATH.read_text(encoding="utf-8").splitlines():
+        cleaned = line.split("#", maxsplit=1)[0].strip()
+        if cleaned:
+            postcodes.append(cleaned)
+    return postcodes
+
+
+def _postcode_seed_metadata(postcodes: list[str]) -> dict[str, Any]:
+    payload = "\n".join(sorted(postcodes)) + "\n"
+    return {
+        "postcode_seed_path": str(POSTCODE_SEED_PATH.relative_to(PROJECT_ROOT)),
+        "postcode_seed_count": len(postcodes),
+        "postcode_seed_sha256": hashlib.sha256(payload.encode("utf-8")).hexdigest(),
+    }
+
+
 def _write_manifest(manifest: PipelineManifest) -> Path:
     target_dir = AUDIT_DIR / "pipeline_runs"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -232,6 +258,7 @@ def run_federal_foundation_pipeline(
     votes_end_date: str | None = None,
 ) -> Path:
     started = utc_now()
+    postcode_seed = _seed_postcodes()
     manifest = PipelineManifest(
         pipeline_name="federal_foundation",
         run_id=f"federal_foundation_{timestamp(started)}",
@@ -246,6 +273,7 @@ def run_federal_foundation_pipeline(
             "include_votes": include_votes,
             "votes_start_date": votes_start_date,
             "votes_end_date": votes_end_date,
+            **_postcode_seed_metadata(postcode_seed),
         },
     )
 
@@ -301,6 +329,14 @@ def run_federal_foundation_pipeline(
         ("summarize_aec_election_zip", summarize_aec_election_zip),
         ("normalize_aec_election_money_flows", normalize_aec_election_money_flows),
         ("normalize_aec_public_funding", normalize_aec_public_funding),
+        (
+            "fetch_aec_electorate_finder_postcodes",
+            lambda: fetch_aec_electorate_finder_postcodes(postcode_seed),
+        ),
+        (
+            "normalize_aec_electorate_finder_postcodes",
+            lambda: normalize_aec_electorate_finder_postcodes(postcode_seed),
+        ),
         ("fetch_current_aec_boundaries_zip", fetch_current_aec_boundary_zip),
         ("extract_aec_federal_boundaries", extract_current_aec_boundaries),
         ("fetch_aims_australian_coastline_zip", fetch_aims_australian_coastline_zip),

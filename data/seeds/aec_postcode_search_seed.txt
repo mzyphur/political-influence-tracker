@@ -1,0 +1,12 @@
+# Source-backed AEC Electorate Finder postcode seed list.
+# This is intentionally a small bootstrap list for CI/smoke/local demos.
+# Production refreshes should use a larger reviewed postcode list.
+0800  # Darwin
+2000  # Sydney CBD
+2600  # ACT ambiguous example: Canberra and Bean
+3000  # Melbourne CBD
+4000  # Brisbane CBD
+5000  # Adelaide CBD
+6000  # Perth CBD
+7000  # Hobart CBD
+

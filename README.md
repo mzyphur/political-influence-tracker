@@ -206,8 +206,9 @@ It serves global search and source-to-policy context endpoints at
 low-tolerance interactive geometry and can emit exact source geometry for strict
 QA. `/api/coverage` exposes source-family coverage so map-linked representative
 counts are not confused with whole-database party/entity/return-level money-flow
-counts. Postcode search is exposed with a limitation response until a source-backed
-postcode/locality-to-electorate crosswalk is ingested.
+counts. Postcode search can return source-backed AEC electorate candidates
+where the crosswalk has been loaded, with explicit caveats for split postcodes
+and AEC next-election boundary context.
 
 ## Standards
 

@@ -86,18 +86,34 @@ Supported search targets:
 
 Postcodes are not equivalent to electorates. The AEC's public electorate finder
 notes that a locality/suburb or postcode can be in more than one federal
-electorate. The API therefore returns a `postcode_search` limitation instead of
-guessing until we ingest a reproducible crosswalk.
+electorate. The pipeline now supports a reproducible AEC postcode search
+crosswalk:
 
-Preferred implementation path:
+```bash
+au-politics-money fetch-aec-electorate-finder-postcodes \
+  --postcodes-file data/seeds/aec_postcode_search_seed.txt
+au-politics-money normalize-aec-electorate-finder-postcodes \
+  --postcodes-file data/seeds/aec_postcode_search_seed.txt
+au-politics-money load-postcode-electorate-crosswalk
+```
 
-1. Ingest official AEC electorate-finder files where available for locality,
-   street, and postcode-to-division evidence.
-2. Add an ABS Postal Area overlay as a secondary approximation for map search,
-   labelled clearly as an approximation because ABS Postal Areas are not the
-   same as Australia Post delivery postcodes.
-3. Store ambiguous postcode results as multiple electorate candidates with
-   method, confidence, source document, and caveat metadata.
+When a postcode is loaded, `/api/search?q=2600&types=postcode` returns every
+source-backed electorate candidate with `match_method`, `confidence`,
+`localities`, AEC division ids where available, source-document metadata, and
+the AEC ambiguity caveat. AEC Electorate Finder results may describe electorates
+for the next federal election, so the API also exposes `source_boundary_context`
+and `current_member_context`; postcode search must not be displayed as proof of
+the current local member after a redistribution. When a postcode is not loaded,
+the API returns a `postcode_search` limitation rather than implying the postcode
+has no federal electorate.
+
+Next implementation path:
+
+1. Expand the seed list into a reviewed full postcode refresh set.
+2. Add locality/suburb exact search from the same AEC electorate-finder source.
+3. Add an ABS Postal Area overlay as a secondary approximation for map search,
+   labelled clearly because ABS Postal Areas are not the same as Australia Post
+   delivery postcodes.
 
 ## Map Features
 

@@ -155,9 +155,10 @@ Work items:
 - Add API-level filtering by date, party, state, chamber, source type, industry,
   and evidence confidence.
 - Add CSV/JSON exports with citation fields.
-- Add source-backed postcode/locality search using AEC electorate-finder files
-  and/or caveated ABS Postal Area overlays; do not infer a single electorate
-  from postcode alone where the source indicates ambiguity.
+- Extend source-backed postcode/locality search beyond the initial AEC
+  postcode crosswalk seed: add a reviewed full postcode refresh set, locality
+  search, and caveated ABS Postal Area overlays; do not infer a single
+  electorate from postcode alone where the source indicates ambiguity.
 
 Deliverable:
 
