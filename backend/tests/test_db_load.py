@@ -44,6 +44,7 @@ from au_politics_money.db.load import (
     vic_vec_funding_register_path_from_pipeline_manifest,
     waec_political_contribution_path_from_pipeline_manifest,
 )
+from au_politics_money.ingest.tas_tec import _declaration_source_id
 
 
 class RecordingCursor:
@@ -1356,16 +1357,76 @@ def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
     def sha256_path(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
 
+    def write_jsonl(urls: list[str]) -> None:
+        rows = [
+            {
+                "source_id": source_id,
+                "supporting_document_urls": urls if index == 0 else [],
+            }
+            for index, source_id in enumerate(source_ids)
+        ]
+        jsonl_path.write_text(
+            "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
+            encoding="utf-8",
+        )
+
+    def write_summary(
+        *,
+        support_urls: list[str],
+        attempts: dict[str, dict[str, object]],
+        hashes: dict[str, dict[str, object]],
+    ) -> None:
+        summary_path.write_text(
+            json.dumps(
+                {
+                    "normalizer_name": "tas_tec_reportable_donation_table_normalizer",
+                    "source_dataset": "tas_tec_donations",
+                    "source_ids": list(source_ids),
+                    "jsonl_path": str(jsonl_path),
+                    "jsonl_sha256": sha256_path(jsonl_path),
+                    "source_counts": {source_id: 1 for source_id in source_ids},
+                    "source_hashes": source_hashes,
+                    "supporting_document_url_count": len(set(support_urls)),
+                    "supporting_document_attempts": attempts,
+                    "supporting_document_hashes": hashes,
+                    "total_count": 3,
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
+    def write_manifest() -> None:
+        manifest_path.write_text(
+            json.dumps(
+                {
+                    "pipeline_name": "state_local",
+                    "parameters": {
+                        "source_family": "tas_tec_donations",
+                        "loads_database": False,
+                    },
+                    "steps": [
+                        {
+                            "name": "normalize_tas_tec_donations",
+                            "status": "succeeded",
+                            "output": str(summary_path),
+                            "output_sha256": sha256_path(summary_path),
+                        },
+                    ],
+                },
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+
     source_ids = (
         "tas_tec_donations_monthly_table",
         "tas_tec_donations_seven_day_ha25_table",
         "tas_tec_donations_seven_day_lc26_table",
     )
     jsonl_path = tmp_path / "tas-donations.jsonl"
-    jsonl_path.write_text(
-        "".join(json.dumps({"source_id": source_id}) + "\n" for source_id in source_ids),
-        encoding="utf-8",
-    )
     source_hashes: dict[str, dict[str, str]] = {}
     for source_id in source_ids:
         body_path = tmp_path / f"{source_id}.html"
@@ -1390,6 +1451,7 @@ def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
             "body_sha256": sha256_path(body_path),
         }
     declaration_url = "https://www.tec.tas.gov.au/example-declaration.pdf"
+    declaration_source_id = _declaration_source_id(declaration_url)
     declaration_body_path = tmp_path / "tas-declaration.pdf"
     declaration_body_bytes = b"%PDF-1.4\nfixture\n%%EOF\n"
     declaration_body_path.write_bytes(declaration_body_bytes)
@@ -1398,10 +1460,11 @@ def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
         json.dumps(
             {
                 "source": {
-                    "source_id": "tas_tec_declaration_document_fixture",
+                    "source_id": declaration_source_id,
                     "url": declaration_url,
                 },
                 "body_path": str(declaration_body_path),
+                "final_url": declaration_url,
                 "sha256": sha256_path(declaration_body_path),
                 "ok": True,
             },
@@ -1411,7 +1474,7 @@ def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
         encoding="utf-8",
     )
     declaration_attempt = {
-        "archive_source_id": "tas_tec_declaration_document_fixture",
+        "archive_source_id": declaration_source_id,
         "archive_metadata_path": str(declaration_metadata_path),
         "archive_metadata_sha256": sha256_path(declaration_metadata_path),
         "archived": True,
@@ -1422,56 +1485,47 @@ def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
         "archive_body_sha256": sha256_path(declaration_body_path),
     }
     summary_path = tmp_path / "tas-donations.summary.json"
-    summary_path.write_text(
-        json.dumps(
-            {
-                "normalizer_name": "tas_tec_reportable_donation_table_normalizer",
-                "source_dataset": "tas_tec_donations",
-                "source_ids": list(source_ids),
-                "jsonl_path": str(jsonl_path),
-                "jsonl_sha256": sha256_path(jsonl_path),
-                "source_counts": {source_id: 1 for source_id in source_ids},
-                "source_hashes": source_hashes,
-                "supporting_document_url_count": 1,
-                "supporting_document_attempts": {
-                    declaration_url: declaration_attempt,
-                },
-                "supporting_document_hashes": {
-                    declaration_url: declaration_hash,
-                },
-                "total_count": 3,
-            },
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
+    write_jsonl([declaration_url])
+    write_summary(
+        support_urls=[declaration_url],
+        attempts={declaration_url: declaration_attempt},
+        hashes={declaration_url: declaration_hash},
     )
     manifest_path = tmp_path / "state_local_tas_manifest.json"
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "pipeline_name": "state_local",
-                "parameters": {
-                    "source_family": "tas_tec_donations",
-                    "loads_database": False,
-                },
-                "steps": [
-                    {
-                        "name": "normalize_tas_tec_donations",
-                        "status": "succeeded",
-                        "output": str(summary_path),
-                        "output_sha256": sha256_path(summary_path),
-                    },
-                ],
-            },
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    write_manifest()
 
     assert tas_tec_donation_path_from_pipeline_manifest(manifest_path) == jsonl_path
 
+    second_declaration_url = "https://www.tec.tas.gov.au/second-declaration.pdf"
+    write_jsonl([declaration_url, second_declaration_url])
+    write_summary(
+        support_urls=[declaration_url, second_declaration_url],
+        attempts={declaration_url: declaration_attempt},
+        hashes={declaration_url: declaration_hash},
+    )
+    write_manifest()
+    with pytest.raises(ValueError, match="supporting document attempt URL scope mismatch"):
+        tas_tec_donation_path_from_pipeline_manifest(manifest_path)
+
+    write_jsonl([declaration_url])
+    wrong_declaration_url = "https://www.tec.tas.gov.au/wrong-declaration.pdf"
+    write_jsonl([wrong_declaration_url])
+    write_summary(
+        support_urls=[wrong_declaration_url],
+        attempts={wrong_declaration_url: declaration_attempt},
+        hashes={wrong_declaration_url: declaration_hash},
+    )
+    write_manifest()
+    with pytest.raises(ValueError, match="source_id does not match URL"):
+        tas_tec_donation_path_from_pipeline_manifest(manifest_path)
+
+    write_jsonl([declaration_url])
+    write_summary(
+        support_urls=[declaration_url],
+        attempts={declaration_url: declaration_attempt},
+        hashes={declaration_url: declaration_hash},
+    )
+    write_manifest()
     declaration_body_path.write_bytes(b"%PDF-1.4\ntampered\n%%EOF\n")
     with pytest.raises(ValueError, match="supporting document body hash mismatch"):
         tas_tec_donation_path_from_pipeline_manifest(manifest_path)

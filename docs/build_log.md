@@ -37,6 +37,13 @@ Completed:
   class changes, such as "Economy to Business", into invented source entities.
   Route wording such as "flight from Sydney to Melbourne provided by Qantas"
   remains supported.
+- Tightened TAS TEC declaration evidence validation after adversarial review.
+  The manifest loader now checks that the unique declaration URL set in the
+  JSONL rows exactly matches the attempted archive URL set in the summary, and
+  that each supporting-document metadata file is bound to the deterministic
+  source id and source/final URL for the claimed declaration URL. This prevents
+  partial archive coverage or swapped declaration-document hashes from being
+  accepted as reproducible evidence.
 - Hardened ACT annual-return receipt handling after review. Broad annual
   `act_annual_receipt` rows are now loaded as state source-row context with
   `public_amount_counting_role =

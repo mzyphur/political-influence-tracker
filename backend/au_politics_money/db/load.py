@@ -88,6 +88,7 @@ from au_politics_money.ingest.tas_tec import (
     PARSER_NAME as TAS_TEC_PARSER_NAME,
     SOURCE_DATASET as TAS_TEC_SOURCE_DATASET,
     SOURCE_IDS as TAS_TEC_SOURCE_IDS,
+    _declaration_source_id,
 )
 from au_politics_money.ingest.they_vote_for_you import latest_they_vote_for_you_divisions_jsonl
 from au_politics_money.ingest.vic_vec import (
@@ -2071,19 +2072,26 @@ def _tas_tec_jsonl_path_from_summary(
                 f"TAS TEC metadata/body hash mismatch for {source_metadata_path}: "
                 f"metadata={metadata_body_sha256} summary={expected_source_body_sha256}"
             )
-    _validate_tas_tec_supporting_document_hashes(summary_path, summary)
-    return _jsonl_path_from_summary(
+    jsonl_path = _jsonl_path_from_summary(
         summary_path,
         TAS_TEC_PARSER_NAME,
         expected_summary_sha256=expected_summary_sha256,
         expected_source_keys=set(TAS_TEC_SOURCE_IDS),
         source_count_field="source_counts",
     )
+    _validate_tas_tec_supporting_document_hashes(
+        summary_path,
+        summary,
+        jsonl_path=jsonl_path,
+    )
+    return jsonl_path
 
 
 def _validate_tas_tec_supporting_document_hashes(
     summary_path: Path,
     summary: dict[str, Any],
+    *,
+    jsonl_path: Path,
 ) -> None:
     supporting_document_url_count = int(summary.get("supporting_document_url_count") or 0)
     attempts = summary.get("supporting_document_attempts")
@@ -2103,6 +2111,18 @@ def _validate_tas_tec_supporting_document_hashes(
     if not isinstance(hashes, dict):
         raise ValueError(
             f"TAS TEC summary has invalid supporting_document_hashes: {summary_path}"
+        )
+    row_urls = _tas_tec_supporting_document_urls_from_jsonl(jsonl_path)
+    if supporting_document_url_count != len(row_urls):
+        raise ValueError(
+            f"TAS TEC supporting document URL count mismatch for {summary_path}: "
+            f"summary={supporting_document_url_count} rows={len(row_urls)}"
+        )
+    attempt_urls = {str(url) for url in attempts}
+    if attempt_urls != row_urls:
+        raise ValueError(
+            f"TAS TEC supporting document attempt URL scope mismatch for {summary_path}: "
+            f"attempts={sorted(attempt_urls)} rows={sorted(row_urls)}"
         )
     for url, attempt in attempts.items():
         if not isinstance(attempt, dict):
@@ -2143,6 +2163,25 @@ def _validate_tas_tec_supporting_document_hashes(
         )
 
 
+def _tas_tec_supporting_document_urls_from_jsonl(jsonl_path: Path) -> set[str]:
+    urls: set[str] = set()
+    with jsonl_path.open("r", encoding="utf-8") as handle:
+        for line_number, line in enumerate(handle, start=1):
+            if not line.strip():
+                continue
+            record = json.loads(line)
+            row_urls = record.get("supporting_document_urls") or []
+            if not isinstance(row_urls, list):
+                raise ValueError(
+                    f"TAS TEC row has invalid supporting_document_urls at "
+                    f"{jsonl_path}:{line_number}"
+                )
+            for url in row_urls:
+                if url:
+                    urls.add(str(url))
+    return urls
+
+
 def _validate_tas_tec_supporting_document_metadata(
     *,
     summary_path: Path,
@@ -2167,10 +2206,28 @@ def _validate_tas_tec_supporting_document_metadata(
     source = metadata.get("source")
     metadata_source_id = source.get("source_id") if isinstance(source, dict) else None
     expected_source_id = str(document.get("archive_source_id") or "")
-    if expected_source_id and metadata_source_id != expected_source_id:
+    deterministic_source_id = _declaration_source_id(url)
+    if expected_source_id != deterministic_source_id:
+        raise ValueError(
+            f"TAS TEC supporting document source_id does not match URL for {url}: "
+            f"summary={expected_source_id!r} expected={deterministic_source_id!r}"
+        )
+    if metadata_source_id != deterministic_source_id:
         raise ValueError(
             f"Unexpected TAS TEC supporting document source_id in {metadata_path}: "
             f"{metadata_source_id!r}"
+        )
+    source_url = str(source.get("url") or "") if isinstance(source, dict) else ""
+    if source_url != url:
+        raise ValueError(
+            f"TAS TEC supporting document source URL mismatch in {metadata_path}: "
+            f"metadata={source_url!r} summary={url!r}"
+        )
+    final_url = str(metadata.get("final_url") or "")
+    if final_url and final_url != url:
+        raise ValueError(
+            f"TAS TEC supporting document final URL mismatch in {metadata_path}: "
+            f"metadata={final_url!r} summary={url!r}"
         )
     if not require_body:
         return
