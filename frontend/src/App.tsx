@@ -59,6 +59,7 @@ import type {
 
 const states = ["All", "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"];
 type DataLevel = "federal" | "state" | "council";
+type StateLocalFlowFilter = "all" | "qld_gift" | "qld_electoral_expenditure";
 type GraphRoot = {
   kind: "person" | "party" | "entity";
   id: number | string;
@@ -83,6 +84,15 @@ const emptyStateLocalRecordPage = (): StateLocalRecordPage => ({
   nextCursor: null,
   totalCount: null
 });
+
+const stateLocalFlowFilterOptions: Array<{
+  value: StateLocalFlowFilter;
+  label: string;
+}> = [
+  { value: "all", label: "All" },
+  { value: "qld_gift", label: "Gifts" },
+  { value: "qld_electoral_expenditure", label: "Spend" }
+];
 
 const levelLabels: Record<DataLevel, string> = {
   federal: "Federal",
@@ -839,11 +849,14 @@ function StateLocalSummaryPanel({
   onOpenEntityProfile: (entityId: number, label: string) => void;
 }) {
   const levelName = level === "council" ? "local/council" : level;
+  const [recordFlowFilter, setRecordFlowFilter] =
+    useState<StateLocalFlowFilter>("all");
   const [recordPage, setRecordPage] = useState<StateLocalRecordPage>(
     emptyStateLocalRecordPage
   );
   const recordFetchRef = useRef<AbortController | null>(null);
-  const summaryRecentRows = summary?.recent_records ?? [];
+  const activeFlowKind = recordFlowFilter === "all" ? undefined : recordFlowFilter;
+  const summaryRecentRows = recordFlowFilter === "all" ? summary?.recent_records ?? [] : [];
   const mergedRecentRows = useMemo(
     () => mergeStateLocalRecords(summaryRecentRows, recordPage.records),
     [recordPage.records, summaryRecentRows]
@@ -860,8 +873,55 @@ function StateLocalSummaryPanel({
   useEffect(() => {
     recordFetchRef.current?.abort();
     setRecordPage(emptyStateLocalRecordPage());
+    if (
+      recordFlowFilter === "all" ||
+      status !== "ready" ||
+      !summary ||
+      summary.totals_by_level.length === 0
+    ) {
+      return () => recordFetchRef.current?.abort();
+    }
+    const controller = new AbortController();
+    recordFetchRef.current = controller;
+    setRecordPage((current) => ({
+      ...current,
+      status: "loading",
+      error: ""
+    }));
+    fetchStateLocalRecords({
+      level: level === "council" ? "council" : "state",
+      flowKind: activeFlowKind,
+      limit: 25,
+      signal: controller.signal
+    })
+      .then((payload) => {
+        setRecordPage({
+          records: payload.records,
+          status: "ready",
+          error: "",
+          hasMore: payload.has_more,
+          nextCursor: payload.next_cursor,
+          totalCount: payload.total_count
+        });
+      })
+      .catch((loadError: Error) => {
+        if (controller.signal.aborted) return;
+        setRecordPage((current) => ({
+          ...current,
+          status: "error",
+          error: loadError.message
+        }));
+      });
     return () => recordFetchRef.current?.abort();
-  }, [level, summary?.db_level, summary?.requested_level]);
+  }, [
+    activeFlowKind,
+    level,
+    recordFlowFilter,
+    status,
+    summary,
+    summary?.db_level,
+    summary?.requested_level
+  ]);
 
   const loadMoreRecords = () => {
     if (!summary || !nextRecordCursor || recordPage.status === "loading") return;
@@ -875,6 +935,7 @@ function StateLocalSummaryPanel({
     }));
     fetchStateLocalRecords({
       level: level === "council" ? "council" : "state",
+      flowKind: activeFlowKind,
       cursor: nextRecordCursor,
       limit: 25,
       signal: controller.signal
@@ -984,7 +1045,9 @@ function StateLocalSummaryPanel({
         totalCount={recordPage.totalCount}
         status={recordPage.status}
         error={recordPage.error}
+        flowFilter={recordFlowFilter}
         canLoadMore={canLoadMoreRecords}
+        onFlowFilterChange={setRecordFlowFilter}
         onLoadMore={loadMoreRecords}
       />
       <StateLocalRankList
@@ -1028,21 +1091,42 @@ function StateLocalRecentRecords({
   totalCount,
   status,
   error,
+  flowFilter,
   canLoadMore,
+  onFlowFilterChange,
   onLoadMore
 }: {
   rows: StateLocalSummaryRecord[];
   totalCount: number | null;
   status: LoadState;
   error: string;
+  flowFilter: StateLocalFlowFilter;
   canLoadMore: boolean;
+  onFlowFilterChange: (filter: StateLocalFlowFilter) => void;
   onLoadMore: () => void;
 }) {
   return (
     <div className="state-summary-list state-summary-recent-list">
-      <h3>Recent source rows</h3>
+      <div className="state-summary-list-heading">
+        <h3>Recent source rows</h3>
+        <div className="state-summary-filter-tabs" aria-label="QLD row type filter">
+          {stateLocalFlowFilterOptions.map((option) => (
+            <button
+              type="button"
+              className={option.value === flowFilter ? "active" : ""}
+              aria-pressed={option.value === flowFilter}
+              key={option.value}
+              onClick={() => onFlowFilterChange(option.value)}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
       {rows.length === 0 ? (
-        <p className="muted">No current QLD ECQ rows returned for this slice.</p>
+        <p className="muted">
+          {status === "loading" ? "Loading QLD ECQ rows." : "No current QLD ECQ rows returned for this slice."}
+        </p>
       ) : (
         rows.map((row) => {
           const sourceHref = safeSourceHref(row.source_final_url || row.source_url);
@@ -1078,6 +1162,9 @@ function StateLocalRecentRecords({
             </div>
           );
         })
+      )}
+      {rows.length === 0 && error && (
+        <span className="state-summary-error">Load failed: {error}</span>
       )}
       {rows.length > 0 && (
         <div className="state-summary-feed-footer">

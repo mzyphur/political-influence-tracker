@@ -228,6 +228,11 @@ Completed:
   transfers, and the API now exposes source document id, fetch timestamp,
   SHA-256 snapshot hash, original row text, and selected row metadata for
   reproducibility.
+- Added State/Council row-type filters so users can inspect all QLD rows,
+  gift/donation rows, or electoral campaign-spend rows separately. Filtered
+  views call the source-row endpoint directly rather than reusing the mixed
+  summary sample, preserving pagination correctness and the gift/spend
+  evidence-family distinction.
 - Added `prepare-review-bundle`, a reproducible CLI wrapper that materializes
   party/entity link candidates, exports party/entity and sector-policy review
   queues, runs sector-policy suggestions, and writes a manifest for reviewers
