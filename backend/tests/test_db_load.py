@@ -312,7 +312,16 @@ def test_load_official_decision_record_index_upserts_rows(tmp_path) -> None:
         for sql in conn.cursor_instance.executed_sql
     )
     assert any(
+        "UPDATE official_parliamentary_decision_record_document document" in sql
+        and "parent_not_in_latest_official_index" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
         "is_current = TRUE" in sql and "withdrawn_at = NULL" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
+        "- 'source_record_status'" in sql and "- 'source_record_withdrawn_at'" in sql
         for sql in conn.cursor_instance.executed_sql
     )
 
@@ -334,6 +343,7 @@ def test_load_official_aph_divisions_marks_latest_snapshot_current(
                 "no_count": 0,
                 "possible_turnout": 1,
                 "source_metadata_path": str(tmp_path / "metadata.json"),
+                "official_decision_record_external_key": "aph_house_votes_and_proceedings:test",
                 "metadata": {"vote_count_matches": True},
                 "votes": [],
             }
@@ -370,6 +380,16 @@ def test_load_official_aph_divisions_marks_latest_snapshot_current(
         "INSERT INTO vote_division" in sql
         and "is_current" in sql
         and "withdrawn_at = NULL" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
+        "JOIN official_parliamentary_decision_record_document document" in sql
+        and "record.is_current IS TRUE" in sql
+        and "document.is_current IS TRUE" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
+        "- 'source_record_status'" in sql and "- 'source_record_withdrawn_at'" in sql
         for sql in conn.cursor_instance.executed_sql
     )
 
@@ -442,6 +462,10 @@ def test_load_official_decision_record_documents_links_source_snapshot(
         for sql in conn.cursor_instance.executed_sql
     )
     assert any(
+        "WHERE external_key = %s" in sql and "is_current IS TRUE" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
         "INSERT INTO official_parliamentary_decision_record_document" in sql
         for sql in conn.cursor_instance.executed_sql
     )
@@ -453,6 +477,10 @@ def test_load_official_decision_record_documents_links_source_snapshot(
     )
     assert any(
         "is_current = TRUE" in sql and "withdrawn_at = NULL" in sql
+        for sql in conn.cursor_instance.executed_sql
+    )
+    assert any(
+        "- 'source_record_status'" in sql and "- 'source_record_withdrawn_at'" in sql
         for sql in conn.cursor_instance.executed_sql
     )
 

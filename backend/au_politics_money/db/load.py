@@ -622,6 +622,22 @@ def _begin_official_decision_record_refresh(conn, source_ids: list[str]) -> int:
     with conn.cursor() as cur:
         cur.execute(
             """
+            UPDATE official_parliamentary_decision_record_document document
+            SET is_current = FALSE,
+                withdrawn_at = now(),
+                metadata = document.metadata || jsonb_build_object(
+                    'source_record_status', 'parent_not_in_latest_official_index',
+                    'source_record_withdrawn_at', now()
+                )
+            FROM official_parliamentary_decision_record record
+            WHERE record.id = document.decision_record_id
+              AND record.source_id = ANY(%s)
+              AND document.is_current IS TRUE
+            """,
+            (source_ids,),
+        )
+        cur.execute(
+            """
             UPDATE official_parliamentary_decision_record
             SET is_current = FALSE,
                 withdrawn_at = now(),
@@ -706,6 +722,34 @@ def _begin_official_aph_division_refresh(conn, chambers: list[str]) -> dict[str,
         "official_vote_rows_deactivated_before_reload": vote_rows,
         "divisions_deactivated_before_reload": division_rows,
     }
+
+
+def _current_official_decision_document_exists(
+    conn,
+    *,
+    decision_external_key: str | None,
+    source_document_id: int,
+) -> bool:
+    if not decision_external_key:
+        return True
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM official_parliamentary_decision_record record
+                JOIN official_parliamentary_decision_record_document document
+                  ON document.decision_record_id = record.id
+                WHERE record.external_key = %s
+                  AND document.source_document_id = %s
+                  AND record.is_current IS TRUE
+                  AND document.is_current IS TRUE
+            )
+            """,
+            (decision_external_key, source_document_id),
+        )
+        row = cur.fetchone()
+    return bool(row and row[0])
 
 
 def apply_schema(conn, schema_path: Path | None = None) -> None:
@@ -5113,15 +5157,25 @@ def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[st
     votes_seen = 0
     votes_inserted_or_updated = 0
     unmatched_votes = 0
+    skipped_non_current_decision_document = 0
     chamber_counts: Counter[str] = Counter()
 
     for record in records:
         divisions_seen += 1
         chamber = record["chamber"]
         chamber_counts[chamber] += 1
+        source_document_id = upsert_source_document(conn, Path(record["source_metadata_path"]))
+        decision_external_key = record.get("official_decision_record_external_key")
+        if not _current_official_decision_document_exists(
+            conn,
+            decision_external_key=decision_external_key,
+            source_document_id=source_document_id,
+        ):
+            skipped_non_current_decision_document += 1
+            votes_seen += len(record.get("votes") or [])
+            continue
         if chamber not in vote_indexes:
             vote_indexes[chamber] = _current_chamber_vote_person_index(conn, chamber)
-        source_document_id = upsert_source_document(conn, Path(record["source_metadata_path"]))
         division_date = parse_date(str(record["division_date"]))
         if division_date is None:
             raise RuntimeError(f"Official APH division is missing a parseable date: {record}")
@@ -5144,7 +5198,11 @@ def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[st
                     no_count = EXCLUDED.no_count,
                     possible_turnout = EXCLUDED.possible_turnout,
                     source_document_id = EXCLUDED.source_document_id,
-                    metadata = vote_division.metadata || EXCLUDED.metadata,
+                    metadata = (
+                        vote_division.metadata
+                        - 'source_record_status'
+                        - 'source_record_withdrawn_at'
+                    ) || EXCLUDED.metadata,
                     is_current = TRUE,
                     last_seen_at = now(),
                     withdrawn_at = NULL
@@ -5200,7 +5258,11 @@ def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[st
                         vote = EXCLUDED.vote,
                         party_id = EXCLUDED.party_id,
                         source_document_id = EXCLUDED.source_document_id,
-                        metadata = person_vote.metadata || EXCLUDED.metadata,
+                        metadata = (
+                            person_vote.metadata
+                            - 'source_record_status'
+                            - 'source_record_withdrawn_at'
+                        ) || EXCLUDED.metadata,
                         is_current = TRUE,
                         last_seen_at = now(),
                         withdrawn_at = NULL
@@ -5233,6 +5295,7 @@ def load_official_aph_divisions(conn, jsonl_path: Path | None = None) -> dict[st
         "votes_seen": votes_seen,
         "votes_inserted_or_updated": votes_inserted_or_updated,
         "unmatched_votes": unmatched_votes,
+        "skipped_non_current_decision_document": skipped_non_current_decision_document,
         "stale_official_vote_rows_deleted": 0,
         **refresh_summary,
         "chamber_counts": dict(sorted(chamber_counts.items())),
@@ -5325,8 +5388,11 @@ def load_official_parliamentary_decision_records(
                     evidence_status = EXCLUDED.evidence_status,
                     parser_name = EXCLUDED.parser_name,
                     parser_version = EXCLUDED.parser_version,
-                    metadata = official_parliamentary_decision_record.metadata
-                        || EXCLUDED.metadata,
+                    metadata = (
+                        official_parliamentary_decision_record.metadata
+                        - 'source_record_status'
+                        - 'source_record_withdrawn_at'
+                    ) || EXCLUDED.metadata,
                     is_current = TRUE,
                     last_seen_at = now(),
                     withdrawn_at = NULL
@@ -5450,6 +5516,7 @@ def load_official_parliamentary_decision_record_documents(
                 SELECT id
                 FROM official_parliamentary_decision_record
                 WHERE external_key = %s
+                  AND is_current IS TRUE
                 """,
                 (decision_external_key,),
             )
@@ -5473,8 +5540,11 @@ def load_official_parliamentary_decision_record_documents(
                     representation_kind = EXCLUDED.representation_kind,
                     fetched_at = EXCLUDED.fetched_at,
                     sha256 = EXCLUDED.sha256,
-                    metadata = official_parliamentary_decision_record_document.metadata
-                        || EXCLUDED.metadata,
+                    metadata = (
+                        official_parliamentary_decision_record_document.metadata
+                        - 'source_record_status'
+                        - 'source_record_withdrawn_at'
+                    ) || EXCLUDED.metadata,
                     is_current = TRUE,
                     last_seen_at = now(),
                     withdrawn_at = NULL

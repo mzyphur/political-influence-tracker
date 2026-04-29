@@ -1000,6 +1000,15 @@ def test_vote_summary_excludes_non_current_official_rows(
 
     assert row == (1, 1, 0)
 
+    client = TestClient(app)
+    coverage_response = client.get("/api/coverage")
+    assert coverage_response.status_code == 200
+    vote_counts = {
+        item["chamber"]: item["division_count"]
+        for item in coverage_response.json()["vote_divisions_by_chamber"]
+    }
+    assert vote_counts["house"] == 1
+
 
 def test_postcode_loader_keeps_unresolved_aec_candidates_auditable(
     integration_db: IntegrationDatabase,

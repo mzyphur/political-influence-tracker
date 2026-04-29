@@ -115,6 +115,11 @@ Completed:
   refreshed source/chamber as non-current before reactivating rows present in
   the latest artifact, and public vote summaries, coverage counts, and QA checks
   read only current official vote rows.
+- Hardened the APH current-row implementation after review: linked decision
+  documents are also withdrawn when their parent index row is withdrawn, document
+  reloads require a current parent record, official division reloads require a
+  current linked decision-document snapshot, and reactivated rows clear stale
+  withdrawal metadata before becoming current again.
 - Softened public network language in the app from "influence graph" toward
   "evidence network", renamed "Non-rejected records" to "Published records",
   added visible non-causation caveats, and expanded the methodology page with

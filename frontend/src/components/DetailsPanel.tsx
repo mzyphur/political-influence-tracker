@@ -58,6 +58,7 @@ export function DetailsPanel({
 }: DetailsPanelProps) {
   const [eventFamilyFilter, setEventFamilyFilter] = useState("all");
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
+  const [visibleDirectEventCount, setVisibleDirectEventCount] = useState(8);
   const recentEvents = representativeProfile?.recent_events ?? [];
   const campaignSupportSummary = representativeProfile?.campaign_support_summary ?? [];
   const campaignSupportEvents = representativeProfile?.campaign_support_recent_events ?? [];
@@ -90,17 +91,23 @@ export function DetailsPanel({
       }))
     ];
   }, [representativeProfile, totalRepresentativeEvents]);
-  const filteredEvents = useMemo(() => {
-    const events =
-      eventFamilyFilter === "all"
-        ? recentEvents
-        : recentEvents.filter((event) => event.event_family === eventFamilyFilter);
-    return events.slice(0, 8);
+  const matchingLoadedEvents = useMemo(() => {
+    return eventFamilyFilter === "all"
+      ? recentEvents
+      : recentEvents.filter((event) => event.event_family === eventFamilyFilter);
   }, [eventFamilyFilter, recentEvents]);
+  const visibleEvents = useMemo(
+    () => matchingLoadedEvents.slice(0, visibleDirectEventCount),
+    [matchingLoadedEvents, visibleDirectEventCount]
+  );
+  const selectedFamilyTotalCount = useMemo(() => {
+    return eventFamilyOptions.find((option) => option.key === eventFamilyFilter)?.count ?? 0;
+  }, [eventFamilyFilter, eventFamilyOptions]);
 
   useEffect(() => {
     setEventFamilyFilter("all");
     setExpandedEventId(null);
+    setVisibleDirectEventCount(8);
   }, [selectedPersonId]);
 
   if (!feature) {
@@ -426,6 +433,7 @@ export function DetailsPanel({
                     onClick={() => {
                       setEventFamilyFilter(option.key);
                       setExpandedEventId(null);
+                      setVisibleDirectEventCount(8);
                     }}
                   >
                     <span>{option.label}</span>
@@ -436,14 +444,15 @@ export function DetailsPanel({
             )}
             {totalRepresentativeEvents > 0 && (
               <p className="event-count-note">
-                Showing {filteredEvents.length.toLocaleString("en-AU")} loaded records
-                {totalRepresentativeEvents > filteredEvents.length
-                  ? ` from ${totalRepresentativeEvents.toLocaleString("en-AU")} non-rejected person-linked records`
+                Showing {visibleEvents.length.toLocaleString("en-AU")} of{" "}
+                {matchingLoadedEvents.length.toLocaleString("en-AU")} loaded records
+                {selectedFamilyTotalCount > matchingLoadedEvents.length
+                  ? ` from ${selectedFamilyTotalCount.toLocaleString("en-AU")} published person-linked records`
                   : ""}.
               </p>
             )}
             <div className="event-list">
-              {filteredEvents.map((event) => (
+              {visibleEvents.map((event) => (
                 <EventRow
                   event={event}
                   expanded={expandedEventId === event.id}
@@ -451,12 +460,26 @@ export function DetailsPanel({
                   onToggle={() =>
                     setExpandedEventId((current) => (current === event.id ? null : event.id))
                   }
-                />
+                  />
               ))}
-              {filteredEvents.length === 0 && eventFamilyFilter !== "all" && (
+              {visibleEvents.length === 0 && eventFamilyFilter !== "all" && (
                 <p className="muted">No loaded records match this filter.</p>
               )}
             </div>
+            {matchingLoadedEvents.length > visibleEvents.length && (
+              <div className="event-list-actions">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setVisibleDirectEventCount((current) =>
+                      Math.min(current + 8, matchingLoadedEvents.length)
+                    )
+                  }
+                >
+                  Show more records
+                </button>
+              </div>
+            )}
           </>
         )}
       </section>
