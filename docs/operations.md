@@ -1,6 +1,6 @@
 # Operations
 
-Last updated: 2026-04-29
+Last updated: 2026-04-30
 
 ## Local Setup
 
@@ -796,20 +796,25 @@ House-interest artifact cleanup:
 - `money_flow`: 326,286 rows total; 303,230 current rows across AEC
   annual/election/public-funding records plus active QLD ECQ, ACT Elections,
   NT NTEC, and VEC state/local disclosure rows.
-- `gift_interest`: 7,888 total rows: 5,844 current House rows, 292
+- `gift_interest`: 7,889 total rows: 5,845 current House rows, 292
   non-current House rows retained for audit, and 1,752 current Senate rows.
   Non-current source rows are excluded from active public `influence_event`
   totals.
 - `gift_interest` current gift/travel subset: House gifts 475, House sponsored
-  travel/hospitality 269, Senate gifts 227, Senate sponsored
+  travel/hospitality 270, Senate gifts 227, Senate sponsored
   travel/hospitality 263.
+- House-register `As above` disclosures are not treated as null values. Where
+  the source uses `As above`, the parser resolves the row to the previous
+  parsed disclosure, keeps the row's owner context, and preserves the original
+  `As above` wording in metadata as a source cross-reference. Unresolved
+  cross-references are skipped rather than guessed.
 - `electorate_boundary`: 150 current federal House boundaries in `aec_federal_2025_current`; all canonical source geometries are SRID 4326, valid, and non-empty.
 - `electorate_boundary_display_geometry`: 150 `land_clipped_display` rows for web-map use.
-- `influence_event`: 314,038 non-rejected derived rows: 225,800 money events,
-  77,176 campaign-support events, 202 grant events, 1,362 benefit events,
+- `influence_event`: 314,039 non-rejected derived rows: 225,800 money events,
+  77,176 campaign-support events, 202 grant events, 1,363 benefit events,
   4,667 private-interest events, 1,382 organisational-role events, 3,212 access
   events, and 237 other declared interests.
-- `influence_event` benefit subtypes include 386 membership/lounge access rows, 288 event ticket/pass rows, 69 private-aircraft/flight rows, 42 meal/reception rows, 24 accommodation rows, and 83 subscription/service rows; most benefit records do not disclose value.
+- `influence_event` benefit subtypes include 386 membership/lounge access rows, 289 event ticket/pass rows, 69 private-aircraft/flight rows, 42 meal/reception rows, 24 accommodation rows, and 83 subscription/service rows; most benefit records do not disclose value.
 - `entity_industry_classification`: 35,874 generated rows from `public_interest_sector_rules_v1`.
 - `official_identifier_observation`: 3,591 unique official observations: 3,590 current lobbyist-register observations from 3,602 parsed rows plus one ABN Lookup web-service smoke record for BHP Group Limited.
 - `entity_match_candidate`: 2,092 match candidates across official identifiers and QLD ECQ participant lookups; no official identifiers are attached by name alone.
@@ -836,7 +841,7 @@ House-interest artifact cleanup:
   TVFY-only person-vote rows retained as civic-source observations where no
   official-source match has been established.
 - Current review queue exports should include the official identifier match
-  candidates, QLD ECQ participant match candidates, 1,342 cleaned benefit events
+  candidates, QLD ECQ participant match candidates, 1,343 cleaned benefit events
   with extraction or missing-data review flags, and inferred entity
   classifications recommended for review. QLD ECQ lookup hits are still review
   candidates unless an importer has explicitly accepted the match.

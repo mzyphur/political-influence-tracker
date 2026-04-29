@@ -103,7 +103,6 @@ INSTRUCTION_LINE_PREFIXES = (
 )
 
 NON_VALUES = {
-    "as above",
     "n/a",
     "na",
     "nil",
@@ -298,6 +297,10 @@ def _looks_like_value(value: str) -> bool:
     return bool(normalized) and normalized not in _normalized_non_values()
 
 
+def _is_as_above_reference(value: str) -> bool:
+    return _normal_value(value) == "as above"
+
+
 def _section_metadata_noise_values(section: dict[str, Any]) -> set[str]:
     raw_values = [
         str(section.get("member_name") or ""),
@@ -389,6 +392,13 @@ def records_from_house_section(section: dict[str, Any]) -> list[dict[str, Any]]:
             continue
         if _normal_value(value) in metadata_noise_values:
             continue
+        source_text_value = value
+        cross_reference = ""
+        if _is_as_above_reference(value):
+            if not output:
+                continue
+            value = output[-1]["description"]
+            cross_reference = "as_above_resolved_to_previous_record"
         if not _looks_like_value(value) or _is_noise_line(value):
             continue
 
@@ -424,6 +434,8 @@ def records_from_house_section(section: dict[str, Any]) -> list[dict[str, Any]]:
                 "interest_category": category,
                 "owner_context": current_context,
                 "description": value,
+                "source_description": source_text_value,
+                "description_cross_reference": cross_reference,
                 **extracted,
                 "original_section_text": section["section_text"],
             }

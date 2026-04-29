@@ -85,6 +85,17 @@ Completed:
   official APH person-vote rows: 17,519 House rows and 18,715 Senate rows. The
   11 unmatched official vote names are retained as raw unmatched names rather
   than guessed roster matches.
+- Preserved House-register `As above` disclosures as source cross-references
+  instead of treating them as non-values. The parser now resolves `As above` to
+  the previous parsed disclosure where possible, keeps the new owner context
+  and the original source text in metadata, and skips only unresolved
+  cross-references. After regenerating and loading the artifact, the local DB
+  has 5,845 current House interest records, 270 current House sponsored
+  travel/hospitality rows, 1,363 benefit events, 314,039 non-rejected influence
+  events, 7,830 person-linked influence events, and 7,597 current gift-interest
+  rows. The regenerated federal review bundle is
+  `data/audit/review_bundles/federal_review_bundle_20260429T170338Z.summary.json`
+  with 1,343 benefit-event review rows.
 - Hardened ACT annual-return receipt handling after review. Broad annual
   `act_annual_receipt` rows are now loaded as state source-row context with
   `public_amount_counting_role =
