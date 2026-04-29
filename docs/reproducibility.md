@@ -583,6 +583,13 @@ Recommended initial schedule:
   source pages. Because the EDS covers state and local disclosures, downstream
   state/council UI surfaces should show source-family coverage and caveats
   before presenting row counts as complete jurisdictional coverage.
+- The scheduled state/local refresh entrypoint is
+  `scripts/run_weekly_state_local_pipeline.sh`. It runs the implemented
+  jurisdiction adapters, persists each manifest path in the audit log, replays
+  those manifests into Postgres, rebuilds consolidated influence events once at
+  the end, and runs serving QA/tests. `AUPOL_STATE_LOCAL_JURISDICTIONS` can be
+  used to run a smaller jurisdiction set while preserving the same manifest
+  replay discipline.
 - Vote/policy-topic artifacts should be included on the weekly federal run when
   API keys are available, because reviewed sector-policy links depend on loaded
   `policy_topic` rows. Loads without vote artifacts intentionally skip

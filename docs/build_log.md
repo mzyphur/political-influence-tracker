@@ -34,6 +34,11 @@ Completed:
   electorate/council name, state, current representative names, parties, and
   boundary metadata. This is intentionally map-feature search only; disclosure
   attribution remains governed by the state/local caveats.
+- Added `scripts/run_weekly_state_local_pipeline.sh` as the scheduled
+  state/local counterpart to the federal weekly runner. It refreshes the
+  implemented jurisdiction adapters, stores each pipeline manifest path in the
+  audit log, replays manifests into Postgres, rebuilds consolidated influence
+  events once at the end, and runs serving QA plus tests.
 - Added the first source-backed council map layer. The new QLD
   local-government boundary adapter fetches the official Queensland government
   ArcGIS/QSpatial local-government layer, normalizes 78 current council areas

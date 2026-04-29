@@ -458,9 +458,10 @@ The repo includes:
 
 ```text
 scripts/run_weekly_federal_pipeline.sh
+scripts/run_weekly_state_local_pipeline.sh
 ```
 
-Run it from cron, systemd, launchd, or a CI runner.
+Run them from cron, systemd, launchd, or a CI runner.
 The script loads `backend/.env` and includes optional vote ingestion only when
 `THEY_VOTE_FOR_YOU_API_KEY` or `TVFY_API_KEY` is present. When neither key is
 set, the weekly run writes a `weekly_federal_votes_<timestamp>.skipped.log`
@@ -495,11 +496,31 @@ New backend virtual environments created by the weekly runner and CI install
 with `backend/requirements.lock` as a constraints file. Update that file
 intentionally when dependency upgrades are part of the work.
 
+The weekly state/local runner refreshes the implemented jurisdiction adapters
+(`qld nsw act nt sa tas vic wa` by default), writes each non-mutating pipeline
+manifest path into `data/audit/logs/weekly_state_local_<jurisdiction>_<timestamp>.manifest.log`,
+then replays the exact manifest with `load-state-local-pipeline-manifest`.
+Intermediate jurisdiction loads pass `--skip-influence-events`; the final
+jurisdiction load rebuilds the consolidated `influence_event` surface once.
+Override the jurisdiction set with a space-separated
+`AUPOL_STATE_LOCAL_JURISDICTIONS` value, for example:
+
+```bash
+AUPOL_STATE_LOCAL_JURISDICTIONS="qld nsw act" \
+  scripts/run_weekly_state_local_pipeline.sh
+```
+
+The state/local runner applies migrations first, runs the same serving QA gate
+after loading, and runs the backend test suite unless `AUPOL_SKIP_WEEKLY_TESTS=1`
+is set. QA thresholds can be tuned with the same `AUPOL_QA_MIN_*` environment
+variables used by the script.
+
 Example cron entry for a server using UTC, running Sundays at 18:00 UTC
 which is Monday morning in eastern Australia depending on daylight saving:
 
 ```cron
 0 18 * * 0 /path/to/AU\ Politics/scripts/run_weekly_federal_pipeline.sh
+30 20 * * 0 /path/to/AU\ Politics/scripts/run_weekly_state_local_pipeline.sh
 ```
 
 ## Database
