@@ -121,10 +121,65 @@ def test_normalize_act_annual_return_receipts_extracts_mla_gift_in_kind(
     assert records[0]["source_raw_name"] == "Tennis Australia"
     assert records[0]["source_abn_or_acn"]["value"] == "61006281125"
     assert records[0]["flow_kind"] == "act_annual_gift_in_kind"
+    assert records[0]["public_amount_counting_role"] == "single_observation"
     assert records[0]["amount_aud"] == "2269.00"
     assert records[0]["recipient_context"] == "MLAs"
     assert records[1]["flow_kind"] == "act_annual_free_facilities_use"
+    assert records[1]["public_amount_counting_role"] == "single_observation"
     assert "not claims of wrongdoing" in records[1]["claim_boundary"]
+
+
+def test_normalize_act_annual_return_receipts_marks_plain_receipts_as_context(
+    tmp_path: Path,
+) -> None:
+    html = """
+    <html><body>
+      <h2>Political Parties</h2>
+      <h4>Australian Labor Party (ACT Branch) - Receipts totalling $1,000 or more</h4>
+      <table><thead><tr>
+        <th>Received from</th>
+        <th>Address</th>
+        <th>Receipt type</th>
+        <th>Amount</th>
+      </tr></thead><tbody>
+        <tr>
+          <td>1973 Foundation Pty Ltd ABN: 90 334 994 230</td>
+          <td>CANBERRA ACT 2601</td>
+          <td>Receipt</td>
+          <td>$353,000.00</td>
+        </tr>
+        <tr>
+          <td>1973 Foundation Pty Ltd ABN: 90 334 994 230</td>
+          <td>CANBERRA ACT 2601</td>
+          <td>Receipt</td>
+          <td>$353,000.00</td>
+        </tr>
+      </tbody></table>
+    </body></html>
+    """
+    metadata_path = write_act_metadata(
+        tmp_path,
+        html,
+        source_id="act_annual_returns_2024_2025",
+    )
+
+    summary_path = normalize_act_annual_return_receipts(
+        metadata_path=metadata_path,
+        raw_dir=tmp_path,
+        processed_dir=tmp_path / "processed",
+    )
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    records = [
+        json.loads(line)
+        for line in Path(summary["jsonl_path"]).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert summary["flow_kind_counts"] == {"act_annual_receipt": 2}
+    assert len({record["observation_key"] for record in records}) == 2
+    assert {record["public_amount_counting_role"] for record in records} == {
+        "state_source_receipt_context_not_consolidated"
+    }
 
 
 def test_normalize_act_gift_returns_extracts_money_and_gift_in_kind(tmp_path: Path) -> None:

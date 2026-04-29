@@ -121,7 +121,9 @@ def state_local_records(
         str | None,
         Query(
             pattern=(
-                "^(act_gift_in_kind|act_gift_of_money|nt_annual_debt|nt_annual_gift|"
+                "^(act_annual_free_facilities_use|act_annual_gift_in_kind|"
+                "act_annual_gift_of_money|act_annual_receipt|act_gift_in_kind|"
+                "act_gift_of_money|nt_annual_debt|nt_annual_gift|"
                 "nt_annual_receipt|nt_donor_return_donation|qld_gift|"
                 "qld_electoral_expenditure|vic_administrative_funding_entitlement|"
                 "vic_policy_development_funding_payment|vic_public_funding_payment|"

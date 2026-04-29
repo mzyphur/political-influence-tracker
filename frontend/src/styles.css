@@ -1434,7 +1434,7 @@ a:focus-visible {
   background: rgba(248, 252, 251, 0.98);
 }
 
-.event-row div {
+.event-summary-button > div {
   display: grid;
   gap: 2px;
 }
@@ -1485,20 +1485,22 @@ a:focus-visible {
   display: block;
 }
 
-.event-chip-row {
+.event-row .event-chip-row {
   display: flex;
   flex-wrap: wrap;
   gap: 5px;
 }
 
-.event-chip-row span {
+.event-row .event-chip-row span {
   border: 1px solid rgba(30, 109, 121, 0.18);
   border-radius: 999px;
   background: rgba(232, 247, 245, 0.78);
   color: #2a6370;
-  padding: 3px 8px;
+  padding: 3px 9px;
   font-size: 10px;
   font-weight: 800;
+  line-height: 1.1;
+  width: fit-content;
 }
 
 .event-detail {

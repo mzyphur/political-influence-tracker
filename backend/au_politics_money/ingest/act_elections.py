@@ -140,6 +140,12 @@ def _annual_transaction_kind(flow_kind: str) -> str:
     return "receipt"
 
 
+def _annual_amount_counting_role(flow_kind: str) -> str:
+    if flow_kind == "act_annual_receipt":
+        return "state_source_receipt_context_not_consolidated"
+    return "single_observation"
+
+
 def _source_name_and_identifier(value: str) -> tuple[str, dict[str, str]]:
     cleaned = " ".join((value or "").split())
     match = re.search(r"\b(ABN|ACN):?\s*([0-9 ]{9,})\b", cleaned, flags=re.IGNORECASE)
@@ -350,6 +356,7 @@ def _annual_records_from_body(
             }
             observation_key = _stable_observation_key(
                 [
+                    f"row:{row_number}",
                     recipient,
                     entity_group,
                     source_name,
@@ -392,7 +399,7 @@ def _annual_records_from_body(
                     ),
                     "source_abn_or_acn": source_identifier,
                     "source_address_public": address,
-                    "public_amount_counting_role": "single_observation",
+                    "public_amount_counting_role": _annual_amount_counting_role(flow_kind),
                     "disclosure_system": "act_elections_financial_disclosure",
                     "disclosure_threshold": (
                         "ACT annual-return receipt detail threshold: receipts "

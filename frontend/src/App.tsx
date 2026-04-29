@@ -1476,10 +1476,10 @@ function stateLocalRecordHeadline(row: StateLocalSummaryRecord): string {
     return `${source} provided free facilities to ${row.recipient_name || "recipient not identified"}`;
   }
   if (row.flow_kind === "act_annual_gift_in_kind") {
-    return `${source} disclosed an annual gift-in-kind to ${row.recipient_name || "recipient not identified"}`;
+    return `${row.recipient_name || "Recipient not identified"} disclosed annual gift-in-kind from ${source}`;
   }
   if (row.flow_kind === "act_annual_gift_of_money") {
-    return `${source} disclosed an annual money gift to ${row.recipient_name || "recipient not identified"}`;
+    return `${row.recipient_name || "Recipient not identified"} disclosed annual money gift from ${source}`;
   }
   if (row.flow_kind === "act_annual_receipt") {
     return `${row.recipient_name || "Recipient not identified"} disclosed annual receipt from ${source}`;

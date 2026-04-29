@@ -487,6 +487,13 @@ def is_state_return_summary_money_flow(metadata: dict[str, Any]) -> bool:
     )
 
 
+def is_state_source_receipt_context_money_flow(metadata: dict[str, Any]) -> bool:
+    return (
+        metadata.get("public_amount_counting_role")
+        == "state_source_receipt_context_not_consolidated"
+    )
+
+
 def state_return_summary_event_type(metadata: dict[str, Any]) -> str:
     return str(metadata.get("flow_kind") or "state_local_return_summary")
 
@@ -3146,6 +3153,9 @@ def load_act_elections_from_pipeline_manifest(
     parameters = manifest.get("parameters")
     source_family = parameters.get("source_family") if isinstance(parameters, dict) else None
     path = act_gift_return_path_from_pipeline_manifest(manifest_path)
+    annual_path: Path | None = None
+    if source_family == ACT_STATE_SOURCE_DATASET:
+        annual_path = act_annual_return_path_from_pipeline_manifest(manifest_path)
     summary: dict[str, Any] = {
         "pipeline_manifest_path": str(manifest_path),
         "artifact_paths": {"money_flows": str(path)},
@@ -3154,8 +3164,7 @@ def load_act_elections_from_pipeline_manifest(
             jsonl_path=path,
         ),
     }
-    if source_family == ACT_STATE_SOURCE_DATASET:
-        annual_path = act_annual_return_path_from_pipeline_manifest(manifest_path)
+    if annual_path is not None:
         summary["artifact_paths"]["annual_receipt_money_flows"] = str(annual_path)
         summary["act_annual_return_receipt_money_flows"] = (
             load_act_annual_return_receipt_money_flows(conn, jsonl_path=annual_path)
@@ -5316,6 +5325,9 @@ def load_influence_events(conn) -> dict[str, Any]:
         jurisdictional_cross_disclosure_observation = (
             public_amount_counting_role == "jurisdictional_cross_disclosure_observation"
         )
+        source_receipt_context_not_consolidated = (
+            is_state_source_receipt_context_money_flow(base_metadata)
+        )
         versioned_observation_pending_dedupe = (
             public_amount_counting_role == "versioned_observation_pending_dedupe"
         )
@@ -5330,6 +5342,9 @@ def load_influence_events(conn) -> dict[str, Any]:
             flags.append("duplicate_disclosure_observation_not_counted_in_reported_total")
         if jurisdictional_cross_disclosure_observation:
             flags.append("jurisdictional_cross_disclosure_not_counted_in_reported_total")
+        if source_receipt_context_not_consolidated:
+            flags.append("state_source_receipt_context_not_counted_in_reported_total")
+            flags.append("state_source_receipt_context_not_personal_receipt")
         if versioned_observation_pending_dedupe:
             flags.append("versioned_observation_not_counted_pending_dedupe")
         if campaign_support_record:
@@ -5398,6 +5413,12 @@ def load_influence_events(conn) -> dict[str, Any]:
                 f"{description_amount}; jurisdictional disclosure observation not included "
                 "in consolidated reported amount totals until cross-source deduplication."
             )
+        elif source_receipt_context_not_consolidated:
+            description = (
+                f"{recipient_raw_name or 'Unknown'} disclosed receipt from "
+                f"{source_raw_name or 'Unknown'}: {description_amount}; source-row "
+                "state disclosure context not included in consolidated reported amount totals."
+            )
         else:
             description = (
                 f"{source_raw_name or 'Unknown'} to {recipient_raw_name or 'Unknown'}: "
@@ -5408,6 +5429,7 @@ def load_influence_events(conn) -> dict[str, Any]:
         if (
             duplicate_observation
             or jurisdictional_cross_disclosure_observation
+            or source_receipt_context_not_consolidated
             or versioned_observation_pending_dedupe
         ):
             amount_status = "not_applicable"

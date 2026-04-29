@@ -1,5 +1,26 @@
 # Build Log
 
+## 2026-04-30
+
+Completed:
+
+- Tightened the representative evidence-card display so the public pane no
+  longer repeats invariant workflow labels (`official_record_parsed`,
+  `needs_review`, default not-disclosed amount status, or numeric register
+  period) as if they were substantive findings. Collapsed cards now prioritize
+  record type, named source/provider where available, source wording, disclosed
+  amount/date facts, and compact public-facing chips. Provenance, extraction,
+  review, period, source-row, and missing-field details remain available in the
+  expanded record view.
+- Hardened ACT annual-return receipt handling after review. Broad annual
+  `act_annual_receipt` rows are now loaded as state source-row context with
+  `public_amount_counting_role =
+  state_source_receipt_context_not_consolidated`; influence events for those
+  rows use `amount_status = not_applicable` and flags documenting that the row
+  is not counted in consolidated reported totals and is not a personal receipt.
+  ACT annual gift rows and free-facility-use rows remain counted
+  source-backed observations.
+
 ## 2026-04-29
 
 Completed:

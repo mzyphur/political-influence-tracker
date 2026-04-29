@@ -206,6 +206,43 @@ def test_state_local_records_endpoint_delegates_to_query_layer(monkeypatch) -> N
     }
 
 
+def test_state_local_records_endpoint_accepts_act_annual_flow_filters(monkeypatch) -> None:
+    captured = []
+
+    def fake_records(level=None, flow_kind=None, cursor=None, limit=25, database_url=None):
+        captured.append(flow_kind)
+        return {
+            "status": "ok",
+            "source_family": "state_local_disclosures",
+            "requested_level": level or "all",
+            "db_level": level or "all",
+            "flow_kind": flow_kind,
+            "records": [],
+            "record_count": 0,
+            "total_count": 0,
+            "limit": limit,
+            "has_more": False,
+            "next_cursor": None,
+            "caveat": "fixture",
+        }
+
+    monkeypatch.setattr(queries, "get_state_local_records", fake_records)
+    client = TestClient(app)
+
+    flow_kinds = [
+        "act_annual_free_facilities_use",
+        "act_annual_gift_in_kind",
+        "act_annual_gift_of_money",
+        "act_annual_receipt",
+    ]
+    for flow_kind in flow_kinds:
+        response = client.get("/api/state-local/records", params={"flow_kind": flow_kind})
+        assert response.status_code == 200
+        assert response.json()["flow_kind"] == flow_kind
+
+    assert captured == flow_kinds
+
+
 def test_influence_graph_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     def fake_get_influence_graph(
         *,

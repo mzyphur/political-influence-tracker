@@ -798,27 +798,70 @@ function eventFamilyLabel(value: string): string {
 
 function eventSourceLabel(event: RepresentativeEvent): string {
   return (
-    event.source_entity_name ||
-    event.source_raw_name ||
+    (isUsefulRecordText(event.source_entity_name) ? event.source_entity_name : null) ||
+    (isUsefulRecordText(event.source_raw_name) ? event.source_raw_name : null) ||
     (event.event_family === "benefit" ? "Provider not named" : "Source not named")
   );
 }
 
 function eventDetailMeta(event: RepresentativeEvent): string[] {
   return [
-    event.reporting_period ? registerPeriodLabel(event.reporting_period) : null,
-    event.amount_status !== "reported" ? humanize(event.amount_status) : null,
     event.date_reported ? `Reported ${event.date_reported}` : null
   ].filter((value): value is string => Boolean(value));
 }
 
 function eventChips(event: RepresentativeEvent): string[] {
+  const evidenceStatus = normalizeStatusKey(event.evidence_status);
+  const reviewStatus = normalizeStatusKey(event.review_status);
   return [
     eventFamilyLabel(event.event_family),
     event.amount !== null ? "Dollar value disclosed" : null,
-    event.evidence_status !== "official_record_parsed" ? humanize(event.evidence_status) : null,
-    event.review_status !== "needs_review" ? humanize(event.review_status) : null
+    evidenceStatus && evidenceStatus !== "official_record_parsed"
+      ? `Evidence: ${humanize(event.evidence_status)}`
+      : null,
+    reviewStatus && reviewStatus !== "needs_review"
+      ? reviewStatus === "reviewed"
+        ? "Human reviewed"
+        : `Review: ${humanize(event.review_status)}`
+      : null
   ].filter((value): value is string => Boolean(value));
+}
+
+function normalizeStatusKey(value: string | null | undefined): string {
+  if (!value) return "";
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "_")
+    .replace(/^_+|_+$/g, "");
+}
+
+function isUsefulRecordText(value: string | null | undefined): value is string {
+  if (!value) return false;
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (!cleaned) return false;
+  const normalized = cleaned
+    .replace(/[()[\].,:;'"`]+/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+  return !new Set([
+    "na",
+    "n a",
+    "n/a",
+    "rna",
+    "not applicable",
+    "not disclosed",
+    "source not identified",
+    "provider not named",
+    "source not named"
+  ]).has(normalized);
+}
+
+function eventDescription(event: RepresentativeEvent): string | null {
+  if (!isUsefulRecordText(event.description)) return null;
+  const sourceLabel = eventSourceLabel(event);
+  if (event.description.trim().toLowerCase() === sourceLabel.trim().toLowerCase()) return null;
+  return event.description;
 }
 
 function EventRow({
@@ -836,6 +879,7 @@ function EventRow({
   const summaryMeta = eventSummaryMeta(event);
   const detailMeta = eventDetailMeta(event);
   const chips = eventChips(event);
+  const description = eventDescription(event);
   return (
     <article className="event-row" data-expanded={expanded} title={tooltip}>
       <button
@@ -851,7 +895,7 @@ function EventRow({
         {summaryMeta && <small>{summaryMeta}</small>}
       </button>
       {detailMeta.length > 0 && <small className="event-meta-line">{detailMeta.join(" · ")}</small>}
-      <p>{event.description}</p>
+      {description && <p>{description}</p>}
       {chips.length > 0 && (
         <div className="event-chip-row">
           {chips.map((chip) => (
@@ -861,13 +905,15 @@ function EventRow({
       )}
       {expanded && (
         <div className="event-detail">
-          <DetailLine label="Backend family">{event.event_family}</DetailLine>
-          <DetailLine label="Backend type">
+          <DetailLine label="Record category">{eventFamilyLabel(event.event_family)}</DetailLine>
+          <DetailLine label="Detailed type">
             {[event.event_type, event.event_subtype].filter(Boolean).join(" / ")}
           </DetailLine>
-          <DetailLine label="Disclosure system">{event.disclosure_system}</DetailLine>
-          <DetailLine label="Extraction method">{event.extraction_method}</DetailLine>
-          <DetailLine label="Source">
+          <DetailLine label="Public register">{event.disclosure_system}</DetailLine>
+          <DetailLine label="How captured">{humanize(event.extraction_method)}</DetailLine>
+          <DetailLine label="Evidence status">{humanize(event.evidence_status)}</DetailLine>
+          <DetailLine label="Review status">{humanize(event.review_status)}</DetailLine>
+          <DetailLine label="Source document">
             {sourceHref ? (
               <a href={sourceHref} target="_blank" rel="noreferrer">
                 {sourceName}
@@ -876,14 +922,14 @@ function EventRow({
               sourceName
             )}
           </DetailLine>
-          <DetailLine label="Source ref">{event.source_ref || "Not recorded"}</DetailLine>
+          <DetailLine label="Source row">{event.source_ref || "Not recorded"}</DetailLine>
           {event.reporting_period && (
-            <DetailLine label="Register period">
+            <DetailLine label="Parliament/register period">
               {registerPeriodLabel(event.reporting_period)}
             </DetailLine>
           )}
-          <DetailLine label="Amount status">
-            {[event.amount_status.replaceAll("_", " "), event.currency].filter(Boolean).join(" · ")}
+          <DetailLine label="Dollar value">
+            {[humanize(event.amount_status), event.currency].filter(Boolean).join(" · ")}
           </DetailLine>
           <DetailLine label="Disclosure threshold">
             {event.disclosure_threshold || "Not recorded"}

@@ -18,7 +18,9 @@ from au_politics_money.db.load import (
     is_campaign_support_money_flow,
     is_direct_representative_return_type,
     is_public_funding_context_money_flow,
+    is_state_source_receipt_context_money_flow,
     is_state_return_summary_money_flow,
+    load_act_elections_from_pipeline_manifest,
     load_official_aph_divisions,
     load_official_parliamentary_decision_record_documents,
     load_official_parliamentary_decision_records,
@@ -783,6 +785,52 @@ def test_act_state_manifest_selects_annual_return_artifact(tmp_path) -> None:
         act_annual_return_path_from_pipeline_manifest(manifest_path)
 
 
+def test_act_state_manifest_validates_annual_before_loading_gifts(tmp_path, monkeypatch) -> None:
+    manifest_path = tmp_path / "state_local_act_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "act_elections_state_disclosures",
+                    "loads_database": False,
+                },
+                "steps": [],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        load_module,
+        "act_gift_return_path_from_pipeline_manifest",
+        lambda path: calls.append("validate_gift") or (tmp_path / "gift.jsonl"),
+    )
+
+    def fail_annual(path):
+        calls.append("validate_annual")
+        raise ValueError("annual artifact invalid")
+
+    def load_gift(*args, **kwargs):
+        calls.append("load_gift")
+        return {"money_flows": 1}
+
+    monkeypatch.setattr(load_module, "act_annual_return_path_from_pipeline_manifest", fail_annual)
+    monkeypatch.setattr(load_module, "load_act_gift_return_money_flows", load_gift)
+
+    with pytest.raises(ValueError, match="annual artifact invalid"):
+        load_act_elections_from_pipeline_manifest(
+            object(),
+            manifest_path,
+            include_influence_events=False,
+        )
+
+    assert calls == ["validate_gift", "validate_annual"]
+
+
 def test_vic_pipeline_manifest_selects_funding_register_artifact(tmp_path) -> None:
     def sha256_path(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -1476,6 +1524,13 @@ def test_money_event_classifier_keeps_donations_visible() -> None:
             "source_dataset": "sa_ecsa_funding_returns",
             "transaction_kind": "return_summary",
             "flow_kind": "sa_political_party_return_summary",
+        }
+    )
+    assert is_state_source_receipt_context_money_flow(
+        {
+            "source_dataset": "act_elections_annual_returns",
+            "flow_kind": "act_annual_receipt",
+            "public_amount_counting_role": "state_source_receipt_context_not_consolidated",
         }
     )
     assert classify_money_event_type("loan", "") == "loan"
