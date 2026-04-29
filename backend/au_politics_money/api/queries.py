@@ -5150,13 +5150,17 @@ def _qld_council_disclosure_context(
             ) AS council_name_norm,
             btrim(
                 regexp_replace(
-                    btrim(
-                        regexp_replace(
-                            regexp_replace(lower(%s), '[^a-z0-9]+', ' ', 'g'),
-                            '[[:space:]]+',
-                            ' ',
-                            'g'
-                        )
+                    regexp_replace(
+                        btrim(
+                            regexp_replace(
+                                regexp_replace(lower(%s), '[^a-z0-9]+', ' ', 'g'),
+                                '[[:space:]]+',
+                                ' ',
+                                'g'
+                            )
+                        ),
+                        '^(city|regional|region|shire|town) of ',
+                        ''
                     ),
                     ' (city|regional|region|shire|town)$',
                     ''
@@ -5223,8 +5227,20 @@ def _qld_council_disclosure_context(
                     THEN 'alias_area'
                     WHEN target.council_base_norm <> ''
                          AND context_rows.local_electorate_name_norm ~ (
+                             '^(city|regional|region|shire|town) of '
+                             || target.council_base_norm || '$'
+                         )
+                    THEN 'alias_area'
+                    WHEN target.council_base_norm <> ''
+                         AND context_rows.local_electorate_name_norm ~ (
                              '^' || target.council_base_norm
                              || ' (city|regional|region|shire|town) division [0-9]+$'
+                         )
+                    THEN 'alias_child_area'
+                    WHEN target.council_base_norm <> ''
+                         AND context_rows.local_electorate_name_norm ~ (
+                             '^(city|regional|region|shire|town) of '
+                             || target.council_base_norm || ' division [0-9]+$'
                          )
                     THEN 'alias_child_area'
                     WHEN target.council_base_norm <> ''
@@ -5235,6 +5251,16 @@ def _qld_council_disclosure_context(
                          AND context_rows.local_electorate_name_norm !~ (
                              '^' || target.council_base_norm
                              || ' (city|regional|region|shire|town) division '
+                         )
+                    THEN 'alias_child_area'
+                    WHEN target.council_base_norm <> ''
+                         AND context_rows.local_electorate_name_norm ~ (
+                             '^(city|regional|region|shire|town) of '
+                             || target.council_base_norm || ' '
+                         )
+                         AND context_rows.local_electorate_name_norm !~ (
+                             '^(city|regional|region|shire|town) of '
+                             || target.council_base_norm || ' division '
                          )
                     THEN 'alias_child_area'
                     ELSE 'unmatched'
@@ -5262,8 +5288,22 @@ def _qld_council_disclosure_context(
                OR (
                     target.council_base_norm <> ''
                     AND context_rows.local_electorate_name_norm ~ (
+                        '^(city|regional|region|shire|town) of '
+                        || target.council_base_norm || '$'
+                    )
+                )
+               OR (
+                    target.council_base_norm <> ''
+                    AND context_rows.local_electorate_name_norm ~ (
                         '^' || target.council_base_norm
                         || ' (city|regional|region|shire|town) division [0-9]+$'
+                    )
+                )
+               OR (
+                    target.council_base_norm <> ''
+                    AND context_rows.local_electorate_name_norm ~ (
+                        '^(city|regional|region|shire|town) of '
+                        || target.council_base_norm || ' division [0-9]+$'
                     )
                 )
                OR (
@@ -5275,6 +5315,17 @@ def _qld_council_disclosure_context(
                     AND context_rows.local_electorate_name_norm !~ (
                         '^' || target.council_base_norm
                         || ' (city|regional|region|shire|town) division '
+                    )
+                )
+               OR (
+                    target.council_base_norm <> ''
+                    AND context_rows.local_electorate_name_norm ~ (
+                        '^(city|regional|region|shire|town) of '
+                        || target.council_base_norm || ' '
+                    )
+                    AND context_rows.local_electorate_name_norm !~ (
+                        '^(city|regional|region|shire|town) of '
+                        || target.council_base_norm || ' division '
                     )
                 )
         ),
@@ -5296,13 +5347,6 @@ def _qld_council_disclosure_context(
                 count(*) FILTER (
                     WHERE match_scope IN ('child_area', 'alias_child_area')
                 ) AS child_area_count,
-                sum(amount) FILTER (
-                    WHERE amount IS NOT NULL
-                      AND COALESCE(
-                          metadata->>'public_amount_counting_role',
-                          ''
-                      ) <> 'versioned_observation_pending_dedupe'
-                ) AS reported_amount_total,
                 sum(amount) FILTER (
                     WHERE metadata->>'flow_kind' = ANY(%s)
                       AND amount IS NOT NULL
@@ -5336,15 +5380,35 @@ def _qld_council_disclosure_context(
                     WHERE metadata->>'flow_kind' = 'qld_electoral_expenditure'
                 ) AS electoral_expenditure_count,
                 sum(amount) FILTER (
-                    WHERE amount IS NOT NULL
+                    WHERE metadata->>'flow_kind' = ANY(%s)
+                      AND amount IS NOT NULL
                       AND COALESCE(
                           metadata->>'public_amount_counting_role',
                           ''
                       ) <> 'versioned_observation_pending_dedupe'
-                ) AS reported_amount_total
+                ) AS gift_or_donation_reported_amount_total,
+                sum(amount) FILTER (
+                    WHERE metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                      AND amount IS NOT NULL
+                      AND COALESCE(
+                          metadata->>'public_amount_counting_role',
+                          ''
+                      ) <> 'versioned_observation_pending_dedupe'
+                ) AS electoral_expenditure_reported_amount_total
             FROM matched_rows
             GROUP BY local_electorate_external_id, local_electorate_name, match_scope
-            ORDER BY money_flow_count DESC, reported_amount_total DESC NULLS LAST,
+            ORDER BY
+                money_flow_count DESC,
+                COALESCE(
+                    sum(amount) FILTER (
+                        WHERE amount IS NOT NULL
+                          AND COALESCE(
+                              metadata->>'public_amount_counting_role',
+                              ''
+                          ) <> 'versioned_observation_pending_dedupe'
+                    ),
+                    0
+                ) DESC,
                 local_electorate_name
             LIMIT 8
         ),
@@ -5354,15 +5418,35 @@ def _qld_council_disclosure_context(
                 event_name,
                 count(*) AS money_flow_count,
                 sum(amount) FILTER (
-                    WHERE amount IS NOT NULL
+                    WHERE metadata->>'flow_kind' = ANY(%s)
+                      AND amount IS NOT NULL
                       AND COALESCE(
                           metadata->>'public_amount_counting_role',
                           ''
                       ) <> 'versioned_observation_pending_dedupe'
-                ) AS reported_amount_total
+                ) AS gift_or_donation_reported_amount_total,
+                sum(amount) FILTER (
+                    WHERE metadata->>'flow_kind' = 'qld_electoral_expenditure'
+                      AND amount IS NOT NULL
+                      AND COALESCE(
+                          metadata->>'public_amount_counting_role',
+                          ''
+                      ) <> 'versioned_observation_pending_dedupe'
+                ) AS electoral_expenditure_reported_amount_total
             FROM matched_rows
             GROUP BY event_external_id, event_name
-            ORDER BY money_flow_count DESC, reported_amount_total DESC NULLS LAST,
+            ORDER BY
+                money_flow_count DESC,
+                COALESCE(
+                    sum(amount) FILTER (
+                        WHERE amount IS NOT NULL
+                          AND COALESCE(
+                              metadata->>'public_amount_counting_role',
+                              ''
+                          ) <> 'versioned_observation_pending_dedupe'
+                    ),
+                    0
+                ) DESC,
                 event_name
             LIMIT 5
         ),
@@ -5447,6 +5531,8 @@ def _qld_council_disclosure_context(
             list(STATE_LOCAL_GIFT_FLOW_KINDS),
             list(STATE_LOCAL_GIFT_FLOW_KINDS),
             list(STATE_LOCAL_GIFT_FLOW_KINDS),
+            list(STATE_LOCAL_GIFT_FLOW_KINDS),
+            list(STATE_LOCAL_GIFT_FLOW_KINDS),
         ),
     )
     summary = context_rows[0] if context_rows else {}
@@ -5476,7 +5562,6 @@ def _qld_council_disclosure_context(
             "exact_area_count": summary.get("exact_area_count") or 0,
             "alias_area_count": summary.get("alias_area_count") or 0,
             "child_area_count": summary.get("child_area_count") or 0,
-            "reported_amount_total": summary.get("reported_amount_total"),
             "gift_or_donation_reported_amount_total": summary.get(
                 "gift_or_donation_reported_amount_total"
             ),

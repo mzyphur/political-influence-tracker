@@ -83,7 +83,6 @@ export type QldCouncilDisclosureContext = {
   alias_area_count?: number;
   child_area_count?: number;
   matched_local_electorate_count?: number;
-  reported_amount_total?: number | null;
   gift_or_donation_reported_amount_total?: number | null;
   electoral_expenditure_reported_amount_total?: number | null;
   first_record_date?: string | null;
@@ -95,13 +94,15 @@ export type QldCouncilDisclosureContext = {
     money_flow_count: number;
     gift_or_donation_count: number;
     electoral_expenditure_count: number;
-    reported_amount_total: number | null;
+    gift_or_donation_reported_amount_total: number | null;
+    electoral_expenditure_reported_amount_total: number | null;
   }>;
   top_events?: Array<{
     event_external_id: string | null;
     event_name: string | null;
     money_flow_count: number;
-    reported_amount_total: number | null;
+    gift_or_donation_reported_amount_total: number | null;
+    electoral_expenditure_reported_amount_total: number | null;
   }>;
   top_gift_donors?: Array<{
     source_name: string | null;

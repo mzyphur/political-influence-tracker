@@ -15,6 +15,11 @@ Completed:
   receipt by a council, councillor, candidate, state MP, or federal MP. The
   frontend Council details pane now fetches this endpoint on selection and
   labels the resulting counts accordingly.
+- Follow-up review tightened the same QLD council context by adding prefix-form
+  council aliases such as `Weipa Town` / `Town of Weipa` and removing the
+  generic mixed `reported_amount_total` from the council-context payload. Public
+  consumers now receive separate gift/donation and electoral-expenditure totals
+  only.
 - Further tightened public evidence cards. Expanded source-record cards now
   replace internal workflow rows such as `Evidence status: official record
   parsed`, `Review status: needs review`, and `How captured` with

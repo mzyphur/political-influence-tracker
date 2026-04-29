@@ -453,13 +453,16 @@ export function DetailsPanel({
                             : row.match_scope === "alias_area"
                               ? "current/legacy council-name alias"
                               : "whole council area",
-                        row.gift_or_donation_count
-                          ? `${row.gift_or_donation_count.toLocaleString("en-AU")} gifts`
+                        row.gift_or_donation_count > 0
+                          ? `${row.gift_or_donation_count.toLocaleString("en-AU")} gifts (${formatMoney(
+                              row.gift_or_donation_reported_amount_total
+                            )})`
                           : "",
-                        row.electoral_expenditure_count
-                          ? `${row.electoral_expenditure_count.toLocaleString("en-AU")} spend`
-                          : "",
-                        formatMoney(row.reported_amount_total)
+                        row.electoral_expenditure_count > 0
+                          ? `${row.electoral_expenditure_count.toLocaleString("en-AU")} spend (${formatMoney(
+                              row.electoral_expenditure_reported_amount_total
+                            )})`
+                          : ""
                       ].filter(Boolean).join(" · ")}
                     />
                   ))}

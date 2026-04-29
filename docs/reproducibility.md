@@ -278,6 +278,11 @@ this local-government area label." It does not support claims that the council,
 councillors, candidates, state MPs, or federal MPs personally received the
 money.
 
+The council-context API deliberately exposes gift/donation amounts and
+electoral-expenditure amounts as separate fields rather than a single mixed
+reported total. This preserves the claim boundary between disclosed gifts and
+campaign-spend context.
+
 The targeted serving-database loader refreshes just the QLD ECQ EDS
 `money_flow` rows, applies the latest participant identifier artifact when
 present, and then rebuilds the unified `influence_event` surface. The general

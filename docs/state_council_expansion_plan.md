@@ -464,9 +464,10 @@ Current implementation status:
   label, a child ward/division label under that council, or a cautious
   current/legacy council-name alias with the same base name. This is a
   place-context match only: it can show counts/totals, matched ECQ labels,
-  events, and top disclosed sources/spenders for that local area, but it must
-  not be described as money received by the council, councillors, candidates,
-  state MPs, or federal MPs.
+  events, and top disclosed sources/spenders for that local area, but gift or
+  donation totals and electoral-expenditure totals stay separate and it must not
+  be described as money received by the council, councillors, candidates, state
+  MPs, or federal MPs.
 - The QLD adapter also normalizes archived ECQ political-event and
   local-electorate lookup APIs. These exact unique name matches are displayed as
   disclosure context only. They improve event/local summaries but do not by

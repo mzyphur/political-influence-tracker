@@ -1156,6 +1156,8 @@ def test_qld_council_boundary_loader_exposes_council_map(
             name = "Brisbane City"
         elif index == 1:
             name = "Moreton Bay City"
+        elif index == 2:
+            name = "Weipa Town"
         else:
             name = f"Fixture Council {index}"
         x = 152.0 + (index % 10) * 0.02
@@ -1235,6 +1237,15 @@ def test_qld_council_boundary_loader_exposes_council_map(
             moreton_bay_electorate_id = cur.fetchone()[0]
             cur.execute(
                 """
+                SELECT electorate.id
+                FROM electorate
+                WHERE electorate.name = 'Weipa Town'
+                  AND electorate.chamber = 'council'
+                """
+            )
+            weipa_electorate_id = cur.fetchone()[0]
+            cur.execute(
+                """
                 INSERT INTO electorate (
                     name, jurisdiction_id, chamber, state_or_territory, source_document_id
                 )
@@ -1253,6 +1264,19 @@ def test_qld_council_boundary_loader_exposes_council_map(
                     True,
                     "Brisbane City Division 7",
                     "lga-brisbane-division-7",
+                    "2028 Local Government Elections",
+                    "event-local-2028",
+                ),
+                (
+                    "pytest-qld-council-brisbane-area-gift",
+                    "Local Donor",
+                    "Local Recipient",
+                    50,
+                    "qld_gift",
+                    "2026-01-02",
+                    True,
+                    "Brisbane City",
+                    "lga-brisbane-city",
                     "2028 Local Government Elections",
                     "event-local-2028",
                 ),
@@ -1318,6 +1342,19 @@ def test_qld_council_boundary_loader_exposes_council_map(
                     True,
                     "Moreton Bay Regional Division 7",
                     "lga-moreton-bay-regional-division-7",
+                    "2028 Local Government Elections",
+                    "event-local-2028",
+                ),
+                (
+                    "pytest-qld-council-weipa-prefix-alias-gift",
+                    "Weipa Donor",
+                    "Weipa Recipient",
+                    42,
+                    "qld_gift",
+                    "2026-01-07",
+                    True,
+                    "Town of Weipa",
+                    "lga-town-of-weipa",
                     "2028 Local Government Elections",
                     "event-local-2028",
                 ),
@@ -1389,6 +1426,24 @@ def test_qld_council_boundary_loader_exposes_council_map(
                     "level": "council",
                     "stable_key": "pytest:qld_ecq_political_event:event-local-2028",
                     "metadata": {"event_type": "Local Government Election"},
+                },
+                {
+                    "schema_version": "qld_ecq_eds_context_v1",
+                    "parser_name": "qld_ecq_eds_context_normalizer",
+                    "parser_version": "1",
+                    "source_id": "qld_ecq_eds_api_local_electorates",
+                    "source_record_type": "qld_ecq_local_electorate",
+                    "context_type": "local_electorate",
+                    "external_id": "lga-brisbane-city",
+                    "identifier": {
+                        "identifier_type": "qld_ecq_local_electorate_id",
+                        "identifier_value": "lga-brisbane-city",
+                    },
+                    "display_name": "Brisbane City",
+                    "normalized_name": "brisbane city",
+                    "level": "council",
+                    "stable_key": "pytest:qld_ecq_local_electorate:lga-brisbane-city",
+                    "metadata": {},
                 },
                 {
                     "schema_version": "qld_ecq_eds_context_v1",
@@ -1485,13 +1540,31 @@ def test_qld_council_boundary_loader_exposes_council_map(
                     ),
                     "metadata": {},
                 },
+                {
+                    "schema_version": "qld_ecq_eds_context_v1",
+                    "parser_name": "qld_ecq_eds_context_normalizer",
+                    "parser_version": "1",
+                    "source_id": "qld_ecq_eds_api_local_electorates",
+                    "source_record_type": "qld_ecq_local_electorate",
+                    "context_type": "local_electorate",
+                    "external_id": "lga-town-of-weipa",
+                    "identifier": {
+                        "identifier_type": "qld_ecq_local_electorate_id",
+                        "identifier_value": "lga-town-of-weipa",
+                    },
+                    "display_name": "Town of Weipa",
+                    "normalized_name": "town of weipa",
+                    "level": "council",
+                    "stable_key": "pytest:qld_ecq_local_electorate:lga-town-of-weipa",
+                    "metadata": {},
+                },
             ]
             qld_contexts_path.write_text(
                 "\n".join(json.dumps(record) for record in qld_context_records) + "\n",
                 encoding="utf-8",
             )
             context_summary = load_qld_ecq_eds_contexts(conn, jsonl_path=qld_contexts_path)
-            assert context_summary["local_electorate_context_matched_money_flows"] == 5
+            assert context_summary["local_electorate_context_matched_money_flows"] == 7
             cur.execute(
                 """
                 SELECT jurisdiction.level, jurisdiction.code, count(electorate_boundary.id)
@@ -1534,24 +1607,31 @@ def test_qld_council_boundary_loader_exposes_council_map(
     context = profile_payload["qld_ecq_local_disclosure_context"]
     assert context["available"] is True
     assert context["not_council_or_councillor_receipt"] is True
-    assert context["money_flow_count"] == 2
-    assert context["gift_or_donation_count"] == 0
+    assert context["money_flow_count"] == 3
+    assert context["gift_or_donation_count"] == 1
     assert context["electoral_expenditure_count"] == 2
-    assert context["exact_area_count"] == 0
+    assert context["exact_area_count"] == 1
     assert context["alias_area_count"] == 0
     assert context["child_area_count"] == 2
-    assert context["matched_local_electorate_count"] == 2
-    assert context["reported_amount_total"] == 375.0
-    assert context["gift_or_donation_reported_amount_total"] is None
+    assert context["matched_local_electorate_count"] == 3
+    assert "reported_amount_total" not in context
+    assert context["gift_or_donation_reported_amount_total"] == 50.0
     assert context["electoral_expenditure_reported_amount_total"] == 375.0
     assert {
         row["local_electorate_name"] for row in context["matched_local_electorates"]
-    } == {"Brisbane City Division 7", "Brisbane City Tennyson"}
-    assert {row["match_scope"] for row in context["matched_local_electorates"]} == {
-        "child_area",
+    } == {"Brisbane City", "Brisbane City Division 7", "Brisbane City Tennyson"}
+    assert {
+        row["local_electorate_name"]: row["match_scope"]
+        for row in context["matched_local_electorates"]
+    } == {
+        "Brisbane City": "exact_area",
+        "Brisbane City Division 7": "child_area",
+        "Brisbane City Tennyson": "child_area",
     }
+    assert all("reported_amount_total" not in row for row in context["matched_local_electorates"])
+    assert all("reported_amount_total" not in row for row in context["top_events"])
     assert context["top_events"][0]["event_name"] == "2028 Local Government Elections"
-    assert context["top_gift_donors"] == []
+    assert context["top_gift_donors"][0]["source_name"] == "Local Donor"
     assert context["top_expenditure_actors"][0]["source_name"] in {
         "Campaign Supplier",
         "Ward Campaign Supplier",
@@ -1571,6 +1651,19 @@ def test_qld_council_boundary_loader_exposes_council_map(
     assert moreton_context["matched_local_electorates"][0]["match_scope"] == (
         "alias_child_area"
     )
+
+    weipa_profile_response = client.get(f"/api/electorates/{weipa_electorate_id}")
+    assert weipa_profile_response.status_code == 200
+    weipa_profile_payload = weipa_profile_response.json()
+    weipa_context = weipa_profile_payload["qld_ecq_local_disclosure_context"]
+    assert weipa_context["available"] is True
+    assert weipa_context["money_flow_count"] == 1
+    assert weipa_context["alias_area_count"] == 1
+    assert weipa_context["gift_or_donation_reported_amount_total"] == 42.0
+    assert weipa_context["matched_local_electorates"][0]["local_electorate_name"] == (
+        "Town of Weipa"
+    )
+    assert weipa_context["matched_local_electorates"][0]["match_scope"] == "alias_area"
 
     default_response = client.get(
         "/api/map/electorates",

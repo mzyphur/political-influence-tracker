@@ -55,6 +55,9 @@ http://127.0.0.1:8008/docs
   a child ward/division label under it, including cautious current/legacy
   council-name aliases where the base name is the same; it is place-level
   disclosure context, not a council/councillor/candidate/MP receipt claim.
+  Gift/donation totals and electoral-expenditure totals are exposed separately;
+  the council-context object deliberately does not publish a mixed total across
+  those families.
 - `GET /api/influence-context` - source-to-policy context rows from
   `person_policy_influence_context`, filterable by `person_id`, `topic_id`, and
   `public_sector`.
