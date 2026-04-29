@@ -293,6 +293,13 @@ entity direct-money summaries exclude `campaign_support`; campaign support is
 available in `campaign_support_reported_amount_total` fields and in recent
 records with `event_family=campaign_support`.
 
+Lobbyist-register rows are exposed as `event_family=access` only at entity/
+raw-name context level. A client-to-lobbying-organisation edge means the
+official register listed that client relationship. A lobbying-organisation to
+listed-lobbyist edge means the register listed that person for the organisation.
+Neither edge is evidence of a meeting with a representative, access granted,
+successful lobbying, improper influence, or wrongdoing.
+
 The response also includes a `contact` object for public representative contact
 details. Phone and office-address fields come from APH contact CSVs. Email is
 populated only when the address is present in an official APH House/Senate
@@ -318,6 +325,9 @@ The response includes:
   exists.
 - `as_source_summary`, counting non-rejected events where the entity is the
   parsed source.
+- `access` rows where the entity appears in official lobbying-register client
+  or lobbyist-person context. These rows have `amount_status=not_applicable`
+  and should be displayed as registry context, not as money or gifts.
 - `as_recipient_summary`, counting non-rejected events where the entity is the
   parsed recipient.
 - `top_recipients` and `top_sources`, so entity pages can show who money or

@@ -94,6 +94,12 @@ published calendars need separate source adapters and separate evidence labels.
 Immediate implication: use lobbyist/client status as entity context and network
 context, not as a claim of direct access.
 
+Implementation status: the official lobbyist-register snapshot is now converted
+into typed `access` influence events for client-to-lobbying-organisation and
+lobbying-organisation-to-listed-lobbyist context. These rows carry
+`amount_status=not_applicable`, are not person-linked to MPs/Senators, and are
+worded as registry context only.
+
 ### 4. Source-to-effect context is intentionally conservative
 
 The project has vote/policy context scaffolding, but public context rows appear

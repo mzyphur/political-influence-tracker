@@ -1673,6 +1673,11 @@ a:focus-visible {
   stroke: #8b5cf6;
 }
 
+.graph-edge[data-edge-kind="access"] {
+  stroke: #0891b2;
+  stroke-dasharray: 2 5;
+}
+
 .graph-edge[data-edge-kind="context"] {
   stroke: #7c3aed;
   stroke-dasharray: 7 5;
@@ -1755,6 +1760,10 @@ a:focus-visible {
 
 .graph-legend i[data-kind="reviewed"] {
   background: #1c7c64;
+}
+
+.graph-legend i[data-kind="access"] {
+  background: repeating-linear-gradient(90deg, #0891b2 0 3px, transparent 3px 7px);
 }
 
 .graph-legend i[data-kind="candidate"] {

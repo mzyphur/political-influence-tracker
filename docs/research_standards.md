@@ -54,9 +54,12 @@ Current event families:
   income, directorships, partnerships, and investments.
 - `organisational_role`: memberships, offices, and donations declared as
   organisational relationships rather than as a benefit from the organisation.
-- `access`, `policy_behavior`, `procurement`, `grant`, and `appointment`: reserved
-  families for lobbying contacts, votes/speeches, contracts, grants, and public
-  appointments as those sources are added.
+- `access`: official registry context for lobbying/client/person relationships.
+  These rows are not meeting records and must not be described as proof of
+  access granted, successful lobbying, improper influence, or wrongdoing.
+- `policy_behavior`, `procurement`, `grant`, and `appointment`: reserved
+  families for votes/speeches, contracts, grants, and public appointments as
+  those sources are added.
 - They Vote For You division/vote records are `third_party_civic` evidence. They
   can support exploratory vote-behaviour analysis, but official parliamentary
   records should be used or cited where a public claim needs the source of

@@ -2951,6 +2951,332 @@ def _upsert_influence_event(conn, event: dict[str, Any]) -> None:
         )
 
 
+def _date_from_datetime(value: datetime | None) -> date | None:
+    if value is None:
+        return None
+    return value.date()
+
+
+def _accepted_entity_cte() -> str:
+    return """
+        accepted_entity AS (
+            SELECT
+                observation_id,
+                min(entity_id) AS entity_id,
+                count(DISTINCT entity_id) AS entity_count
+            FROM entity_match_candidate
+            WHERE status IN ('auto_accepted', 'manual_accepted')
+            GROUP BY observation_id
+        )
+    """
+
+
+def _load_lobbyist_access_events(conn, jurisdiction_id: int) -> tuple[int, Counter[str], Counter[str]]:
+    access_count = 0
+    family_counts: Counter[str] = Counter()
+    type_counts: Counter[str] = Counter()
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            WITH {_accepted_entity_cte()}
+            SELECT
+                client.id AS client_observation_id,
+                client.stable_key AS client_stable_key,
+                client.display_name AS client_name,
+                client.status AS client_status,
+                client.source_updated_at AS client_source_updated_at,
+                client.evidence_note AS client_evidence_note,
+                client.source_document_id,
+                client.external_id AS client_external_id,
+                client.identifiers AS client_identifiers,
+                client.raw_record AS client_raw_record,
+                client.metadata AS client_metadata,
+                CASE WHEN client_match.entity_count = 1 THEN client_match.entity_id END
+                    AS client_entity_id,
+                org.id AS org_observation_id,
+                org.stable_key AS org_stable_key,
+                COALESCE(
+                    NULLIF(client.metadata->>'lobbyist_organisation_name', ''),
+                    org.display_name
+                ) AS org_name,
+                org.status AS org_status,
+                org.source_updated_at AS org_source_updated_at,
+                org.external_id AS org_external_id,
+                org.identifiers AS org_identifiers,
+                org.raw_record AS org_raw_record,
+                org.metadata AS org_metadata,
+                CASE WHEN org_match.entity_count = 1 THEN org_match.entity_id END
+                    AS org_entity_id
+            FROM official_identifier_observation client
+            LEFT JOIN official_identifier_observation org
+              ON org.source_id = client.source_id
+             AND org.source_record_type = 'lobbyist_organisation'
+             AND org.external_id = client.metadata->>'lobbyist_organisation_id'
+            LEFT JOIN accepted_entity client_match
+              ON client_match.observation_id = client.id
+            LEFT JOIN accepted_entity org_match
+              ON org_match.observation_id = org.id
+            WHERE client.source_id = 'australian_lobbyists_register'
+              AND client.source_record_type = 'lobbyist_client'
+              AND client.source_document_id IS NOT NULL
+            ORDER BY client.display_name, org.display_name
+            """
+        )
+        client_rows = cur.fetchall()
+
+    for row in client_rows:
+        (
+            _client_observation_id,
+            client_stable_key,
+            client_name,
+            client_status,
+            client_source_updated_at,
+            client_evidence_note,
+            source_document_id,
+            client_external_id,
+            client_identifiers,
+            client_raw_record,
+            client_metadata,
+            client_entity_id,
+            _org_observation_id,
+            org_stable_key,
+            org_name,
+            org_status,
+            org_source_updated_at,
+            org_external_id,
+            org_identifiers,
+            org_raw_record,
+            org_metadata,
+            org_entity_id,
+        ) = row
+        flags = []
+        if client_entity_id is None:
+            flags.append("lobbyist_client_entity_identifier_unresolved")
+        if org_entity_id is None:
+            flags.append("lobbyist_organisation_entity_identifier_unresolved")
+        if client_source_updated_at is None and org_source_updated_at is None:
+            flags.append("registry_relationship_date_not_disclosed")
+        if org_stable_key is None:
+            flags.append("lobbyist_organisation_profile_not_linked")
+
+        event = {
+            "external_key": f"official_identifier:{client_stable_key}:access_context",
+            "event_family": "access",
+            "event_type": "registered_lobbyist_client_relationship",
+            "event_subtype": slugify(str(client_status or "represented_client"), "represented_client"),
+            "source_entity_id": client_entity_id,
+            "source_raw_name": client_name,
+            "recipient_entity_id": org_entity_id,
+            "recipient_person_id": None,
+            "recipient_party_id": None,
+            "recipient_raw_name": org_name,
+            "jurisdiction_id": jurisdiction_id,
+            "money_flow_id": None,
+            "gift_interest_id": None,
+            "amount": None,
+            "currency": "AUD",
+            "amount_status": "not_applicable",
+            "event_date": None,
+            "reporting_period": "Australian Government Register of Lobbyists",
+            "date_reported": _date_from_datetime(
+                client_source_updated_at or org_source_updated_at
+            ),
+            "chamber": None,
+            "disclosure_system": "australian_government_register_of_lobbyists",
+            "disclosure_threshold": (
+                "Official third-party lobbying register. The register lists registered "
+                "lobbying organisations, clients, and lobbyists; it does not by itself "
+                "prove a meeting, access granted, influence, or wrongdoing."
+            ),
+            "evidence_status": "official_record_parsed",
+            "extraction_method": "official_lobbyist_register_snapshot_to_access_context_v1",
+            "review_status": "not_required",
+            "description": (
+                f"{client_name or 'Unknown client'} is listed as a client of "
+                f"{org_name or 'a registered lobbying organisation'} on the Australian "
+                "Government Register of Lobbyists. This is registry context only, not "
+                "evidence of a specific meeting with a public official."
+            ),
+            "source_document_id": source_document_id,
+            "source_ref": client_external_id,
+            "original_text": json.dumps(client_raw_record or {}, sort_keys=True),
+            "missing_data_flags": as_jsonb(flags),
+            "metadata": as_jsonb(
+                {
+                    "derived_loader": INFLUENCE_EVENT_LOADER_NAME,
+                    "base_table": "official_identifier_observation",
+                    "base_stable_key": client_stable_key,
+                    "base_source_record_type": "lobbyist_client",
+                    "client_identifiers": client_identifiers or [],
+                    "client_status": client_status,
+                    "client_evidence_note": client_evidence_note,
+                    "client_metadata": client_metadata or {},
+                    "lobbyist_organisation_stable_key": org_stable_key,
+                    "lobbyist_organisation_external_id": org_external_id,
+                    "lobbyist_organisation_identifiers": org_identifiers or [],
+                    "lobbyist_organisation_status": org_status,
+                    "lobbyist_organisation_raw_record": org_raw_record or {},
+                    "lobbyist_organisation_metadata": org_metadata or {},
+                    "claim_scope": (
+                        "Official lobbyist-register client relationship; not a meeting, "
+                        "ministerial access, policy influence, or personal receipt."
+                    ),
+                }
+            ),
+        }
+        _upsert_influence_event(conn, event)
+        access_count += 1
+        family_counts[event["event_family"]] += 1
+        type_counts[event["event_type"]] += 1
+
+    with conn.cursor() as cur:
+        cur.execute(
+            f"""
+            WITH {_accepted_entity_cte()}
+            SELECT
+                lobbyist.id AS lobbyist_observation_id,
+                lobbyist.stable_key AS lobbyist_stable_key,
+                lobbyist.display_name AS lobbyist_name,
+                lobbyist.status AS lobbyist_status,
+                lobbyist.source_updated_at AS lobbyist_source_updated_at,
+                lobbyist.source_document_id,
+                lobbyist.external_id AS lobbyist_external_id,
+                lobbyist.raw_record AS lobbyist_raw_record,
+                lobbyist.metadata AS lobbyist_metadata,
+                org.id AS org_observation_id,
+                org.stable_key AS org_stable_key,
+                COALESCE(
+                    NULLIF(lobbyist.metadata->>'lobbyist_organisation_name', ''),
+                    org.display_name
+                ) AS org_name,
+                org.status AS org_status,
+                org.source_updated_at AS org_source_updated_at,
+                org.external_id AS org_external_id,
+                org.identifiers AS org_identifiers,
+                org.raw_record AS org_raw_record,
+                org.metadata AS org_metadata,
+                CASE WHEN org_match.entity_count = 1 THEN org_match.entity_id END
+                    AS org_entity_id
+            FROM official_identifier_observation lobbyist
+            LEFT JOIN official_identifier_observation org
+              ON org.source_id = lobbyist.source_id
+             AND org.source_record_type = 'lobbyist_organisation'
+             AND org.external_id = lobbyist.metadata->>'lobbyist_organisation_id'
+            LEFT JOIN accepted_entity org_match
+              ON org_match.observation_id = org.id
+            WHERE lobbyist.source_id = 'australian_lobbyists_register'
+              AND lobbyist.source_record_type = 'lobbyist_person'
+              AND lobbyist.source_document_id IS NOT NULL
+            ORDER BY org.display_name, lobbyist.display_name
+            """
+        )
+        person_rows = cur.fetchall()
+
+    for row in person_rows:
+        (
+            _lobbyist_observation_id,
+            lobbyist_stable_key,
+            lobbyist_name,
+            lobbyist_status,
+            lobbyist_source_updated_at,
+            source_document_id,
+            lobbyist_external_id,
+            lobbyist_raw_record,
+            lobbyist_metadata,
+            _org_observation_id,
+            org_stable_key,
+            org_name,
+            org_status,
+            org_source_updated_at,
+            org_external_id,
+            org_identifiers,
+            org_raw_record,
+            org_metadata,
+            org_entity_id,
+        ) = row
+        flags = []
+        if org_entity_id is None:
+            flags.append("lobbyist_organisation_entity_identifier_unresolved")
+        if lobbyist_source_updated_at is None and org_source_updated_at is None:
+            flags.append("registry_lobbyist_date_not_disclosed")
+        if org_stable_key is None:
+            flags.append("lobbyist_organisation_profile_not_linked")
+        status_slug = slugify(str(lobbyist_status or "registered_lobbyist"), "registered_lobbyist")
+        if (lobbyist_metadata or {}).get("is_former_representative"):
+            flags.append("listed_lobbyist_is_former_representative")
+
+        event = {
+            "external_key": f"official_identifier:{lobbyist_stable_key}:access_context",
+            "event_family": "access",
+            "event_type": "registered_lobbyist_person",
+            "event_subtype": status_slug,
+            "source_entity_id": org_entity_id,
+            "source_raw_name": org_name,
+            "recipient_entity_id": None,
+            "recipient_person_id": None,
+            "recipient_party_id": None,
+            "recipient_raw_name": lobbyist_name,
+            "jurisdiction_id": jurisdiction_id,
+            "money_flow_id": None,
+            "gift_interest_id": None,
+            "amount": None,
+            "currency": "AUD",
+            "amount_status": "not_applicable",
+            "event_date": None,
+            "reporting_period": "Australian Government Register of Lobbyists",
+            "date_reported": _date_from_datetime(
+                lobbyist_source_updated_at or org_source_updated_at
+            ),
+            "chamber": None,
+            "disclosure_system": "australian_government_register_of_lobbyists",
+            "disclosure_threshold": (
+                "Official third-party lobbying register. The register lists registered "
+                "lobbying organisations, clients, and lobbyists; it does not by itself "
+                "prove a meeting, access granted, influence, or wrongdoing."
+            ),
+            "evidence_status": "official_record_parsed",
+            "extraction_method": "official_lobbyist_register_snapshot_to_access_context_v1",
+            "review_status": "not_required",
+            "description": (
+                f"{lobbyist_name or 'Unknown lobbyist'} is listed with "
+                f"{org_name or 'a registered lobbying organisation'} on the Australian "
+                "Government Register of Lobbyists. This is registry context only, not "
+                "evidence of a specific meeting with a public official."
+            ),
+            "source_document_id": source_document_id,
+            "source_ref": lobbyist_external_id,
+            "original_text": json.dumps(lobbyist_raw_record or {}, sort_keys=True),
+            "missing_data_flags": as_jsonb(flags),
+            "metadata": as_jsonb(
+                {
+                    "derived_loader": INFLUENCE_EVENT_LOADER_NAME,
+                    "base_table": "official_identifier_observation",
+                    "base_stable_key": lobbyist_stable_key,
+                    "base_source_record_type": "lobbyist_person",
+                    "lobbyist_status": lobbyist_status,
+                    "lobbyist_metadata": lobbyist_metadata or {},
+                    "lobbyist_organisation_stable_key": org_stable_key,
+                    "lobbyist_organisation_external_id": org_external_id,
+                    "lobbyist_organisation_identifiers": org_identifiers or [],
+                    "lobbyist_organisation_status": org_status,
+                    "lobbyist_organisation_raw_record": org_raw_record or {},
+                    "lobbyist_organisation_metadata": org_metadata or {},
+                    "claim_scope": (
+                        "Official lobbyist-register person relationship; not a meeting, "
+                        "ministerial access, policy influence, or personal receipt."
+                    ),
+                }
+            ),
+        }
+        _upsert_influence_event(conn, event)
+        access_count += 1
+        family_counts[event["event_family"]] += 1
+        type_counts[event["event_type"]] += 1
+
+    return access_count, family_counts, type_counts
+
+
 def load_influence_events(conn) -> dict[str, Any]:
     jurisdiction_id = get_or_create_jurisdiction(conn, "Commonwealth", "federal", "CWLTH")
     suppressed_withdrawn_events = _suppress_withdrawn_source_record_events(conn)
@@ -2958,6 +3284,7 @@ def load_influence_events(conn) -> dict[str, Any]:
 
     money_count = 0
     interest_count = 0
+    access_count = 0
     family_counts: Counter[str] = Counter()
     type_counts: Counter[str] = Counter()
     review_counts: Counter[str] = Counter()
@@ -3236,11 +3563,20 @@ def load_influence_events(conn) -> dict[str, Any]:
         type_counts[event["event_type"]] += 1
         review_counts[event["review_status"]] += 1
 
+    access_count, access_family_counts, access_type_counts = _load_lobbyist_access_events(
+        conn, jurisdiction_id
+    )
+    family_counts.update(access_family_counts)
+    type_counts.update(access_type_counts)
+    if access_count:
+        review_counts["not_required"] += access_count
+
     conn.commit()
     return {
-        "influence_events": money_count + interest_count,
+        "influence_events": money_count + interest_count + access_count,
         "money_flow_events": money_count,
         "interest_events": interest_count,
+        "access_events": access_count,
         "event_family_counts": dict(sorted(family_counts.items())),
         "event_type_counts": dict(sorted(type_counts.items())),
         "review_status_counts": dict(sorted(review_counts.items())),

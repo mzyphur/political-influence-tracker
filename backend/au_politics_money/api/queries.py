@@ -72,9 +72,10 @@ CONTACT_CAVEAT = (
 
 ENTITY_PROFILE_CAVEAT = (
     "Entity profiles show disclosed records where the entity appears as parsed source "
-    "or parsed recipient. They are discovery/context records, not findings of improper "
-    "conduct, and party/entity-level records must not be assigned to one representative "
-    "without explicit source evidence."
+    "or parsed recipient. Access rows from lobbying registers are registry context only, "
+    "not proof of a meeting or access granted. These are discovery/context records, not "
+    "findings of improper conduct, and party/entity-level records must not be assigned "
+    "to one representative without explicit source evidence."
 )
 
 PARTY_PROFILE_CAVEAT = (
@@ -85,9 +86,11 @@ PARTY_PROFILE_CAVEAT = (
 
 GRAPH_CAVEAT = (
     "Influence graph edges are source-backed disclosure relationships or reviewed "
-    "party/entity links. Modelled party-to-representative exposure edges are analytical "
-    "allocations, not disclosed personal receipts. Graphs are context for exploration, "
-    "not claims of causation, quid pro quo, improper influence, or corruption."
+    "party/entity links. Access edges from lobbying registers are registry context, not "
+    "evidence of a meeting, access granted, or successful lobbying. Modelled "
+    "party-to-representative exposure edges are analytical allocations, not disclosed "
+    "personal receipts. Graphs are context for exploration, not claims of causation, "
+    "quid pro quo, improper influence, or corruption."
 )
 
 REPRESENTATIVE_EVIDENCE_DIRECT_CAVEAT = (
@@ -1458,7 +1461,7 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
         },
         {
             "id": "federal_influence_events",
-            "label": "Disclosed money, gifts, interests, and roles",
+            "label": "Disclosed money, gifts, interests, roles, and access context",
             "level": "federal",
             "status": federal_status,
             "attribution": "mixed: person, party, source entity, return-level",
@@ -4078,6 +4081,7 @@ def get_influence_graph(
                     ) AS reported_amount_total,
                     min(influence_event.event_date) AS first_event_date,
                     max(influence_event.event_date) AS last_event_date,
+                    max(influence_event.metadata->>'claim_scope') AS claim_scope,
                     array_remove(array_agg(DISTINCT source_document.url), NULL) AS source_urls
                 FROM influence_event
                 LEFT JOIN entity source_entity
@@ -4123,6 +4127,7 @@ def get_influence_graph(
                     last_event_date=row["last_event_date"],
                     source_urls=row["source_urls"],
                     evidence_status="non_rejected_public_disclosure",
+                    claim_scope=row["claim_scope"],
                 )
             _append_person_party_exposure_context(
                 conn,
@@ -4429,6 +4434,7 @@ def get_influence_graph(
                     ) AS reported_amount_total,
                     min(influence_event.event_date) AS first_event_date,
                     max(influence_event.event_date) AS last_event_date,
+                    max(influence_event.metadata->>'claim_scope') AS claim_scope,
                     array_remove(array_agg(DISTINCT source_document.url), NULL) AS source_urls
                 FROM influence_event
                 LEFT JOIN entity counterparty_entity
@@ -4499,6 +4505,7 @@ def get_influence_graph(
                     last_event_date=row["last_event_date"],
                     source_urls=row["source_urls"],
                     evidence_status="non_rejected_public_disclosure",
+                    claim_scope=row["claim_scope"],
                 )
 
     return _jsonable(

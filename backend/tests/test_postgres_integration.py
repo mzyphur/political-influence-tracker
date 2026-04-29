@@ -2280,6 +2280,226 @@ def test_election_disclosure_observations_do_not_inflate_reported_totals(
     ][3]
 
 
+def test_lobbyist_register_observations_become_access_context_events(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity (
+                    canonical_name, normalized_name, entity_type, country, source_document_id
+                )
+                VALUES (
+                    'Acme Public Affairs Pty Ltd', 'acme public affairs pty ltd',
+                    'lobbyist_organisation', 'AU', %s
+                )
+                RETURNING id
+                """,
+                (source_document_id,),
+            )
+            lobbyist_org_entity_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO official_identifier_observation (
+                    stable_key, source_document_id, source_id, source_record_type,
+                    external_id, display_name, normalized_name, entity_type,
+                    public_sector, confidence, status, source_updated_at,
+                    evidence_note, identifiers, aliases, raw_record, metadata
+                )
+                VALUES (
+                    'australian_lobbyists_register:lobbyist_organisation:org-1',
+                    %s, 'australian_lobbyists_register', 'lobbyist_organisation',
+                    'org-1', 'Acme Public Affairs Pty Ltd',
+                    'acme public affairs pty ltd', 'lobbyist_organisation',
+                    'consulting', 'exact_identifier', 'registered',
+                    '2026-04-20T00:00:00Z',
+                    'Australian Government Register of Lobbyists organisation.',
+                    %s, '[]'::jsonb, %s, '{}'::jsonb
+                )
+                RETURNING id
+                """,
+                (
+                    source_document_id,
+                    Jsonb(
+                        [
+                            {
+                                "identifier_type": "lobbyist_register_organisation_id",
+                                "identifier_value": "org-1",
+                            }
+                        ]
+                    ),
+                    Jsonb({"displayName": "Acme Public Affairs Pty Ltd", "id": "org-1"}),
+                ),
+            )
+            org_observation_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO official_identifier_observation (
+                    stable_key, source_document_id, source_id, source_record_type,
+                    external_id, display_name, normalized_name, entity_type,
+                    public_sector, confidence, status, source_updated_at,
+                    evidence_note, identifiers, aliases, raw_record, metadata
+                )
+                VALUES (
+                    'australian_lobbyists_register:lobbyist_client:org-1:client-1',
+                    %s, 'australian_lobbyists_register', 'lobbyist_client',
+                    'org-1:client:client-1', 'Clean Energy Pty Ltd',
+                    'clean energy pty ltd', 'unknown', 'unknown',
+                    'exact_identifier', 'represented_client',
+                    '2026-04-21T00:00:00Z',
+                    'Client listed for a registered third-party lobbying organisation.',
+                    '[]'::jsonb, '[]'::jsonb,
+                    %s, %s
+                )
+                RETURNING id
+                """,
+                (
+                    source_document_id,
+                    Jsonb({"displayName": "Clean Energy Pty Ltd", "id": "client-1"}),
+                    Jsonb(
+                        {
+                            "lobbyist_organisation_id": "org-1",
+                            "lobbyist_organisation_name": "Acme Public Affairs Pty Ltd",
+                        }
+                    ),
+                ),
+            )
+            client_observation_id = cur.fetchone()[0]
+
+            cur.execute(
+                """
+                INSERT INTO official_identifier_observation (
+                    stable_key, source_document_id, source_id, source_record_type,
+                    external_id, display_name, normalized_name, entity_type,
+                    public_sector, confidence, status, source_updated_at,
+                    evidence_note, identifiers, aliases, raw_record, metadata
+                )
+                VALUES (
+                    'australian_lobbyists_register:lobbyist_person:org-1:person-1',
+                    %s, 'australian_lobbyists_register', 'lobbyist_person',
+                    'org-1:lobbyist:casey adviser', 'Casey Adviser',
+                    'casey adviser', 'individual', 'unknown',
+                    'exact_name_context', 'former_representative',
+                    '2026-04-22T00:00:00Z',
+                    'Individual lobbyist listed for a registered organisation.',
+                    '[]'::jsonb, '[]'::jsonb,
+                    %s, %s
+                )
+                RETURNING id
+                """,
+                (
+                    source_document_id,
+                    Jsonb(
+                        {
+                            "displayName": "Casey Adviser",
+                            "isFormerRepresentative": True,
+                        }
+                    ),
+                    Jsonb(
+                        {
+                            "lobbyist_organisation_id": "org-1",
+                            "lobbyist_organisation_name": "Acme Public Affairs Pty Ltd",
+                            "is_former_representative": True,
+                        }
+                    ),
+                ),
+            )
+            lobbyist_person_observation_id = cur.fetchone()[0]
+
+            cur.executemany(
+                """
+                INSERT INTO entity_match_candidate (
+                    entity_id, observation_id, match_method, confidence, status,
+                    score, evidence_note
+                )
+                VALUES (%s, %s, %s, %s, 'auto_accepted', 100.00, %s)
+                """,
+                [
+                    (
+                        lobbyist_org_entity_id,
+                        org_observation_id,
+                        "exact_identifier",
+                        "exact_identifier",
+                        "Fixture official organisation identifier.",
+                    ),
+                    (
+                        integration_db.entity_id,
+                        client_observation_id,
+                        "exact_identifier",
+                        "exact_identifier",
+                        "Fixture official client identifier.",
+                    ),
+                    (
+                        lobbyist_org_entity_id,
+                        lobbyist_person_observation_id,
+                        "organisation_context_fixture",
+                        "exact_identifier",
+                        "Fixture organisation context for listed lobbyist.",
+                    ),
+                ],
+            )
+        conn.commit()
+
+        summary = load_influence_events(conn)
+        assert summary["access_events"] == 2
+        assert summary["event_family_counts"]["access"] == 2
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    event_type, source_entity_id, recipient_entity_id,
+                    source_raw_name, recipient_raw_name, amount_status,
+                    date_reported, missing_data_flags, metadata->>'claim_scope',
+                    description
+                FROM influence_event
+                WHERE event_family = 'access'
+                ORDER BY event_type, source_raw_name, recipient_raw_name
+                """
+            )
+            rows = cur.fetchall()
+
+    access_by_type = {row[0]: row for row in rows}
+    client_row = access_by_type["registered_lobbyist_client_relationship"]
+    person_row = access_by_type["registered_lobbyist_person"]
+    assert client_row[1] == integration_db.entity_id
+    assert client_row[2] == lobbyist_org_entity_id
+    assert client_row[3] == "Clean Energy Pty Ltd"
+    assert client_row[4] == "Acme Public Affairs Pty Ltd"
+    assert client_row[5] == "not_applicable"
+    assert str(client_row[6]) == "2026-04-21"
+    assert "not evidence of a specific meeting" in client_row[9]
+    assert "not a meeting" in client_row[8]
+    assert person_row[1] == lobbyist_org_entity_id
+    assert person_row[4] == "Casey Adviser"
+    assert "listed_lobbyist_is_former_representative" in person_row[7]
+
+    client = TestClient(app)
+    entity_response = client.get(f"/api/entities/{lobbyist_org_entity_id}")
+    assert entity_response.status_code == 200
+    entity_payload = entity_response.json()
+    by_family = {row["event_family"]: row for row in entity_payload["as_source_summary"]}
+    assert by_family["access"]["event_count"] == 1
+    assert "registry context" in entity_payload["caveat"]
+
+    graph_response = client.get(
+        "/api/graph/influence",
+        params={"entity_id": lobbyist_org_entity_id, "limit": "10"},
+    )
+    assert graph_response.status_code == 200
+    graph_payload = graph_response.json()
+    access_edges = [edge for edge in graph_payload["edges"] if edge.get("event_family") == "access"]
+    assert len(access_edges) == 2
+    assert all(edge.get("reported_amount_total") is None for edge in access_edges)
+    assert all("not a meeting" in edge["claim_scope"] for edge in access_edges)
+    assert "registry context" in graph_payload["caveat"]
+
+
 def test_party_profile_aggregates_reviewed_party_entity_money(
     integration_db: IntegrationDatabase,
 ) -> None:

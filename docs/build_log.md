@@ -601,6 +601,12 @@ Verification:
   normalises party and independent-candidate payment tables, and loads them as
   `campaign_support` / `election_public_funding_paid` rows rather than donations
   or personal receipts.
+- Added typed access-context events from the official Australian Government
+  Register of Lobbyists snapshot. Client-to-lobbying-organisation rows and
+  lobbying-organisation-to-listed-lobbyist rows now load as `event_family=access`
+  with `amount_status=not_applicable`, entity/raw-name graph context, and
+  explicit caveats that they are registry context only, not evidence of meetings,
+  access granted, successful lobbying, improper influence, or wrongdoing.
 
 Notable data observations:
 
