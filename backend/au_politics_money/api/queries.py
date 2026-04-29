@@ -27,6 +27,7 @@ SEARCH_TYPES = {
 }
 
 STATE_LOCAL_MONEY_SOURCE_DATASETS = (
+    "act_elections_annual_returns",
     "nt_ntec_annual_returns",
     "act_elections_gift_returns",
     "nt_ntec_annual_returns_gifts",
@@ -49,6 +50,10 @@ SA_ECSA_RETURN_SUMMARY_FLOW_KINDS = (
     "sa_third_party_return_summary",
 )
 STATE_LOCAL_RECORD_FLOW_KINDS = {
+    "act_annual_free_facilities_use",
+    "act_annual_gift_in_kind",
+    "act_annual_gift_of_money",
+    "act_annual_receipt",
     "act_gift_in_kind",
     "act_gift_of_money",
     "nt_annual_debt",
@@ -66,6 +71,9 @@ STATE_LOCAL_RECORD_FLOW_KINDS = {
     "wa_political_contribution",
 }
 STATE_LOCAL_GIFT_FLOW_KINDS = (
+    "act_annual_free_facilities_use",
+    "act_annual_gift_in_kind",
+    "act_annual_gift_of_money",
     "act_gift_in_kind",
     "act_gift_of_money",
     "nt_annual_gift",
@@ -74,11 +82,17 @@ STATE_LOCAL_GIFT_FLOW_KINDS = (
     "wa_political_contribution",
 )
 STATE_LOCAL_MONEY_GIFT_FLOW_KINDS = (
+    "act_annual_gift_of_money",
     "act_gift_of_money",
     "nt_annual_gift",
     "qld_gift",
     "tas_reportable_donation",
     "wa_political_contribution",
+)
+STATE_LOCAL_GIFT_IN_KIND_FLOW_KINDS = (
+    "act_annual_free_facilities_use",
+    "act_annual_gift_in_kind",
+    "act_gift_in_kind",
 )
 STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS = (
     "vic_administrative_funding_entitlement",
@@ -1435,7 +1449,7 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
                     WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
                 ) AS gift_or_donation_count,
                 count(*) FILTER (
-                    WHERE money_flow.metadata->>'flow_kind' = 'act_gift_in_kind'
+                    WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
                 ) AS gift_in_kind_count,
                 count(*) FILTER (
                     WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
@@ -1462,6 +1476,7 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             """,
             (
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
+                list(STATE_LOCAL_GIFT_IN_KIND_FLOW_KINDS),
                 list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
                 list(STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS),
                 list(STATE_LOCAL_MONEY_SOURCE_DATASETS),
@@ -2107,7 +2122,8 @@ def get_state_local_records(
             "caveat": (
                 "State/local record pages expose current source rows only. Gift, "
                 "gift-in-kind, expenditure, and public-funding rows are different "
-                "evidence families. ACT gift-in-kind amounts are reported non-cash "
+                "evidence families. ACT gift-return and annual-return gift-in-kind "
+                "or free-facility amounts are reported non-cash "
                 "values; NT annual gift rows are over-threshold gifts with no per-row "
                 "gift date in the source table; NT annual-return receipts, debts, and "
                 "donor-return donations are source-row context and can overlap with "
@@ -2158,7 +2174,7 @@ def get_state_local_summary(
                     WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
                 ) AS gift_or_donation_count,
                 count(*) FILTER (
-                    WHERE money_flow.metadata->>'flow_kind' = 'act_gift_in_kind'
+                    WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
                 ) AS gift_in_kind_count,
                 count(*) FILTER (
                     WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
@@ -2241,6 +2257,7 @@ def get_state_local_summary(
             """,
             (
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
+                list(STATE_LOCAL_GIFT_IN_KIND_FLOW_KINDS),
                 list(STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS),
                 list(STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS),
                 list(STATE_LOCAL_GIFT_FLOW_KINDS),
@@ -2448,10 +2465,12 @@ def get_state_local_summary(
             "caveat": (
                 "State/local rows are disclosure records from implemented jurisdiction "
                 "adapters. Queensland gift/donation rows, NT annual gift rows, and ACT "
-                "gift-of-money rows are source-backed money records; NT annual-return "
+                "gift-of-money or annual-return gift rows are source-backed money records; "
+                "ACT annual-return receipt rows also include MLA and associated-entity "
+                "receipt details over the source threshold; NT annual-return "
                 "receipts, debts, and donor-return donations are source-row context "
                 "that remains excluded from consolidated totals until cross-source "
-                "deduplication exists; ACT gift-in-kind rows are reported non-cash "
+                "deduplication exists; ACT gift-in-kind and free-facility rows are reported non-cash "
                 "values; WAEC political contribution rows are source-backed "
                 "donor-to-political-entity disclosures with disclosure-received dates "
                 "rather than transaction dates; TAS TEC rows are reportable political "

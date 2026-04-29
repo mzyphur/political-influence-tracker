@@ -22,7 +22,10 @@ from au_politics_money.ingest.aec_electorate_finder import (
     normalize_aec_electorate_finder_postcodes,
 )
 from au_politics_money.ingest.act_elections import (
+    ANNUAL_RETURNS_SOURCE_ID as ACT_ANNUAL_RETURNS_SOURCE_ID,
     GIFT_RETURNS_SOURCE_ID as ACT_GIFT_RETURNS_SOURCE_ID,
+    STATE_SOURCE_DATASET as ACT_STATE_SOURCE_DATASET,
+    normalize_act_annual_return_receipts,
     normalize_act_gift_returns,
 )
 from au_politics_money.ingest.aec_annual import (
@@ -691,11 +694,16 @@ def _run_act_state_local_pipeline(*, smoke: bool = False) -> Path:
     act_artifacts: dict[str, Path] = {}
 
     def fetch_act_sources() -> dict[str, Any]:
-        metadata_path = fetch_source(get_source(ACT_GIFT_RETURNS_SOURCE_ID))
-        act_artifacts["gift_returns_metadata_path"] = Path(metadata_path)
+        gift_metadata_path = fetch_source(get_source(ACT_GIFT_RETURNS_SOURCE_ID))
+        annual_metadata_path = fetch_source(get_source(ACT_ANNUAL_RETURNS_SOURCE_ID))
+        act_artifacts["gift_returns_metadata_path"] = Path(gift_metadata_path)
+        act_artifacts["annual_returns_metadata_path"] = Path(annual_metadata_path)
         return {
-            "source_count": 1,
-            "metadata_paths": {ACT_GIFT_RETURNS_SOURCE_ID: str(metadata_path)},
+            "source_count": 2,
+            "metadata_paths": {
+                ACT_GIFT_RETURNS_SOURCE_ID: str(gift_metadata_path),
+                ACT_ANNUAL_RETURNS_SOURCE_ID: str(annual_metadata_path),
+            },
         }
 
     manifest = PipelineManifest(
@@ -707,25 +715,32 @@ def _run_act_state_local_pipeline(*, smoke: bool = False) -> Path:
         dependency_versions=_dependency_versions(),
         parameters={
             "jurisdiction": "act",
-            "source_family": "act_elections_gift_returns",
+            "source_family": ACT_STATE_SOURCE_DATASET,
             "smoke": smoke,
             "loads_database": False,
             "claim_boundary": (
-                "Fetch and normalize ACT Elections current gift-return rows. "
-                "Rows are source-backed party/non-party-candidate grouping gifts "
-                "of money or gift-in-kind values; gift-in-kind values are non-cash "
-                "benefits and none of these rows alone imply wrongdoing, personal "
-                "receipt by a later office-holder, or policy causation."
+                "Fetch and normalize ACT Elections current gift-return rows and "
+                "latest annual-return receipt detail rows. Rows are source-backed "
+                "party, MLA, non-party MLA, candidate/grouping, or associated-entity "
+                "disclosure observations. Gift-in-kind and free-facility values are "
+                "non-cash reported values; none of these rows alone imply wrongdoing, "
+                "personal income, or policy causation."
             ),
         },
     )
 
     steps: list[tuple[str, Callable[[], Any]]] = [
-        ("fetch_act_gift_return_source", fetch_act_sources),
+        ("fetch_act_elections_sources", fetch_act_sources),
         (
             "normalize_act_gift_returns",
             lambda: normalize_act_gift_returns(
                 metadata_path=act_artifacts["gift_returns_metadata_path"],
+            ),
+        ),
+        (
+            "normalize_act_annual_return_receipts",
+            lambda: normalize_act_annual_return_receipts(
+                metadata_path=act_artifacts["annual_returns_metadata_path"],
             ),
         ),
     ]

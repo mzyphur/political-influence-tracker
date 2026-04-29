@@ -277,15 +277,20 @@ Notes:
   personal receipt.
 - First implemented adapter:
   `run-state-local-pipeline --jurisdiction act` archives the official
-  Elections ACT 2025-2026 gift-return page and normalizes current HTML table
-  rows into `data/processed/act_gift_return_money_flows/`. Current coverage is
-  225 rows: 206 gifts of money and 19 gifts-in-kind with $87,394.50 in reported
-  value. Gift-in-kind values are non-cash reported values. The ACT threshold is
-  cumulative by donor, so individual rows may be below $1,000.
+  Elections ACT 2025-2026 gift-return page and 2024/2025 annual-return page. It
+  normalizes current gift-return rows into
+  `data/processed/act_gift_return_money_flows/` and annual-return receipt
+  detail rows into `data/processed/act_annual_return_receipt_money_flows/`.
+  Current coverage is 225 gift-return rows plus 350 annual-return receipt rows.
+  Annual-return coverage includes 173 gifts of money, 26 gifts-in-kind, 7
+  free-facilities-use rows, and 144 other receipts across parties, MLAs,
+  non-party MLAs, and associated entities.
 - ACT gift-return rows are source-backed party/non-party-candidate grouping
-  disclosure records. They should be displayed as state disclosure context until
-  separate candidate/electorate/office-holder evidence supports a more specific
-  attribution.
+  disclosure records. ACT annual-return receipt rows add MLA and associated
+  entity context, but the online table does not publish per-row receipt dates.
+  Gift-in-kind and free-facility rows are non-cash reported values. All should
+  be displayed as disclosure context until separate candidate/electorate/
+  office-holder evidence supports a more specific attribution.
 
 ## First Implementation Sequence
 

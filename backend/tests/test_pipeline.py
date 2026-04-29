@@ -327,15 +327,23 @@ def test_state_local_act_pipeline_records_gift_return_steps(monkeypatch) -> None
     def fake_fetch_source(source):
         return f"fetch:{source.source_id}"
 
-    def fake_normalize_act(*, metadata_path):
-        calls["metadata_path"] = str(metadata_path)
+    def fake_normalize_act_gifts(*, metadata_path):
+        calls["gift_metadata_path"] = str(metadata_path)
         return "act-gift-return-summary"
+
+    def fake_normalize_act_annual(*, metadata_path):
+        calls["annual_metadata_path"] = str(metadata_path)
+        return "act-annual-return-summary"
 
     monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
     monkeypatch.setattr("au_politics_money.pipeline.fetch_source", fake_fetch_source)
     monkeypatch.setattr(
         "au_politics_money.pipeline.normalize_act_gift_returns",
-        fake_normalize_act,
+        fake_normalize_act_gifts,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_act_annual_return_receipts",
+        fake_normalize_act_annual,
     )
 
     assert run_state_local_pipeline(jurisdiction="act", smoke=True) == "manifest.json"
@@ -344,17 +352,20 @@ def test_state_local_act_pipeline_records_gift_return_steps(monkeypatch) -> None
     assert manifest.pipeline_name == "state_local"
     assert manifest.git_commit == "act123"
     assert manifest.parameters["jurisdiction"] == "act"
-    assert manifest.parameters["source_family"] == "act_elections_gift_returns"
+    assert manifest.parameters["source_family"] == "act_elections_state_disclosures"
     assert manifest.parameters["loads_database"] is False
-    assert "gift-in-kind" in manifest.parameters["claim_boundary"]
+    assert "non-cash reported values" in manifest.parameters["claim_boundary"]
     assert [step.name for step in manifest.steps] == [
-        "fetch_act_gift_return_source",
+        "fetch_act_elections_sources",
         "normalize_act_gift_returns",
+        "normalize_act_annual_return_receipts",
     ]
     assert manifest.steps[0].output["metadata_paths"] == {
-        "act_gift_returns_2025_2026": "fetch:act_gift_returns_2025_2026"
+        "act_annual_returns_2024_2025": "fetch:act_annual_returns_2024_2025",
+        "act_gift_returns_2025_2026": "fetch:act_gift_returns_2025_2026",
     }
-    assert calls["metadata_path"] == "fetch:act_gift_returns_2025_2026"
+    assert calls["gift_metadata_path"] == "fetch:act_gift_returns_2025_2026"
+    assert calls["annual_metadata_path"] == "fetch:act_annual_returns_2024_2025"
 
 
 def test_state_local_vic_pipeline_records_funding_register_steps(monkeypatch) -> None:

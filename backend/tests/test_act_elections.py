@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
-from au_politics_money.ingest.act_elections import normalize_act_gift_returns
+from au_politics_money.ingest.act_elections import (
+    normalize_act_annual_return_receipts,
+    normalize_act_gift_returns,
+)
 
 
 ACT_HEADERS = """
@@ -46,6 +49,82 @@ def write_act_metadata(tmp_path: Path, body: str, *, source_id: str = "act_gift_
         encoding="utf-8",
     )
     return metadata_path
+
+
+def test_normalize_act_annual_return_receipts_extracts_mla_gift_in_kind(
+    tmp_path: Path,
+) -> None:
+    html = """
+    <html><body>
+      <h1>2024/2025 annual returns</h1>
+      <h2>MLAs</h2>
+      <h3>MLAs - Receipts totalling $1,000 or more</h3>
+      <h4>Barr, Andrew - Receipts totalling $1,000 or more</h4>
+      <table><thead><tr>
+        <th>Received from</th>
+        <th>Address</th>
+        <th>Receipt type</th>
+        <th>Amount</th>
+      </tr></thead><tbody>
+        <tr>
+          <td>Tennis Australia ABN: 61006281125</td>
+          <td>Olympic Boulevard MELBOURNE PARK VIC 3000</td>
+          <td>Gift in kind</td>
+          <td>$2,269.00</td>
+        </tr>
+        <tr><th>Totals</th><th></th><th></th><th>$2,269.00</th></tr>
+      </tbody></table>
+      <h2>Political Parties</h2>
+      <h3>Political Parties - Receipts totalling $1,000 or more</h3>
+      <h4>Australian Labor Party (ACT Branch) - Receipts totalling $1,000 or more</h4>
+      <table><thead><tr>
+        <th>Received from</th>
+        <th>Address</th>
+        <th>Receipt type</th>
+        <th>Amount</th>
+      </tr></thead><tbody>
+        <tr>
+          <td>Canberra Labor Club ABN: 92 008 546 030</td>
+          <td>BELCONNEN ACT 2617</td>
+          <td>Free facilities use</td>
+          <td>$13,668.50</td>
+        </tr>
+      </tbody></table>
+    </body></html>
+    """
+    metadata_path = write_act_metadata(
+        tmp_path,
+        html,
+        source_id="act_annual_returns_2024_2025",
+    )
+
+    summary_path = normalize_act_annual_return_receipts(
+        metadata_path=metadata_path,
+        raw_dir=tmp_path,
+        processed_dir=tmp_path / "processed",
+    )
+
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["source_dataset"] == "act_elections_annual_returns"
+    assert summary["source_id"] == "act_annual_returns_2024_2025"
+    assert summary["total_count"] == 2
+    assert summary["flow_kind_counts"] == {
+        "act_annual_free_facilities_use": 1,
+        "act_annual_gift_in_kind": 1,
+    }
+    records = [
+        json.loads(line)
+        for line in Path(summary["jsonl_path"]).read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    assert records[0]["recipient_raw_name"] == "Barr, Andrew"
+    assert records[0]["source_raw_name"] == "Tennis Australia"
+    assert records[0]["source_abn_or_acn"]["value"] == "61006281125"
+    assert records[0]["flow_kind"] == "act_annual_gift_in_kind"
+    assert records[0]["amount_aud"] == "2269.00"
+    assert records[0]["recipient_context"] == "MLAs"
+    assert records[1]["flow_kind"] == "act_annual_free_facilities_use"
+    assert "not claims of wrongdoing" in records[1]["claim_boundary"]
 
 
 def test_normalize_act_gift_returns_extracts_money_and_gift_in_kind(tmp_path: Path) -> None:

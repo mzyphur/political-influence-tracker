@@ -10,6 +10,7 @@ from au_politics_money.db.load import (
     MAX_COASTLINE_REPAIR_BUFFER_METERS,
     _can_create_house_interest_person,
     _senate_interest_extraction_confidence,
+    act_annual_return_path_from_pipeline_manifest,
     act_gift_return_path_from_pipeline_manifest,
     apply_schema,
     classify_interest_event,
@@ -707,6 +708,81 @@ def test_act_pipeline_manifest_selects_gift_return_artifact(tmp_path) -> None:
         act_gift_return_path_from_pipeline_manifest(manifest_path)
 
 
+def test_act_state_manifest_selects_annual_return_artifact(tmp_path) -> None:
+    def sha256_path(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    source_body_path = tmp_path / "act-annual-returns.html"
+    source_body_path.write_text("<html>fixture</html>", encoding="utf-8")
+    source_metadata_path = tmp_path / "act-annual.metadata.json"
+    source_metadata_path.write_text(
+        json.dumps({"body_path": str(source_body_path)}, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    jsonl_path = tmp_path / "act-annual-returns.jsonl"
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "source_id": "act_annual_returns_2024_2025",
+                "source_dataset": "act_elections_annual_returns",
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary_path = tmp_path / "act-annual-returns.summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "normalizer_name": "act_annual_return_receipt_html_normalizer",
+                "source_dataset": "act_elections_annual_returns",
+                "source_id": "act_annual_returns_2024_2025",
+                "source_metadata_path": str(source_metadata_path),
+                "source_metadata_sha256": sha256_path(source_metadata_path),
+                "source_body_path": str(source_body_path),
+                "source_body_sha256": sha256_path(source_body_path),
+                "jsonl_path": str(jsonl_path),
+                "jsonl_sha256": sha256_path(jsonl_path),
+                "source_counts": {"act_annual_returns_2024_2025": 1},
+                "total_count": 1,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "state_local_act_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "act_elections_state_disclosures",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_act_annual_return_receipts",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": sha256_path(summary_path),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert act_annual_return_path_from_pipeline_manifest(manifest_path) == jsonl_path
+
+    jsonl_path.write_text("tampered\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="JSONL hash mismatch"):
+        act_annual_return_path_from_pipeline_manifest(manifest_path)
+
+
 def test_vic_pipeline_manifest_selects_funding_register_artifact(tmp_path) -> None:
     def sha256_path(path: Path) -> str:
         return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -1313,6 +1389,56 @@ def test_tas_tec_pipeline_manifest_selects_donation_artifact(tmp_path) -> None:
     first_body.write_text("tampered\n", encoding="utf-8")
     with pytest.raises(ValueError, match="source body hash mismatch"):
         tas_tec_donation_path_from_pipeline_manifest(manifest_path)
+
+
+def test_money_flow_loader_prefers_stable_observation_key(tmp_path, monkeypatch) -> None:
+    jsonl_path = tmp_path / "tas-donations.jsonl"
+    record = {
+        "source_dataset": "tas_tec_donations",
+        "source_metadata_path": str(tmp_path / "metadata.json"),
+        "source_body_path": str(tmp_path / "body.html"),
+        "source_table": "reportable_donation_tables",
+        "source_row_number": "tas_tec_donations_monthly_table:r17",
+        "observation_key": "tas_tec_donations_monthly_table:donor-recipient-doc-123",
+        "jurisdiction_name": "Tasmania",
+        "jurisdiction_level": "state",
+        "jurisdiction_code": "TAS",
+        "source_raw_name": "Example Donor Pty Ltd",
+        "recipient_raw_name": "Example Party",
+        "amount_aud": "1000.00",
+        "date": "2025-07-04",
+        "date_reported": "",
+        "financial_year": "2025-2026",
+        "return_type": "TEC reportable political donation monthly disclosure",
+        "receipt_type": "Reportable political donation",
+        "flow_kind": "tas_reportable_donation",
+        "original": {"name_of_donor": "Example Donor Pty Ltd"},
+    }
+    jsonl_path.write_text(json.dumps(record, sort_keys=True) + "\n", encoding="utf-8")
+
+    monkeypatch.setattr(load_module, "_validate_money_flow_source_hashes", lambda record: None)
+    monkeypatch.setattr(load_module, "_begin_money_flow_source_refresh", lambda conn, source: 0)
+    monkeypatch.setattr(load_module, "upsert_source_document", lambda conn, path: 10)
+    monkeypatch.setattr(load_module, "get_or_create_entity", lambda conn, name: 20)
+    monkeypatch.setattr(load_module, "get_or_create_jurisdiction", lambda conn, *args: 30)
+    monkeypatch.setattr(load_module, "link_aec_direct_representative_money_flows", lambda conn: {})
+    monkeypatch.setattr(load_module, "link_aec_candidate_campaign_money_flows", lambda conn: {})
+    monkeypatch.setattr(load_module, "as_jsonb", lambda value: value)
+
+    conn = StatementRecordingConnection()
+    summary = load_module._load_aec_money_flow_jsonl(
+        conn,
+        jsonl_path,
+        default_source_dataset="tas_tec_donations",
+    )
+
+    assert summary["money_flows"] == 1
+    insert_params = conn.cursor_instance.executed_params[0]
+    assert (
+        insert_params[0]
+        == "tas_tec_donations:tas_tec_donations_monthly_table:donor-recipient-doc-123"
+    )
+    assert insert_params[14] == "reportable_donation_tables:tas_tec_donations_monthly_table:r17"
 
 
 def test_display_geometry_repair_buffer_validates_range() -> None:

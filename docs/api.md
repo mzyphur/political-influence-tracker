@@ -225,8 +225,9 @@ classifications.
 
 `/api/state-local/summary` is the first public API surface for non-federal data.
 It currently supports Queensland ECQ Electronic Disclosure System money-flow
-rows, ACT Elections gift-return rows, Northern Territory NTEC annual-return and
-annual gift-return rows, South Australia ECSA return-summary rows, Victoria VEC
+rows, ACT Elections gift-return and annual-return receipt rows, Northern
+Territory NTEC annual-return and annual gift-return rows, South Australia ECSA
+return-summary rows, Victoria VEC
 funding-register rows, and NSW Electoral Commission aggregate donor-location
 context.
 

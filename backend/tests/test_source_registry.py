@@ -59,6 +59,7 @@ def test_subnational_seed_sources_exist() -> None:
         "nt_ntec_annual_returns_gifts_2024_2025",
         "act_elections_funding_disclosure",
         "act_gift_returns_2025_2026",
+        "act_annual_returns_2024_2025",
         "vic_vec_funding_register",
     }
     sources = {source.source_id: source for source in all_sources()}
@@ -77,6 +78,7 @@ def test_subnational_seed_sources_exist() -> None:
     assert "reportable-loan" in sources["tas_tec_donations_seven_day_ha25_table"].notes
     assert "campaign context" in sources["act_elections_funding_disclosure"].notes
     assert "cumulative gifts" in sources["act_gift_returns_2025_2026"].notes
+    assert "MLAs" in sources["act_annual_returns_2024_2025"].notes
     assert "donor-side" in sources["nt_ntec_annual_returns_2024_2025"].notes
     assert "threshold" in sources["nt_ntec_annual_returns_gifts_2024_2025"].notes
     assert "public funding" in sources["vic_vec_funding_register"].notes

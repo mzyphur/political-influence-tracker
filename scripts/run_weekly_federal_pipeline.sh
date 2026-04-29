@@ -22,6 +22,7 @@ LOAD_ARGS=(
   --skip-qld-ecq
   --skip-nsw-aggregates
   --skip-act-gift-returns
+  --skip-act-annual-returns
   --skip-nt-ntec-annual-returns
   --skip-nt-ntec-annual-gifts
   --skip-sa-ecsa-return-summaries

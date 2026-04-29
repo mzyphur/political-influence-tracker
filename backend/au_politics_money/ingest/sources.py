@@ -949,6 +949,28 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="act_annual_returns_2024_2025",
+        name="Elections ACT Annual Returns 2024-2025",
+        jurisdiction="Australian Capital Territory",
+        level="state",
+        source_type="state_financial_disclosure_annual_return_tables",
+        url=(
+            "https://www.elections.act.gov.au/funding-disclosures-and-registers/"
+            "annual-returns/20242025-annual-returns"
+        ),
+        expected_format="html_tables",
+        update_frequency="annual",
+        priority="high",
+        notes=(
+            "Official Elections ACT annual-return table page. Current adapter "
+            "normalizes receipt detail rows totalling $1,000 or more for political "
+            "parties, MLAs, non-party MLAs, and associated entities. Rows can "
+            "include gifts of money, gifts-in-kind, free facilities use, and "
+            "other receipts; they should be displayed as source-backed disclosure "
+            "observations, not claims of wrongdoing or personal income."
+        ),
+    ),
+    SourceRecord(
         source_id="vic_vec_funding_register",
         name="VEC Funding Register",
         jurisdiction="Victoria",

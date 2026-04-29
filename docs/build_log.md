@@ -4,6 +4,16 @@
 
 Completed:
 
+- Expanded `run-state-local-pipeline --jurisdiction act` from current
+  gift-return rows into a two-source ACT state disclosure pipeline. It now
+  archives and normalizes the 2025-2026 gift-return page plus the 2024/2025
+  annual-return receipt detail page. The 2026-04-29 implementation run produced
+  225 gift-return rows and 350 annual-return receipt rows: 173 annual gifts of
+  money, 26 annual gifts-in-kind, 7 free-facility-use rows, and 144 other
+  receipt rows. This adds much more useful ACT person/entity context, including
+  MLA annual-return gift-in-kind rows, while preserving the caveat that annual
+  receipt rows do not publish per-row receipt dates and are not personal-income
+  or wrongdoing claims.
 - Added `run-state-local-pipeline --jurisdiction tas` for the first Tasmania
   TEC row-level adapter. It archives the monthly reportable donation table and
   the 2025 House of Assembly / 2026 Legislative Council seven-day disclosure

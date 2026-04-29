@@ -63,6 +63,10 @@ const states = ["All", "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"];
 type DataLevel = "federal" | "state" | "council";
 type StateLocalFlowFilter =
   | "all"
+  | "act_annual_free_facilities_use"
+  | "act_annual_gift_in_kind"
+  | "act_annual_gift_of_money"
+  | "act_annual_receipt"
   | "act_gift_in_kind"
   | "act_gift_of_money"
   | "nt_annual_debt"
@@ -123,6 +127,10 @@ const stateLocalFlowFilterOptions: Array<{
   { value: "tas_reportable_loan", label: "TAS loans" },
   { value: "act_gift_of_money", label: "ACT money gifts" },
   { value: "act_gift_in_kind", label: "ACT in-kind gifts" },
+  { value: "act_annual_gift_of_money", label: "ACT annual money gifts" },
+  { value: "act_annual_gift_in_kind", label: "ACT annual in-kind gifts" },
+  { value: "act_annual_free_facilities_use", label: "ACT free facilities" },
+  { value: "act_annual_receipt", label: "ACT annual receipts" },
   { value: "nt_annual_gift", label: "NT gifts" },
   { value: "nt_annual_receipt", label: "NT receipts" },
   { value: "nt_donor_return_donation", label: "NT donor returns" },
@@ -1134,14 +1142,17 @@ function StateLocalSummaryPanel({
             <strong>{summary.source_document_count.toLocaleString("en-AU")}</strong>
           </div>
           <p className="state-local-inline-caveat">
-            State/local gift rows are source-backed disclosure records. ACT gift-in-kind
-            rows are reported non-cash values. Expenditure rows are campaign activity
+            State/local gift rows are source-backed disclosure records. ACT gift-in-kind,
+            free-facility, and annual receipt rows are reported disclosure values and
+            include MLA/party/associated-entity contexts. Expenditure rows are campaign activity
             incurred by an actor, not money personally received by an MP, councillor, or
             candidate. SA ECSA rows are return-level summaries and official report
             links, not detailed transaction rows. VEC funding rows are public money
             context, not private donations or personal income. WAEC rows are
             donor-to-political-entity contribution disclosures; their displayed date is when WAEC
-            received the disclosure, not necessarily the contribution date.
+            received the disclosure, not necessarily the contribution date. TAS TEC donation rows
+            cover the disclosure regime that commenced on 1 July 2025; reportable loans are shown
+            separately from gift/donation totals.
           </p>
         </>
       ) : null}
@@ -1420,6 +1431,10 @@ function stateLocalRecordKind(row: StateLocalSummaryRecord): string {
   if (row.flow_kind === "wa_political_contribution") return "WA political contribution";
   if (row.flow_kind === "tas_reportable_donation") return "TAS reportable donation";
   if (row.flow_kind === "tas_reportable_loan") return "TAS reportable loan";
+  if (row.flow_kind === "act_annual_free_facilities_use") return "Free facilities use";
+  if (row.flow_kind === "act_annual_gift_in_kind") return "Annual gift-in-kind value";
+  if (row.flow_kind === "act_annual_gift_of_money") return "Annual gift of money";
+  if (row.flow_kind === "act_annual_receipt") return "Annual receipt";
   if (row.flow_kind === "act_gift_in_kind") return "Gift-in-kind value";
   if (row.flow_kind === "act_gift_of_money") return "Gift of money";
   if (row.flow_kind === "nt_annual_gift") return "Annual gift over threshold";
@@ -1456,6 +1471,18 @@ function stateLocalRecordHeadline(row: StateLocalSummaryRecord): string {
   }
   if (row.flow_kind === "act_gift_in_kind") {
     return `${source} provided a gift-in-kind to ${row.recipient_name || "recipient not identified"}`;
+  }
+  if (row.flow_kind === "act_annual_free_facilities_use") {
+    return `${source} provided free facilities to ${row.recipient_name || "recipient not identified"}`;
+  }
+  if (row.flow_kind === "act_annual_gift_in_kind") {
+    return `${source} disclosed an annual gift-in-kind to ${row.recipient_name || "recipient not identified"}`;
+  }
+  if (row.flow_kind === "act_annual_gift_of_money") {
+    return `${source} disclosed an annual money gift to ${row.recipient_name || "recipient not identified"}`;
+  }
+  if (row.flow_kind === "act_annual_receipt") {
+    return `${row.recipient_name || "Recipient not identified"} disclosed annual receipt from ${source}`;
   }
   if (row.flow_kind === "nt_annual_gift") {
     return `${source} gave an annual gift to ${row.recipient_name || "recipient not identified"}`;
@@ -1505,8 +1532,13 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
     typeof row.public_funding_context?.tier === "string"
       ? `Public-funding tier: ${row.public_funding_context.tier}`
       : null,
-    row.flow_kind === "act_gift_in_kind"
-      ? "Interpretation: reported value of a non-cash gift, not a cash payment."
+    row.flow_kind === "act_gift_in_kind" ||
+    row.flow_kind === "act_annual_gift_in_kind" ||
+    row.flow_kind === "act_annual_free_facilities_use"
+      ? "Interpretation: reported value of a non-cash gift or facility use, not a cash payment."
+      : null,
+    row.flow_kind === "act_annual_gift_of_money" || row.flow_kind === "act_annual_receipt"
+      ? "Interpretation: ACT annual-return receipt row over the source threshold. It is source-backed disclosure context and not automatically personal income or improper influence."
       : null,
     row.flow_kind === "qld_electoral_expenditure"
       ? "Interpretation: expenditure incurred, not money received by the named actor."

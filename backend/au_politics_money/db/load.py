@@ -21,9 +21,13 @@ from au_politics_money.ingest.aec_electorate_finder import (
     latest_aec_electorate_finder_postcodes_jsonl,
 )
 from au_politics_money.ingest.act_elections import (
+    ANNUAL_PARSER_NAME as ACT_ANNUAL_RETURN_PARSER_NAME,
+    ANNUAL_RETURNS_SOURCE_ID as ACT_ANNUAL_RETURNS_SOURCE_ID,
+    ANNUAL_SOURCE_DATASET as ACT_ANNUAL_RETURN_SOURCE_DATASET,
     GIFT_RETURNS_SOURCE_ID as ACT_GIFT_RETURNS_SOURCE_ID,
     PARSER_NAME as ACT_GIFT_RETURN_PARSER_NAME,
     SOURCE_DATASET as ACT_GIFT_RETURN_SOURCE_DATASET,
+    STATE_SOURCE_DATASET as ACT_STATE_SOURCE_DATASET,
 )
 from au_politics_money.ingest.aph_decision_records import (
     latest_aph_decision_record_index_jsonl_paths,
@@ -446,7 +450,7 @@ def classify_money_event_type(disclosure_category: str, receipt_type: str) -> st
     combined = f"{category} {receipt}".strip()
     if "discretionary benefit" in combined:
         return "discretionary_benefit"
-    if "gift in kind" in combined or "gift-in-kind" in combined:
+    if "gift in kind" in combined or "gift-in-kind" in combined or "free facilities" in combined:
         return "gift_in_kind"
     if "advertis" in combined or "broadcast" in combined or "campaign material" in combined:
         return "campaign_expenditure"
@@ -1641,13 +1645,17 @@ def _load_aec_money_flow_jsonl(
             )
             source_dataset = record.get("source_dataset") or default_source_dataset
             jurisdiction_id = record_jurisdiction_id(record)
-            external_key = (
-                f"{source_dataset}:{record['source_table']}:{record['source_row_number']}:"
-                f"{record.get('financial_year') or record.get('event_name') or ''}:"
-                f"{normalize_name(record.get('source_raw_name') or '')}:"
-                f"{normalize_name(record.get('recipient_raw_name') or '')}:"
-                f"{record['amount_aud']}"
-            )
+            observation_key = str(record.get("observation_key") or "").strip()
+            if observation_key:
+                external_key = f"{source_dataset}:{observation_key}"
+            else:
+                external_key = (
+                    f"{source_dataset}:{record['source_table']}:{record['source_row_number']}:"
+                    f"{record.get('financial_year') or record.get('event_name') or ''}:"
+                    f"{normalize_name(record.get('source_raw_name') or '')}:"
+                    f"{normalize_name(record.get('recipient_raw_name') or '')}:"
+                    f"{record['amount_aud']}"
+                )
 
             with conn.cursor() as cur:
                 cur.execute(
@@ -1792,6 +1800,27 @@ def load_act_gift_return_money_flows(conn, jsonl_path: Path | None = None) -> di
         conn,
         path,
         default_source_dataset=ACT_GIFT_RETURN_SOURCE_DATASET,
+    )
+
+
+def load_act_annual_return_receipt_money_flows(
+    conn,
+    jsonl_path: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(
+            PROCESSED_DIR / "act_annual_return_receipt_money_flows",
+            "*.jsonl",
+        )
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_act_annual_return_receipt_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(
+        conn,
+        path,
+        default_source_dataset=ACT_ANNUAL_RETURN_SOURCE_DATASET,
     )
 
 
@@ -2620,7 +2649,8 @@ def act_gift_return_path_from_pipeline_manifest(manifest_path: Path) -> Path:
     parameters = manifest.get("parameters")
     if (
         not isinstance(parameters, dict)
-        or parameters.get("source_family") != ACT_GIFT_RETURN_SOURCE_DATASET
+        or parameters.get("source_family")
+        not in {ACT_GIFT_RETURN_SOURCE_DATASET, ACT_STATE_SOURCE_DATASET}
     ):
         raise ValueError("Expected an ACT Elections gift-return state/local manifest")
     if parameters.get("loads_database") is not False:
@@ -2692,6 +2722,58 @@ def act_gift_return_path_from_pipeline_manifest(manifest_path: Path) -> Path:
         raise ValueError(
             f"Summary total_count does not match JSONL rows for {path}: "
             f"summary={total_count} rows={counted_records}"
+        )
+    return path
+
+
+def act_annual_return_path_from_pipeline_manifest(manifest_path: Path) -> Path:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("pipeline_name") != "state_local":
+        raise ValueError("Expected a state_local pipeline manifest")
+    parameters = manifest.get("parameters")
+    if not isinstance(parameters, dict) or parameters.get("source_family") != ACT_STATE_SOURCE_DATASET:
+        raise ValueError("Expected an ACT Elections state disclosure manifest")
+    if parameters.get("loads_database") is not False:
+        raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+
+    summary_path, summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_act_annual_return_receipts",
+    )
+    path = _jsonl_path_from_summary(
+        summary_path,
+        ACT_ANNUAL_RETURN_PARSER_NAME,
+        expected_summary_sha256=summary_sha256,
+        expected_source_keys={ACT_ANNUAL_RETURNS_SOURCE_ID},
+        source_count_field="source_counts",
+    )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("source_dataset") != ACT_ANNUAL_RETURN_SOURCE_DATASET:
+        raise ValueError(
+            f"Unexpected source_dataset in {summary_path}: {summary.get('source_dataset')!r}"
+        )
+    if summary.get("source_id") != ACT_ANNUAL_RETURNS_SOURCE_ID:
+        raise ValueError(f"Unexpected source_id in {summary_path}: {summary.get('source_id')!r}")
+    source_metadata_path = Path(str(summary.get("source_metadata_path") or ""))
+    source_body_path = Path(str(summary.get("source_body_path") or ""))
+    expected_source_metadata_sha256 = str(summary.get("source_metadata_sha256") or "")
+    expected_source_body_sha256 = str(summary.get("source_body_sha256") or "")
+    if not expected_source_metadata_sha256:
+        raise ValueError(f"Summary is missing source_metadata_sha256: {summary_path}")
+    if not expected_source_body_sha256:
+        raise ValueError(f"Summary is missing source_body_sha256: {summary_path}")
+    actual_source_metadata_sha256 = _sha256_path(source_metadata_path)
+    if actual_source_metadata_sha256 != expected_source_metadata_sha256:
+        raise ValueError(
+            f"Source metadata hash mismatch for {source_metadata_path}: "
+            f"summary={expected_source_metadata_sha256} "
+            f"actual={actual_source_metadata_sha256}"
+        )
+    actual_source_body_sha256 = _sha256_path(source_body_path)
+    if actual_source_body_sha256 != expected_source_body_sha256:
+        raise ValueError(
+            f"Source body hash mismatch for {source_body_path}: "
+            f"summary={expected_source_body_sha256} actual={actual_source_body_sha256}"
         )
     return path
 
@@ -3060,6 +3142,9 @@ def load_act_elections_from_pipeline_manifest(
     *,
     include_influence_events: bool = True,
 ) -> dict[str, Any]:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    parameters = manifest.get("parameters")
+    source_family = parameters.get("source_family") if isinstance(parameters, dict) else None
     path = act_gift_return_path_from_pipeline_manifest(manifest_path)
     summary: dict[str, Any] = {
         "pipeline_manifest_path": str(manifest_path),
@@ -3069,6 +3154,12 @@ def load_act_elections_from_pipeline_manifest(
             jsonl_path=path,
         ),
     }
+    if source_family == ACT_STATE_SOURCE_DATASET:
+        annual_path = act_annual_return_path_from_pipeline_manifest(manifest_path)
+        summary["artifact_paths"]["annual_receipt_money_flows"] = str(annual_path)
+        summary["act_annual_return_receipt_money_flows"] = (
+            load_act_annual_return_receipt_money_flows(conn, jsonl_path=annual_path)
+        )
     if include_influence_events:
         summary["influence_events"] = load_influence_events(conn)
     return summary
@@ -3202,7 +3293,7 @@ def load_state_local_from_pipeline_manifest(
         )
     if source_family == NSW_SOURCE_DATASET:
         return load_nsw_electoral_from_pipeline_manifest(conn, manifest_path)
-    if source_family == ACT_GIFT_RETURN_SOURCE_DATASET:
+    if source_family in {ACT_GIFT_RETURN_SOURCE_DATASET, ACT_STATE_SOURCE_DATASET}:
         return load_act_elections_from_pipeline_manifest(
             conn,
             manifest_path,
@@ -7855,6 +7946,7 @@ def load_processed_artifacts(
     include_qld_ecq: bool = True,
     include_nsw_aggregates: bool = True,
     include_act_gift_returns: bool = True,
+    include_act_annual_returns: bool = True,
     include_nt_ntec_annual_returns: bool = True,
     include_nt_ntec_annual_gifts: bool = True,
     include_sa_ecsa_return_summaries: bool = True,
@@ -7896,6 +7988,10 @@ def load_processed_artifacts(
                 summary["qld_ecq_eds_contexts"] = load_qld_ecq_eds_contexts(conn)
             if include_act_gift_returns:
                 summary["act_gift_return_money_flows"] = load_act_gift_return_money_flows(conn)
+            if include_act_annual_returns:
+                summary["act_annual_return_receipt_money_flows"] = (
+                    load_act_annual_return_receipt_money_flows(conn)
+                )
             if include_nt_ntec_annual_returns:
                 summary["nt_ntec_annual_return_money_flows"] = (
                     load_nt_ntec_annual_return_money_flows(conn)

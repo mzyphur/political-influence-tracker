@@ -80,6 +80,10 @@ export async function fetchStateLocalSummary(options: {
 export async function fetchStateLocalRecords(options: {
   level?: "state" | "council" | "local";
   flowKind?:
+    | "act_annual_free_facilities_use"
+    | "act_annual_gift_in_kind"
+    | "act_annual_gift_of_money"
+    | "act_annual_receipt"
     | "act_gift_in_kind"
     | "act_gift_of_money"
     | "nt_annual_debt"

@@ -174,16 +174,22 @@ wrongdoing, causation, or personal receipt unless another source supports that
 person-level attribution.
 
 The ACT adapter archives the official Elections ACT 2025-2026 gift-return page
-and normalizes the current HTML tables into
-`data/processed/act_gift_return_money_flows/`. Current normalized coverage is
-225 rows: 206 gifts of money and 19 gifts-in-kind with $87,394.50 in reported
-value. These rows are source-backed ACT state disclosure records. Gift-in-kind
-rows are reported non-cash values and are not cash payments. The ACT disclosure
-trigger is cumulative: a party grouping or non-party candidate grouping must
-report a gift, or cumulative gifts from a single donor, totalling $1,000 or more
-during the relevant period. Individual rows may therefore be below $1,000. The
-normalizer and manifest loader preserve and verify source metadata, source body,
-summary, and JSONL SHA-256 hashes before loading.
+and the 2024/2025 annual-return page. It normalizes current gift-return tables
+into `data/processed/act_gift_return_money_flows/`; current normalized coverage
+is 225 rows: 206 gifts of money and 19 gifts-in-kind with $87,394.50 in reported
+value. It also normalizes annual-return receipt detail rows into
+`data/processed/act_annual_return_receipt_money_flows/`; current coverage is
+350 rows: 173 gifts of money, 26 gifts-in-kind, 7 free-facilities-use rows, and
+144 other receipts for political parties, MLAs, non-party MLAs, and associated
+entities. These rows are source-backed ACT state disclosure records. Gift-in-kind
+and free-facility rows are reported non-cash values and are not cash payments.
+Annual receipt detail rows do not publish per-row receipt dates in the online
+table; the financial year is retained as temporal context. The ACT gift-return
+disclosure trigger is cumulative: a party grouping or non-party candidate
+grouping must report a gift, or cumulative gifts from a single donor, totalling
+$1,000 or more during the relevant period. Individual rows may therefore be
+below $1,000. The normalizers and manifest loader preserve and verify source
+metadata, source body, summary, and JSONL SHA-256 hashes before loading.
 
 The NT adapter archives the official NTEC 2024-2025 annual return page and the
 separate annual return gifts page. It normalizes 96 annual-return financial rows
@@ -304,11 +310,12 @@ reproducible artifacts. `--include-vote-divisions` should be added only when a
 They Vote For You API key is configured.
 
 Federal-only scheduled loads use `load-postgres --skip-qld-ecq
---skip-nsw-aggregates --skip-act-gift-returns
+--skip-nsw-aggregates --skip-act-gift-returns --skip-act-annual-returns
 --skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
 --skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register
---skip-waec-political-contributions` unless the
-relevant state/local fetch/normalize steps also ran. QLD, ACT, NT, SA, VIC, and WA
+--skip-waec-political-contributions --skip-tas-tec-donations` unless the
+relevant state/local fetch/normalize steps also ran. QLD, ACT, NT, SA, VIC, WA,
+and TAS
 state/local public summaries filter to current `money_flow` rows, and NSW
 aggregate summaries filter to current `aggregate_context_observation` rows, but
 the schedule should still avoid refreshing a state/local source family from

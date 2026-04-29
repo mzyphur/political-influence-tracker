@@ -127,10 +127,10 @@ Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command
 also loads QLD ECQ EDS rows and participant identifiers by default, but
 federal-only scheduled runs use `load-postgres --skip-qld-ecq
---skip-nsw-aggregates --skip-act-gift-returns
+--skip-nsw-aggregates --skip-act-gift-returns --skip-act-annual-returns
 --skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
 --skip-sa-ecsa-return-summaries --skip-vic-vec-funding-register
---skip-waec-political-contributions` so stale state/local artifacts are not
+--skip-waec-political-contributions --skip-tas-tec-donations` so stale state/local artifacts are not
 promoted when the state/local fetch/normalize steps did not run. Public
 state/local API summaries read only current rows.
 
@@ -156,7 +156,7 @@ The runner verifies that the current explanatory page still links to the
 registered heatmap URL, and the loader validates source metadata/body hashes
 from the normalized artifact before inserting rows.
 
-ACT is wired as a current gift-return state adapter:
+ACT is wired as a current gift-return and annual-return state adapter:
 
 ```bash
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
@@ -168,18 +168,24 @@ MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --
 ```
 
 The ACT runner archives the official Elections ACT 2025-2026 gift-return page
-and normalizes the current HTML tables into
-`data/processed/act_gift_return_money_flows/`. Rows are loaded into
-`money_flow` as ACT state disclosure records. `act_gift_of_money` rows are
-money records; `act_gift_in_kind` rows are reported non-cash gift values and
-derive `influence_event` rows with event type `gift_in_kind`. The source
-threshold is cumulative: a party grouping or non-party candidate grouping must
-report a gift, or cumulative gifts from one donor, totalling $1,000 or more
-during the relevant period. Individual rows can therefore be below $1,000 and
-must not be described as each independently above threshold. The loader
-validates manifest summary hashes, JSONL hashes, source metadata hashes, source
-body hashes, source ID, source dataset, non-zero counts, and row counts before
-inserting rows.
+and the 2024/2025 annual-return page. It normalizes current gift-return HTML
+tables into `data/processed/act_gift_return_money_flows/` and annual-return
+receipt detail tables into
+`data/processed/act_annual_return_receipt_money_flows/`. Rows are loaded into
+`money_flow` as ACT state disclosure records. Current coverage is 225
+gift-return rows plus 350 annual-return receipt rows. `act_gift_of_money` and
+`act_annual_gift_of_money` rows are money-gift records; `act_gift_in_kind`,
+`act_annual_gift_in_kind`, and `act_annual_free_facilities_use` rows are
+reported non-cash values and derive benefit-style influence events. Annual
+receipt rows can cover MLAs, non-party MLAs, parties, and associated entities,
+but they do not publish per-row receipt dates in the online table. The
+gift-return source threshold is cumulative: a party grouping or non-party
+candidate grouping must report a gift, or cumulative gifts from one donor,
+totalling $1,000 or more during the relevant period. Individual rows can
+therefore be below $1,000 and must not be described as each independently above
+threshold. The loader validates manifest summary hashes, JSONL hashes, source
+metadata hashes, source body hashes, source ID, source dataset, non-zero counts,
+and row counts before inserting rows.
 
 Northern Territory is wired as a current annual-return and annual gift-return
 state adapter:
@@ -366,6 +372,7 @@ as AEC postcode lookups, current AEC boundaries, and official APH
 decision-record documents are fetched again instead of being silently reused.
 The weekly federal load also uses
 `--skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns
+--skip-act-annual-returns
 --skip-nt-ntec-annual-returns --skip-nt-ntec-annual-gifts
 --skip-sa-ecsa-return-summaries --skip-tas-tec-donations
 --skip-vic-vec-funding-register --skip-waec-political-contributions`;

@@ -553,6 +553,7 @@ def load_postgres_command(
     skip_qld_ecq: bool,
     skip_nsw_aggregates: bool,
     skip_act_gift_returns: bool,
+    skip_act_annual_returns: bool,
     skip_nt_ntec_annual_returns: bool,
     skip_nt_ntec_annual_gifts: bool,
     skip_sa_ecsa_return_summaries: bool,
@@ -580,6 +581,7 @@ def load_postgres_command(
         include_qld_ecq=not skip_qld_ecq,
         include_nsw_aggregates=not skip_nsw_aggregates,
         include_act_gift_returns=not skip_act_gift_returns,
+        include_act_annual_returns=not skip_act_annual_returns,
         include_nt_ntec_annual_returns=not skip_nt_ntec_annual_returns,
         include_nt_ntec_annual_gifts=not skip_nt_ntec_annual_gifts,
         include_sa_ecsa_return_summaries=not skip_sa_ecsa_return_summaries,
@@ -1186,6 +1188,15 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     load_parser.add_argument(
+        "--skip-act-annual-returns",
+        action="store_true",
+        help=(
+            "Skip ACT Elections annual-return receipt artifacts during this load. "
+            "These rows include gifts, gifts-in-kind, free facilities use, and "
+            "other receipts totalling $1,000 or more."
+        ),
+    )
+    load_parser.add_argument(
         "--skip-nt-ntec-annual-returns",
         action="store_true",
         help=(
@@ -1440,6 +1451,7 @@ def main() -> int:
             args.skip_qld_ecq,
             args.skip_nsw_aggregates,
             args.skip_act_gift_returns,
+            args.skip_act_annual_returns,
             args.skip_nt_ntec_annual_returns,
             args.skip_nt_ntec_annual_gifts,
             args.skip_sa_ecsa_return_summaries,
