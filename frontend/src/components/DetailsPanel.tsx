@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   ArrowRight,
@@ -16,6 +16,7 @@ import {
   X,
   Vote
 } from "lucide-react";
+import { fetchRepresentativeEvidence } from "../api";
 import { formatMoney } from "../map";
 import type {
   ElectorateFeature,
@@ -41,6 +42,20 @@ type DetailsPanelProps = {
   collapseButtonRef?: React.Ref<HTMLButtonElement>;
 };
 
+type EvidencePageState = {
+  events: RepresentativeEvent[];
+  status: LoadState;
+  error: string;
+  hasMore: boolean | null;
+};
+
+const emptyEvidencePageState: EvidencePageState = {
+  events: [],
+  status: "idle",
+  error: "",
+  hasMore: null
+};
+
 export function DetailsPanel({
   feature,
   caveat,
@@ -59,9 +74,17 @@ export function DetailsPanel({
   const [eventFamilyFilter, setEventFamilyFilter] = useState("all");
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
   const [visibleDirectEventCount, setVisibleDirectEventCount] = useState(8);
+  const [visibleCampaignSupportEventCount, setVisibleCampaignSupportEventCount] = useState(5);
+  const [directEvidencePages, setDirectEvidencePages] = useState<Record<string, EvidencePageState>>({});
+  const [campaignEvidencePage, setCampaignEvidencePage] =
+    useState<EvidencePageState>(emptyEvidencePageState);
+  const directEvidenceAbortRef = useRef<AbortController | null>(null);
+  const campaignEvidenceAbortRef = useRef<AbortController | null>(null);
   const recentEvents = representativeProfile?.recent_events ?? [];
   const campaignSupportSummary = representativeProfile?.campaign_support_summary ?? [];
   const campaignSupportEvents = representativeProfile?.campaign_support_recent_events ?? [];
+  const directPageKey = `${selectedPersonId ?? "none"}:${eventFamilyFilter}`;
+  const directPageState = directEvidencePages[directPageKey] ?? emptyEvidencePageState;
   const topSectors = useMemo(
     () => (representativeProfile?.influence_by_sector ?? []).slice(0, 4),
     [representativeProfile]
@@ -92,10 +115,11 @@ export function DetailsPanel({
     ];
   }, [representativeProfile, totalRepresentativeEvents]);
   const matchingLoadedEvents = useMemo(() => {
-    return eventFamilyFilter === "all"
+    const baseEvents = eventFamilyFilter === "all"
       ? recentEvents
       : recentEvents.filter((event) => event.event_family === eventFamilyFilter);
-  }, [eventFamilyFilter, recentEvents]);
+    return mergeEvents(baseEvents, directPageState.events);
+  }, [directPageState.events, eventFamilyFilter, recentEvents]);
   const visibleEvents = useMemo(
     () => matchingLoadedEvents.slice(0, visibleDirectEventCount),
     [matchingLoadedEvents, visibleDirectEventCount]
@@ -103,12 +127,135 @@ export function DetailsPanel({
   const selectedFamilyTotalCount = useMemo(() => {
     return eventFamilyOptions.find((option) => option.key === eventFamilyFilter)?.count ?? 0;
   }, [eventFamilyFilter, eventFamilyOptions]);
+  const canRevealLoadedDirectEvents = matchingLoadedEvents.length > visibleEvents.length;
+  const canLoadRemoteDirectEvents =
+    selectedFamilyTotalCount > matchingLoadedEvents.length && directPageState.hasMore !== false;
+  const campaignSupportTotalCount = useMemo(
+    () => campaignSupportSummary.reduce((total, summary) => total + summary.event_count, 0),
+    [campaignSupportSummary]
+  );
+  const loadedCampaignSupportEvents = useMemo(
+    () => mergeEvents(campaignSupportEvents, campaignEvidencePage.events),
+    [campaignEvidencePage.events, campaignSupportEvents]
+  );
+  const visibleCampaignSupportEvents = useMemo(
+    () => loadedCampaignSupportEvents.slice(0, visibleCampaignSupportEventCount),
+    [loadedCampaignSupportEvents, visibleCampaignSupportEventCount]
+  );
+  const canRevealLoadedCampaignSupportEvents =
+    loadedCampaignSupportEvents.length > visibleCampaignSupportEvents.length;
+  const canLoadRemoteCampaignSupportEvents =
+    campaignSupportTotalCount > loadedCampaignSupportEvents.length &&
+    campaignEvidencePage.hasMore !== false;
 
   useEffect(() => {
+    directEvidenceAbortRef.current?.abort();
+    campaignEvidenceAbortRef.current?.abort();
     setEventFamilyFilter("all");
     setExpandedEventId(null);
     setVisibleDirectEventCount(8);
+    setVisibleCampaignSupportEventCount(5);
+    setDirectEvidencePages({});
+    setCampaignEvidencePage(emptyEvidencePageState);
   }, [selectedPersonId]);
+
+  function loadMoreDirectEvents() {
+    if (!selectedPersonId || !representativeProfile || directPageState.status === "loading") return;
+    const cursor = matchingLoadedEvents.at(-1)?.pagination_cursor;
+    const controller = new AbortController();
+    const pageKey = directPageKey;
+    directEvidenceAbortRef.current?.abort();
+    directEvidenceAbortRef.current = controller;
+    setDirectEvidencePages((current) => ({
+      ...current,
+      [pageKey]: {
+        ...(current[pageKey] ?? emptyEvidencePageState),
+        status: "loading",
+        error: ""
+      }
+    }));
+    fetchRepresentativeEvidence({
+      personId: selectedPersonId,
+      group: "direct",
+      eventFamily: eventFamilyFilter === "all" ? undefined : eventFamilyFilter,
+      cursor,
+      limit: 25,
+      signal: controller.signal
+    })
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        setDirectEvidencePages((current) => {
+          const prior = current[pageKey]?.events ?? [];
+          return {
+            ...current,
+            [pageKey]: {
+              events: mergeEvents(prior, payload.events),
+              status: "ready",
+              error: "",
+              hasMore: payload.has_more
+            }
+          };
+        });
+        setVisibleDirectEventCount((current) =>
+          Math.max(current, Math.min(current + 8, matchingLoadedEvents.length + payload.events.length))
+        );
+      })
+      .catch((error: Error) => {
+        if (controller.signal.aborted) return;
+        setDirectEvidencePages((current) => ({
+          ...current,
+          [pageKey]: {
+            ...(current[pageKey] ?? emptyEvidencePageState),
+            status: "error",
+            error: error.message,
+            hasMore: current[pageKey]?.hasMore ?? null
+          }
+        }));
+      });
+  }
+
+  function loadMoreCampaignSupportEvents() {
+    if (!selectedPersonId || !representativeProfile || campaignEvidencePage.status === "loading") return;
+    const cursor = loadedCampaignSupportEvents.at(-1)?.pagination_cursor;
+    const controller = new AbortController();
+    campaignEvidenceAbortRef.current?.abort();
+    campaignEvidenceAbortRef.current = controller;
+    setCampaignEvidencePage((current) => ({
+      ...current,
+      status: "loading",
+      error: ""
+    }));
+    fetchRepresentativeEvidence({
+      personId: selectedPersonId,
+      group: "campaign_support",
+      cursor,
+      limit: 25,
+      signal: controller.signal
+    })
+      .then((payload) => {
+        if (controller.signal.aborted) return;
+        setCampaignEvidencePage((current) => ({
+          events: mergeEvents(current.events, payload.events),
+          status: "ready",
+          error: "",
+          hasMore: payload.has_more
+        }));
+        setVisibleCampaignSupportEventCount((current) =>
+          Math.max(
+            current,
+            Math.min(current + 5, loadedCampaignSupportEvents.length + payload.events.length)
+          )
+        );
+      })
+      .catch((error: Error) => {
+        if (controller.signal.aborted) return;
+        setCampaignEvidencePage((current) => ({
+          ...current,
+          status: "error",
+          error: error.message
+        }));
+      });
+  }
 
   if (!feature) {
     return (
@@ -306,9 +453,9 @@ export function DetailsPanel({
             {representativeProfile.campaign_support_caveat && (
               <p className="event-count-note">{representativeProfile.campaign_support_caveat}</p>
             )}
-            {campaignSupportEvents.length > 0 && (
+            {loadedCampaignSupportEvents.length > 0 && (
               <div className="event-list campaign-event-list">
-                {campaignSupportEvents.slice(0, 5).map((event) => (
+                {visibleCampaignSupportEvents.map((event) => (
                   <EventRow
                     event={event}
                     expanded={expandedEventId === event.id}
@@ -318,6 +465,39 @@ export function DetailsPanel({
                     }
                   />
                 ))}
+              </div>
+            )}
+            {campaignEvidencePage.status === "error" && (
+              <p className="muted">Could not load more campaign-support records: {campaignEvidencePage.error}</p>
+            )}
+            {(canRevealLoadedCampaignSupportEvents ||
+              canLoadRemoteCampaignSupportEvents ||
+              campaignEvidencePage.status === "loading") && (
+              <div className="event-list-actions">
+                <button
+                  type="button"
+                  disabled={campaignEvidencePage.status === "loading"}
+                  onClick={() => {
+                    if (canRevealLoadedCampaignSupportEvents) {
+                      setVisibleCampaignSupportEventCount((current) =>
+                        Math.min(current + 5, loadedCampaignSupportEvents.length)
+                      );
+                    } else {
+                      loadMoreCampaignSupportEvents();
+                    }
+                  }}
+                >
+                  {campaignEvidencePage.status === "loading" ? (
+                    <>
+                      <Loader2 size={14} className="spin" aria-hidden="true" />
+                      Loading records
+                    </>
+                  ) : canRevealLoadedCampaignSupportEvents ? (
+                    "Show more campaign-support records"
+                  ) : (
+                    "Load more campaign-support records"
+                  )}
+                </button>
               </div>
             )}
           </>
@@ -466,17 +646,36 @@ export function DetailsPanel({
                 <p className="muted">No loaded records match this filter.</p>
               )}
             </div>
-            {matchingLoadedEvents.length > visibleEvents.length && (
+            {directPageState.status === "error" && (
+              <p className="muted">Could not load more source records: {directPageState.error}</p>
+            )}
+            {(canRevealLoadedDirectEvents ||
+              canLoadRemoteDirectEvents ||
+              directPageState.status === "loading") && (
               <div className="event-list-actions">
                 <button
                   type="button"
-                  onClick={() =>
-                    setVisibleDirectEventCount((current) =>
-                      Math.min(current + 8, matchingLoadedEvents.length)
-                    )
-                  }
+                  disabled={directPageState.status === "loading"}
+                  onClick={() => {
+                    if (canRevealLoadedDirectEvents) {
+                      setVisibleDirectEventCount((current) =>
+                        Math.min(current + 8, matchingLoadedEvents.length)
+                      );
+                    } else {
+                      loadMoreDirectEvents();
+                    }
+                  }}
                 >
-                  Show more records
+                  {directPageState.status === "loading" ? (
+                    <>
+                      <Loader2 size={14} className="spin" aria-hidden="true" />
+                      Loading records
+                    </>
+                  ) : canRevealLoadedDirectEvents ? (
+                    "Show more loaded records"
+                  ) : (
+                    "Load more source records"
+                  )}
                 </button>
               </div>
             )}
@@ -537,7 +736,7 @@ function EventRow({
   expanded: boolean;
   onToggle: () => void;
 }) {
-  const sourceHref = event.source_final_url || event.source_url;
+  const sourceHref = safeSourceHref(event.source_final_url || event.source_url);
   const sourceName = event.source_name || event.source_id || "Source document";
   const tooltip = eventBackendTooltip(event);
   return (
@@ -595,6 +794,27 @@ function EventRow({
       )}
     </article>
   );
+}
+
+function mergeEvents(baseEvents: RepresentativeEvent[], additionalEvents: RepresentativeEvent[]) {
+  const seen = new Set<number>();
+  const merged: RepresentativeEvent[] = [];
+  for (const event of [...baseEvents, ...additionalEvents]) {
+    if (seen.has(event.id)) continue;
+    seen.add(event.id);
+    merged.push(event);
+  }
+  return merged;
+}
+
+function safeSourceHref(value: string | null | undefined) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 function eventFamilyTooltip(summary: {

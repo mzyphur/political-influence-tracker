@@ -140,6 +140,8 @@ def _assert_expected_indexes(conn) -> None:
             "official_decision_record_document_current_record_idx",
             "vote_division_current_chamber_idx",
             "person_vote_current_division_idx",
+            "influence_event_person_direct_feed_idx",
+            "influence_event_person_campaign_feed_idx",
         ):
             cur.execute("SELECT to_regclass(%s)", (index_name,))
             assert cur.fetchone()[0] is not None, index_name
@@ -1851,6 +1853,143 @@ def test_campaign_support_stays_separate_from_direct_money_totals(
     entity_graph_payload = entity_graph_response.json()
     assert entity_graph_payload["edge_count"] == 1
     assert entity_graph_payload["edges"][0]["reported_amount_total"] == 1250.0
+
+
+def test_representative_evidence_endpoint_pages_records_without_mixing_campaign_support(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
+            jurisdiction_id = cur.fetchone()[0]
+            for external_key, family, amount, event_date, source_ref in (
+                (
+                    "influence:clean-energy:jane-citizen:page-direct-1",
+                    "benefit",
+                    "100.00",
+                    "2024-01-01",
+                    "page-direct-1",
+                ),
+                (
+                    "influence:clean-energy:jane-citizen:page-direct-2",
+                    "private_interest",
+                    None,
+                    "2024-01-01",
+                    "page-direct-2",
+                ),
+                (
+                    "influence:clean-energy:jane-citizen:page-direct-undated",
+                    "benefit",
+                    None,
+                    None,
+                    "page-direct-undated",
+                ),
+                (
+                    "influence:clean-energy:jane-citizen:page-campaign",
+                    "campaign_support",
+                    "5000.00",
+                    "2025-01-01",
+                    "page-campaign",
+                ),
+            ):
+                cur.execute(
+                    """
+                    INSERT INTO influence_event (
+                        external_key, event_family, event_type, source_entity_id,
+                        source_raw_name, recipient_person_id, recipient_raw_name,
+                        jurisdiction_id, amount, amount_status, event_date,
+                        date_reported, chamber, disclosure_system, evidence_status,
+                        extraction_method, review_status, description,
+                        source_document_id, source_ref, missing_data_flags, metadata
+                    )
+                    VALUES (
+                        %s, %s, 'fixture_record', %s, 'Clean Energy Pty Ltd',
+                        %s, 'Jane Citizen', %s, %s,
+                        CASE WHEN %s::numeric IS NULL THEN 'not_disclosed' ELSE 'reported' END,
+                        %s::date, '2024-02-01', 'house', 'pytest fixture',
+                        'official_record', 'fixture_seed', 'not_required',
+                        'Fixture representative evidence pagination row.',
+                        %s, %s, '[]'::jsonb, %s
+                    )
+                    """,
+                    (
+                        external_key,
+                        family,
+                        integration_db.entity_id,
+                        integration_db.person_id,
+                        jurisdiction_id,
+                        amount,
+                        amount,
+                        event_date,
+                        source_document_id,
+                        source_ref,
+                        Jsonb({"fixture": True}),
+                    ),
+                )
+        conn.commit()
+
+    client = TestClient(app)
+
+    first_page_response = client.get(
+        f"/api/representatives/{integration_db.person_id}/evidence",
+        params={"limit": "2"},
+    )
+    assert first_page_response.status_code == 200
+    first_page = first_page_response.json()
+    assert first_page["group"] == "direct"
+    assert first_page["total_count"] == 4
+    assert first_page["has_more"] is True
+    assert first_page["next_cursor"]
+    assert [event["source_ref"] for event in first_page["events"]] == [
+        "page-direct-2",
+        "page-direct-1",
+    ]
+    assert all(event["event_family"] != "campaign_support" for event in first_page["events"])
+    assert all(event["review_status"] != "rejected" for event in first_page["events"])
+
+    second_page_response = client.get(
+        f"/api/representatives/{integration_db.person_id}/evidence",
+        params={"limit": "2", "cursor": first_page["next_cursor"]},
+    )
+    assert second_page_response.status_code == 200
+    second_page = second_page_response.json()
+    assert second_page["has_more"] is False
+    combined_ids = [event["id"] for event in first_page["events"] + second_page["events"]]
+    assert len(combined_ids) == len(set(combined_ids))
+    assert [event["source_ref"] for event in second_page["events"]] == [
+        "fixture-row-1",
+        "page-direct-undated",
+    ]
+
+    benefit_response = client.get(
+        f"/api/representatives/{integration_db.person_id}/evidence",
+        params={"event_family": "benefit", "limit": "10"},
+    )
+    assert benefit_response.status_code == 200
+    benefit_payload = benefit_response.json()
+    assert benefit_payload["total_count"] == 2
+    assert {event["source_ref"] for event in benefit_payload["events"]} == {
+        "page-direct-1",
+        "page-direct-undated",
+    }
+
+    campaign_response = client.get(
+        f"/api/representatives/{integration_db.person_id}/evidence",
+        params={"group": "campaign_support", "limit": "10"},
+    )
+    assert campaign_response.status_code == 200
+    campaign_payload = campaign_response.json()
+    assert campaign_payload["total_count"] == 1
+    assert campaign_payload["events"][0]["source_ref"] == "page-campaign"
+    assert "not personal receipts" in campaign_payload["caveat"]
+
+    invalid_cursor_response = client.get(
+        f"/api/representatives/{integration_db.person_id}/evidence",
+        params={"cursor": "not-a-valid-cursor"},
+    )
+    assert invalid_cursor_response.status_code == 400
 
 
 def test_aec_direct_member_return_rows_link_to_unique_people(

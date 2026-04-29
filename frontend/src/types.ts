@@ -263,6 +263,20 @@ export type RepresentativeEvent = {
   source_type: string;
   source_url: string | null;
   source_final_url: string | null;
+  pagination_cursor?: string;
+};
+
+export type RepresentativeEvidenceResponse = {
+  person_id: number;
+  group: "direct" | "campaign_support";
+  event_family: string | null;
+  events: RepresentativeEvent[];
+  event_count: number;
+  total_count: number;
+  limit: number;
+  has_more: boolean;
+  next_cursor: string | null;
+  caveat: string;
 };
 
 export type RepresentativeProfile = {

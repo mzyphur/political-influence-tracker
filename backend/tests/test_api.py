@@ -204,6 +204,78 @@ def test_representative_profile_404(monkeypatch) -> None:
     assert response.status_code == 404
 
 
+def test_representative_evidence_endpoint_delegates_to_query_layer(monkeypatch) -> None:
+    captured = {}
+
+    def fake_get_representative_evidence_events(
+        person_id,
+        *,
+        group="direct",
+        event_family=None,
+        cursor=None,
+        limit=25,
+        database_url=None,
+    ):
+        captured.update(
+            {
+                "person_id": person_id,
+                "group": group,
+                "event_family": event_family,
+                "cursor": cursor,
+                "limit": limit,
+                "database_url": database_url,
+            }
+        )
+        return {
+            "person_id": person_id,
+            "group": group,
+            "event_family": event_family,
+            "events": [],
+            "event_count": 0,
+            "total_count": 0,
+            "limit": limit,
+            "has_more": False,
+            "next_cursor": None,
+            "caveat": "fixture",
+        }
+
+    monkeypatch.setattr(
+        queries,
+        "get_representative_evidence_events",
+        fake_get_representative_evidence_events,
+    )
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/representatives/123/evidence",
+        params={
+            "group": "direct",
+            "event_family": "benefit",
+            "cursor": "abc123",
+            "limit": "17",
+        },
+    )
+
+    assert response.status_code == 200
+    assert captured == {
+        "person_id": 123,
+        "group": "direct",
+        "event_family": "benefit",
+        "cursor": "abc123",
+        "limit": 17,
+        "database_url": None,
+    }
+
+
+def test_representative_evidence_endpoint_404(monkeypatch) -> None:
+    monkeypatch.setattr(queries, "get_representative_evidence_events", lambda *args, **kwargs: {})
+    client = TestClient(app)
+
+    response = client.get("/api/representatives/999999/evidence")
+
+    assert response.status_code == 404
+
+
 def test_party_profile_404(monkeypatch) -> None:
     monkeypatch.setattr(queries, "get_party_profile", lambda party_id: {})
     client = TestClient(app)

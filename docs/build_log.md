@@ -212,6 +212,11 @@ Completed:
   The UI remains compact by default, but selected representatives can now reveal
   more direct person-linked records and more campaign/party-channelled support
   rows without implying that campaign-support rows are personal receipts.
+- Added cursor-paginated representative evidence pages at
+  `/api/representatives/{person_id}/evidence`. Direct records and
+  campaign-support records are separate API groups, pagination uses the same
+  date/id ordering as the profile feed, and the frontend now loads further rows
+  on demand without collapsing campaign support into personal receipt.
 
 Verification:
 

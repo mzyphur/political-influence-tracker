@@ -4,6 +4,7 @@ import type {
   EntityProfile,
   InfluenceGraph,
   PartyProfile,
+  RepresentativeEvidenceResponse,
   RepresentativeProfile,
   SearchResponse,
   StateLocalSummaryResponse
@@ -80,6 +81,26 @@ export async function fetchRepresentativeProfile(
   signal?: AbortSignal
 ): Promise<RepresentativeProfile> {
   return fetchJson<RepresentativeProfile>(apiUrl(`/api/representatives/${personId}`), signal);
+}
+
+export async function fetchRepresentativeEvidence(options: {
+  personId: number;
+  group?: "direct" | "campaign_support";
+  eventFamily?: string;
+  cursor?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<RepresentativeEvidenceResponse> {
+  const params = new URLSearchParams({
+    group: options.group ?? "direct",
+    limit: String(options.limit ?? 25)
+  });
+  if (options.eventFamily) params.set("event_family", options.eventFamily);
+  if (options.cursor) params.set("cursor", options.cursor);
+  return fetchJson<RepresentativeEvidenceResponse>(
+    apiUrl(`/api/representatives/${options.personId}/evidence`, params),
+    options.signal
+  );
 }
 
 export async function fetchEntityProfile(

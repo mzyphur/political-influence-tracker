@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import hashlib
 import re
@@ -87,6 +89,23 @@ GRAPH_CAVEAT = (
     "allocations, not disclosed personal receipts. Graphs are context for exploration, "
     "not claims of causation, quid pro quo, improper influence, or corruption."
 )
+
+REPRESENTATIVE_EVIDENCE_DIRECT_CAVEAT = (
+    "Direct evidence pages include source-backed, non-rejected records linked to "
+    "this person and exclude campaign-support rows. Counts are descriptive and do "
+    "not imply wrongdoing, causation, or improper influence."
+)
+
+REPRESENTATIVE_EVIDENCE_CAMPAIGN_CAVEAT = (
+    "Campaign-support evidence pages include source-backed election-return, public "
+    "funding, party-channelled, advertising, or campaign-context rows linked to a "
+    "candidate, Senate group, electorate, party branch, third party, or media "
+    "advertiser. They are not personal receipts unless a source explicitly supports "
+    "that narrower claim."
+)
+
+REPRESENTATIVE_EVIDENCE_GROUPS = {"direct", "campaign_support"}
+_REPRESENTATIVE_EVIDENCE_MIN_DATE = date(1, 1, 1)
 
 
 def _jsonable(value: Any) -> Any:
@@ -194,6 +213,56 @@ def _fetch_dicts(conn, sql: str, params: tuple[Any, ...]) -> list[dict[str, Any]
     with conn.cursor(row_factory=dict_row) as cur:
         cur.execute(sql, params)
         return [dict(row) for row in cur.fetchall()]
+
+
+def _representative_evidence_cursor(row: dict[str, Any]) -> str:
+    payload = {
+        "event_date": row["event_date"].isoformat() if row.get("event_date") else None,
+        "date_reported": row["date_reported"].isoformat() if row.get("date_reported") else None,
+        "id": int(row["id"]),
+    }
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(body).decode("ascii").rstrip("=")
+
+
+def _decode_representative_evidence_cursor(cursor: str) -> tuple[date, date, int]:
+    try:
+        padded = cursor + ("=" * (-len(cursor) % 4))
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+    except (
+        binascii.Error,
+        UnicodeDecodeError,
+        UnicodeEncodeError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise ValueError("Invalid evidence cursor.") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid evidence cursor.")
+    event_id = payload.get("id")
+    if not isinstance(event_id, int) or event_id <= 0:
+        raise ValueError("Invalid evidence cursor.")
+    return (
+        _cursor_date(payload.get("event_date")),
+        _cursor_date(payload.get("date_reported")),
+        event_id,
+    )
+
+
+def _cursor_date(value: Any) -> date:
+    if value is None:
+        return _REPRESENTATIVE_EVIDENCE_MIN_DATE
+    if not isinstance(value, str):
+        raise ValueError("Invalid evidence cursor.")
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise ValueError("Invalid evidence cursor.") from exc
+
+
+def _with_representative_evidence_cursors(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    for row in rows:
+        row["pagination_cursor"] = _representative_evidence_cursor(row)
+    return rows
 
 
 def _table_exists(conn, table_name: str) -> bool:
@@ -2023,6 +2092,133 @@ def _get_senate_map(
     }
 
 
+def get_representative_evidence_events(
+    person_id: int,
+    *,
+    group: str = "direct",
+    event_family: str | None = None,
+    cursor: str | None = None,
+    limit: int = 25,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    if group not in REPRESENTATIVE_EVIDENCE_GROUPS:
+        raise ValueError("Evidence group must be direct or campaign_support.")
+    if limit < 1 or limit > 100:
+        raise ValueError("Evidence page limit must be between 1 and 100.")
+    if group == "campaign_support" and event_family is not None:
+        raise ValueError("event_family filtering is available only for direct evidence pages.")
+    if group == "direct" and event_family == "campaign_support":
+        raise ValueError("Use group=campaign_support for campaign-support records.")
+
+    cursor_values = _decode_representative_evidence_cursor(cursor) if cursor else None
+    with connect(database_url) as conn:
+        person_rows = _fetch_dicts(conn, "SELECT id FROM person WHERE id = %s", (person_id,))
+        if not person_rows:
+            return {}
+
+        where_clauses = [
+            "influence_event.recipient_person_id = %s",
+            "influence_event.review_status <> 'rejected'",
+        ]
+        params: list[Any] = [person_id]
+        if group == "campaign_support":
+            where_clauses.append("influence_event.event_family = 'campaign_support'")
+        else:
+            where_clauses.append("influence_event.event_family <> 'campaign_support'")
+        if event_family is not None:
+            where_clauses.append("influence_event.event_family = %s")
+            params.append(event_family)
+
+        where_sql = "\n              AND ".join(where_clauses)
+        count_rows = _fetch_dicts(
+            conn,
+            f"""
+            SELECT count(*) AS total_count
+            FROM influence_event
+            WHERE {where_sql}
+            """,
+            tuple(params),
+        )
+        page_params = list(params)
+        cursor_sql = ""
+        if cursor_values is not None:
+            cursor_sql = """
+              AND (
+                  COALESCE(influence_event.event_date, DATE '0001-01-01'),
+                  COALESCE(influence_event.date_reported, DATE '0001-01-01'),
+                  influence_event.id
+              ) < (%s, %s, %s)
+            """
+            page_params.extend(cursor_values)
+        page_params.append(limit + 1)
+        rows = _fetch_dicts(
+            conn,
+            f"""
+            SELECT
+                influence_event.id,
+                influence_event.event_family,
+                influence_event.event_type,
+                influence_event.event_subtype,
+                influence_event.source_raw_name,
+                source_entity.canonical_name AS source_entity_name,
+                influence_event.amount,
+                influence_event.currency,
+                influence_event.amount_status,
+                influence_event.event_date,
+                influence_event.reporting_period,
+                influence_event.date_reported,
+                influence_event.description,
+                influence_event.disclosure_system,
+                influence_event.disclosure_threshold,
+                influence_event.evidence_status,
+                influence_event.extraction_method,
+                influence_event.review_status,
+                influence_event.missing_data_flags,
+                influence_event.source_ref,
+                source_document.source_id,
+                source_document.source_name,
+                source_document.source_type,
+                source_document.url AS source_url,
+                source_document.final_url AS source_final_url
+            FROM influence_event
+            LEFT JOIN entity source_entity
+              ON source_entity.id = influence_event.source_entity_id
+            JOIN source_document
+              ON source_document.id = influence_event.source_document_id
+            WHERE {where_sql}
+            {cursor_sql}
+            ORDER BY
+                COALESCE(influence_event.event_date, DATE '0001-01-01') DESC,
+                COALESCE(influence_event.date_reported, DATE '0001-01-01') DESC,
+                influence_event.id DESC
+            LIMIT %s
+            """,
+            tuple(page_params),
+        )
+
+    rows = _with_representative_evidence_cursors(rows)
+    has_more = len(rows) > limit
+    events = rows[:limit]
+    return _jsonable(
+        {
+            "person_id": person_id,
+            "group": group,
+            "event_family": event_family,
+            "events": events,
+            "event_count": len(events),
+            "total_count": count_rows[0]["total_count"] if count_rows else 0,
+            "limit": limit,
+            "has_more": has_more,
+            "next_cursor": events[-1]["pagination_cursor"] if has_more and events else None,
+            "caveat": (
+                REPRESENTATIVE_EVIDENCE_CAMPAIGN_CAVEAT
+                if group == "campaign_support"
+                else REPRESENTATIVE_EVIDENCE_DIRECT_CAVEAT
+            ),
+        }
+    )
+
+
 def get_representative_profile(person_id: int, *, database_url: str | None = None) -> dict[str, Any]:
     with connect(database_url) as conn:
         person_rows = _fetch_dicts(
@@ -2267,9 +2463,11 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             ),
             "office_terms": terms,
             "event_summary": event_summary,
-            "recent_events": recent_events,
+            "recent_events": _with_representative_evidence_cursors(recent_events),
             "campaign_support_summary": campaign_support_summary,
-            "campaign_support_recent_events": campaign_support_recent_events,
+            "campaign_support_recent_events": _with_representative_evidence_cursors(
+                campaign_support_recent_events
+            ),
             "campaign_support_caveat": (
                 "Campaign support rows are source-backed election-return or advertising records "
                 "connected to a candidate, Senate group, party branch, third party, or media "

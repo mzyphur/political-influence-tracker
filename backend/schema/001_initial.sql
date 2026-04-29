@@ -455,6 +455,24 @@ CREATE INDEX influence_event_recipient_party_idx ON influence_event (recipient_p
 CREATE INDEX influence_event_date_idx ON influence_event (event_date);
 CREATE INDEX influence_event_amount_idx ON influence_event (amount);
 CREATE INDEX influence_event_review_status_idx ON influence_event (review_status);
+CREATE INDEX influence_event_person_direct_feed_idx
+    ON influence_event (
+        recipient_person_id,
+        (COALESCE(event_date, DATE '0001-01-01')) DESC,
+        (COALESCE(date_reported, DATE '0001-01-01')) DESC,
+        id DESC
+    )
+    WHERE review_status <> 'rejected'
+      AND event_family <> 'campaign_support';
+CREATE INDEX influence_event_person_campaign_feed_idx
+    ON influence_event (
+        recipient_person_id,
+        (COALESCE(event_date, DATE '0001-01-01')) DESC,
+        (COALESCE(date_reported, DATE '0001-01-01')) DESC,
+        id DESC
+    )
+    WHERE review_status <> 'rejected'
+      AND event_family = 'campaign_support';
 
 CREATE TABLE manual_review_decision (
     id BIGSERIAL PRIMARY KEY,

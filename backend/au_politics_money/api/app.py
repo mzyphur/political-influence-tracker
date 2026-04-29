@@ -122,6 +122,32 @@ def representative_profile(person_id: int) -> dict:
     return profile
 
 
+@app.get("/api/representatives/{person_id}/evidence")
+def representative_evidence(
+    person_id: int,
+    group: Annotated[str, Query(pattern="^(direct|campaign_support)$")] = "direct",
+    event_family: Annotated[
+        str | None,
+        Query(min_length=1, max_length=80, pattern=r"^[a-z0-9_:-]+$"),
+    ] = None,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=600)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> dict:
+    try:
+        page = queries.get_representative_evidence_events(
+            person_id,
+            group=group,
+            event_family=event_family,
+            cursor=cursor,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if not page:
+        raise HTTPException(status_code=404, detail="Representative not found")
+    return page
+
+
 @app.get("/api/entities/{entity_id}")
 def entity_profile(entity_id: int) -> dict:
     profile = queries.get_entity_profile(entity_id)

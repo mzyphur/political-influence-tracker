@@ -250,6 +250,14 @@ Each recent event includes source-document labels/URLs, source refs, evidence
 status, review status, amount status, and missing-data flags so the frontend can
 show the evidentiary trail rather than only a summary claim.
 
+`/api/representatives/{person_id}/evidence` pages through the same event shape
+for selected representatives. It uses stable cursor pagination over
+`event_date`, `date_reported`, and event id so load-more interactions do not
+skip or duplicate same-date disclosures. By default `group=direct` excludes
+`campaign_support`; `group=campaign_support` must be requested explicitly.
+Optional `event_family` filtering is available only for direct records. The
+endpoint rejects invalid cursors and returns 404 for unknown people.
+
 Campaign-return and party-channelled records are deliberately separated from
 the direct feed. The response includes `campaign_support_summary`,
 `campaign_support_recent_events`, and `campaign_support_caveat` for candidate
