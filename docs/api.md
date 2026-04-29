@@ -237,6 +237,10 @@ Useful parameters:
   government rows where a loaded adapter has them. ACT, NT, SA ECSA return
   summaries, VEC funding, and NSW aggregate context are state-level only. Omit
   `level` to aggregate all loaded state/local rows.
+- `jurisdiction_code=ACT|NSW|NT|QLD|SA|TAS|VIC|WA` restricts the summary to a
+  loaded jurisdiction. For Queensland local/council views, `QLD` is translated
+  to the database jurisdiction code `QLD-LOCAL`; state-level Queensland rows
+  remain `QLD`.
 - `limit=1..25` controls each top-actor list.
 
 The response includes:
@@ -283,6 +287,10 @@ source provides them. Gift/donation rows are donor-recipient records.
 Gift-in-kind rows are reported non-cash values. Electoral expenditure rows are
 expenditure incurred by a named actor; they are campaign-support context, not
 evidence that another person or office-holder received money.
+The record endpoint accepts the same `level` and `jurisdiction_code` filters as
+the summary endpoint, plus `flow_kind` and a pagination cursor. Pagination
+cursors include the selected level, flow kind, and jurisdiction filter so a
+cursor from one slice cannot be reused silently in another slice.
 NT annual gift rows are donor-recipient gift observations from the official
 NTEC annual return gifts page. They carry `date_reported` as the return received date
 where available because the recipient-side table does not publish per-row gift

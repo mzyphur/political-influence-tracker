@@ -4,6 +4,13 @@
 
 Completed:
 
+- Added jurisdiction filtering to the state/local API and frontend summary
+  panel. `/api/state-local/summary` and `/api/state-local/records` now accept
+  `jurisdiction_code` (`ACT`, `NSW`, `NT`, `QLD`, `SA`, `TAS`, `VIC`, `WA`);
+  QLD local/council requests map to the loaded `QLD-LOCAL` jurisdiction code.
+  Pagination cursors include the selected jurisdiction so a "load more" action
+  cannot mix rows from a previous state selection. The frontend state selector
+  now filters the State and Council panes as well as the federal map.
 - Tightened the representative evidence-card display so the public pane no
   longer repeats invariant workflow labels (`official_record_parsed`,
   `needs_review`, default not-disclosed amount status, or numeric register

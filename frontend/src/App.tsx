@@ -286,8 +286,10 @@ function App() {
     setStateLocalSummary(null);
     setStateLocalSummaryStatus("loading");
     setStateLocalSummaryError("");
+    const jurisdictionCode = stateFilter === "All" ? undefined : stateFilter;
     fetchStateLocalSummary({
       level: dataLevel,
+      jurisdictionCode,
       limit: 5,
       signal: controller.signal
     })
@@ -302,7 +304,7 @@ function App() {
         setStateLocalSummaryStatus("error");
       });
     return () => controller.abort();
-  }, [dataLevel]);
+  }, [dataLevel, stateFilter]);
 
   useEffect(() => {
     if (!pendingSearchResult || dataLevel !== "federal") return;
@@ -704,7 +706,6 @@ function App() {
               <Layers size={16} aria-hidden="true" />
               <select
                 value={stateFilter}
-                disabled={dataLevel !== "federal"}
                 onChange={(event) => setStateFilter(event.target.value)}
               >
                 {states.map((state) => (
@@ -733,6 +734,7 @@ function App() {
               summary={stateLocalSummary}
               status={stateLocalSummaryStatus}
               error={stateLocalSummaryError}
+              jurisdictionCode={stateFilter}
               onOpenEntityProfile={openEntityProfile}
             />
           )}
@@ -903,15 +905,19 @@ function StateLocalSummaryPanel({
   summary,
   status,
   error,
+  jurisdictionCode,
   onOpenEntityProfile
 }: {
   level: DataLevel;
   summary: StateLocalSummaryResponse | null;
   status: LoadState;
   error: string;
+  jurisdictionCode: string;
   onOpenEntityProfile: (entityId: number, label: string) => void;
 }) {
   const levelName = level === "council" ? "local/council" : level;
+  const activeJurisdictionCode = jurisdictionCode === "All" ? undefined : jurisdictionCode;
+  const jurisdictionLabel = activeJurisdictionCode ?? "all jurisdictions";
   const [recordFlowFilter, setRecordFlowFilter] =
     useState<StateLocalFlowFilter>("all");
   const [recordPage, setRecordPage] = useState<StateLocalRecordPage>(
@@ -953,6 +959,7 @@ function StateLocalSummaryPanel({
     }));
     fetchStateLocalRecords({
       level: level === "council" ? "council" : "state",
+      jurisdictionCode: activeJurisdictionCode,
       flowKind: activeFlowKind,
       limit: 25,
       signal: controller.signal
@@ -978,6 +985,7 @@ function StateLocalSummaryPanel({
     return () => recordFetchRef.current?.abort();
   }, [
     activeFlowKind,
+    activeJurisdictionCode,
     level,
     recordFlowFilter,
     status,
@@ -998,6 +1006,7 @@ function StateLocalSummaryPanel({
     }));
     fetchStateLocalRecords({
       level: level === "council" ? "council" : "state",
+      jurisdictionCode: activeJurisdictionCode,
       flowKind: activeFlowKind,
       cursor: nextRecordCursor,
       limit: 25,
@@ -1071,8 +1080,8 @@ function StateLocalSummaryPanel({
   const headerStatus = hasStateLocalRows
     ? `${levelName} partial data · refreshed ${formatCompactDateTime(
         summary.latest_source_fetched_at
-      )}`
-    : `${levelName} aggregate context`;
+      )} · ${jurisdictionLabel}`
+    : `${levelName} aggregate context · ${jurisdictionLabel}`;
 
   return (
     <div className="state-local-summary" aria-label="State and local disclosure summary">

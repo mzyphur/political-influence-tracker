@@ -64,6 +64,7 @@ export async function fetchCoverage(signal?: AbortSignal): Promise<CoverageRespo
 
 export async function fetchStateLocalSummary(options: {
   level?: "state" | "council" | "local";
+  jurisdictionCode?: string;
   limit?: number;
   signal?: AbortSignal;
 }): Promise<StateLocalSummaryResponse> {
@@ -71,6 +72,9 @@ export async function fetchStateLocalSummary(options: {
     limit: String(options.limit ?? 8)
   });
   if (options.level) params.set("level", options.level);
+  if (options.jurisdictionCode && options.jurisdictionCode !== "All") {
+    params.set("jurisdiction_code", options.jurisdictionCode);
+  }
   return fetchJson<StateLocalSummaryResponse>(
     apiUrl("/api/state-local/summary", params),
     options.signal
@@ -79,6 +83,7 @@ export async function fetchStateLocalSummary(options: {
 
 export async function fetchStateLocalRecords(options: {
   level?: "state" | "council" | "local";
+  jurisdictionCode?: string;
   flowKind?:
     | "act_annual_free_facilities_use"
     | "act_annual_gift_in_kind"
@@ -116,6 +121,9 @@ export async function fetchStateLocalRecords(options: {
     limit: String(options.limit ?? 25)
   });
   if (options.level) params.set("level", options.level);
+  if (options.jurisdictionCode && options.jurisdictionCode !== "All") {
+    params.set("jurisdiction_code", options.jurisdictionCode);
+  }
   if (options.flowKind) params.set("flow_kind", options.flowKind);
   if (options.cursor) params.set("cursor", options.cursor);
   return fetchJson<StateLocalRecordsResponse>(

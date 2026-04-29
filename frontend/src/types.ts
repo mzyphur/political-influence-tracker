@@ -257,6 +257,8 @@ export type StateLocalRecordsResponse = {
   jurisdiction: string;
   requested_level: string;
   db_level: string;
+  requested_jurisdiction_code: string | null;
+  db_jurisdiction_codes: string[];
   flow_kind: string | null;
   records: StateLocalSummaryRecord[];
   record_count: number;
@@ -273,6 +275,8 @@ export type StateLocalSummaryResponse = {
   jurisdiction: string;
   requested_level: string;
   db_level: string;
+  requested_jurisdiction_code: string | null;
+  db_jurisdiction_codes: string[];
   totals_by_level: StateLocalSummaryTotalRow[];
   source_document_count: number;
   latest_source_fetched_at: string | null;

@@ -70,6 +70,16 @@ STATE_LOCAL_RECORD_FLOW_KINDS = {
     "vic_public_funding_payment",
     "wa_political_contribution",
 }
+STATE_LOCAL_JURISDICTION_FILTER_CODES = (
+    "ACT",
+    "NSW",
+    "NT",
+    "QLD",
+    "SA",
+    "TAS",
+    "VIC",
+    "WA",
+)
 STATE_LOCAL_GIFT_FLOW_KINDS = (
     "act_annual_free_facilities_use",
     "act_annual_gift_in_kind",
@@ -348,11 +358,13 @@ def _state_local_record_cursor(
     *,
     db_level: str | None,
     flow_kind: str | None,
+    jurisdiction_code: str | None,
 ) -> str:
     record_date = row.get("date_received") or row.get("date_reported")
     payload = {
         "db_level": db_level or "all",
         "flow_kind": flow_kind or "all",
+        "jurisdiction_code": jurisdiction_code or "all",
         "record_date": record_date.isoformat() if record_date else None,
         "id": int(row["id"]),
     }
@@ -365,6 +377,7 @@ def _decode_state_local_record_cursor(
     *,
     db_level: str | None,
     flow_kind: str | None,
+    jurisdiction_code: str | None,
 ) -> tuple[date, int]:
     try:
         padded = cursor + ("=" * (-len(cursor) % 4))
@@ -385,6 +398,8 @@ def _decode_state_local_record_cursor(
         flow_kind or "all"
     ):
         raise ValueError("State/local record cursor does not match the requested filters.")
+    if payload.get("jurisdiction_code") != (jurisdiction_code or "all"):
+        raise ValueError("State/local record cursor does not match the requested filters.")
     return (_cursor_date(payload.get("record_date")), record_id)
 
 
@@ -393,6 +408,7 @@ def _with_state_local_record_cursors(
     *,
     db_level: str | None,
     flow_kind: str | None,
+    jurisdiction_code: str | None,
 ) -> list[dict[str, Any]]:
     for row in rows:
         if "supporting_documents" in row:
@@ -403,6 +419,7 @@ def _with_state_local_record_cursors(
             row,
             db_level=db_level,
             flow_kind=flow_kind,
+            jurisdiction_code=jurisdiction_code,
         )
     return rows
 
@@ -433,6 +450,57 @@ def _public_supporting_documents(value: Any) -> list[dict[str, Any]]:
             }
         )
     return documents
+
+
+def _normalize_state_local_jurisdiction_code(value: str | None) -> str | None:
+    if value is None:
+        return None
+    code = value.strip().upper()
+    if not code:
+        return None
+    if code not in STATE_LOCAL_JURISDICTION_FILTER_CODES:
+        raise ValueError(
+            "jurisdiction_code must be one of "
+            f"{', '.join(STATE_LOCAL_JURISDICTION_FILTER_CODES)}, or omitted"
+        )
+    return code
+
+
+def _jurisdiction_codes_for_filter(
+    jurisdiction_code: str | None,
+    *,
+    db_level: str | None,
+) -> list[str]:
+    code = _normalize_state_local_jurisdiction_code(jurisdiction_code)
+    if code is None:
+        return []
+    if code == "QLD" and db_level == "local":
+        return ["QLD-LOCAL"]
+    if code == "QLD" and db_level is None:
+        return ["QLD", "QLD-LOCAL"]
+    return [code]
+
+
+def _state_local_sql_filters(
+    *,
+    db_level: str | None,
+    jurisdiction_code: str | None,
+) -> tuple[str, list[Any], str | None, list[str]]:
+    clauses: list[str] = []
+    params: list[Any] = []
+    if db_level:
+        clauses.append("jurisdiction.level = %s")
+        params.append(db_level)
+    jurisdiction_codes = _jurisdiction_codes_for_filter(
+        jurisdiction_code,
+        db_level=db_level,
+    )
+    if jurisdiction_codes:
+        clauses.append("jurisdiction.code = ANY(%s)")
+        params.append(jurisdiction_codes)
+    sql = "".join(f"\n          AND {clause}" for clause in clauses)
+    normalized_jurisdiction_code = _normalize_state_local_jurisdiction_code(jurisdiction_code)
+    return sql, params, normalized_jurisdiction_code, jurisdiction_codes
 
 
 def _table_exists(conn, table_name: str) -> bool:
@@ -1734,18 +1802,23 @@ def _qld_summary_rows(
     role: str,
     flow_kind: str | tuple[str, ...],
     db_level: str | None,
+    jurisdiction_code: str | None,
     limit: int,
 ) -> list[dict[str, Any]]:
     if role not in {"source", "recipient"}:
         raise ValueError("role must be source or recipient")
     entity_column = "source_entity_id" if role == "source" else "recipient_entity_id"
     raw_name_column = "source_raw_name" if role == "source" else "recipient_raw_name"
-    level_filter = "AND jurisdiction.level = %s" if db_level else ""
     flow_kinds = (flow_kind,) if isinstance(flow_kind, str) else flow_kind
+    filter_sql, filter_params, _, _ = _state_local_sql_filters(
+        db_level=db_level,
+        jurisdiction_code=jurisdiction_code,
+    )
     params: tuple[Any, ...] = (
-        (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), list(flow_kinds), db_level, limit)
-        if db_level
-        else (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), list(flow_kinds), limit)
+        list(STATE_LOCAL_MONEY_SOURCE_DATASETS),
+        list(flow_kinds),
+        *filter_params,
+        limit,
     )
     return _fetch_dicts(
         conn,
@@ -1774,7 +1847,7 @@ def _qld_summary_rows(
         WHERE money_flow.metadata->>'source_dataset' = ANY(%s)
           AND money_flow.is_current IS TRUE
           AND money_flow.metadata->>'flow_kind' = ANY(%s)
-          {level_filter}
+          {filter_sql}
         GROUP BY entity.id, COALESCE(entity.canonical_name, money_flow.{raw_name_column})
         ORDER BY
             sum(money_flow.amount) FILTER (
@@ -1794,12 +1867,16 @@ def _qld_context_summary_rows(
     *,
     context_key: str,
     db_level: str | None,
+    jurisdiction_code: str | None,
     limit: int,
 ) -> list[dict[str, Any]]:
     if context_key not in {"event", "local_electorate"}:
         raise ValueError("context_key must be event or local_electorate")
-    level_filter = "AND jurisdiction.level = %s" if db_level else ""
-    params: tuple[Any, ...] = (db_level, limit) if db_level else (limit,)
+    filter_sql, filter_params, _, _ = _state_local_sql_filters(
+        db_level=db_level,
+        jurisdiction_code=jurisdiction_code,
+    )
+    params: tuple[Any, ...] = (*filter_params, limit)
     return _fetch_dicts(
         conn,
         f"""
@@ -1851,7 +1928,7 @@ def _qld_context_summary_rows(
         WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
           AND money_flow.is_current IS TRUE
           AND money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'status' = 'matched'
-          {level_filter}
+          {filter_sql}
         GROUP BY
             money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'external_id',
             money_flow.metadata->'qld_ecq_context'->'{context_key}'->>'name',
@@ -1875,14 +1952,14 @@ def _qld_recent_money_flow_rows(
     conn,
     *,
     db_level: str | None,
+    jurisdiction_code: str | None,
     limit: int,
 ) -> list[dict[str, Any]]:
-    level_filter = "AND jurisdiction.level = %s" if db_level else ""
-    params: tuple[Any, ...] = (
-        (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), db_level, limit)
-        if db_level
-        else (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), limit)
+    filter_sql, filter_params, normalized_jurisdiction_code, _ = _state_local_sql_filters(
+        db_level=db_level,
+        jurisdiction_code=jurisdiction_code,
     )
+    params: tuple[Any, ...] = (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), *filter_params, limit)
     rows = _fetch_dicts(
         conn,
         f"""
@@ -1969,7 +2046,7 @@ def _qld_recent_money_flow_rows(
           ON recipient_entity.id = money_flow.recipient_entity_id
         WHERE money_flow.metadata->>'source_dataset' = ANY(%s)
           AND money_flow.is_current IS TRUE
-          {level_filter}
+          {filter_sql}
         ORDER BY
             COALESCE(money_flow.date_received, money_flow.date_reported) DESC NULLS LAST,
             money_flow.id DESC
@@ -1977,12 +2054,18 @@ def _qld_recent_money_flow_rows(
         """,
         params,
     )
-    return _with_state_local_record_cursors(rows, db_level=db_level, flow_kind=None)
+    return _with_state_local_record_cursors(
+        rows,
+        db_level=db_level,
+        flow_kind=None,
+        jurisdiction_code=normalized_jurisdiction_code,
+    )
 
 
 def get_state_local_records(
     *,
     level: str | None = None,
+    jurisdiction_code: str | None = None,
     flow_kind: str | None = None,
     cursor: str | None = None,
     limit: int = 25,
@@ -1999,9 +2082,19 @@ def get_state_local_records(
         )
     if limit < 1 or limit > 100:
         raise ValueError("State/local record page limit must be between 1 and 100.")
+    normalized_jurisdiction_code = _normalize_state_local_jurisdiction_code(jurisdiction_code)
+    jurisdiction_codes = _jurisdiction_codes_for_filter(
+        normalized_jurisdiction_code,
+        db_level=db_level,
+    )
 
     cursor_values = (
-        _decode_state_local_record_cursor(cursor, db_level=db_level, flow_kind=flow_kind)
+        _decode_state_local_record_cursor(
+            cursor,
+            db_level=db_level,
+            flow_kind=flow_kind,
+            jurisdiction_code=normalized_jurisdiction_code,
+        )
         if cursor
         else None
     )
@@ -2014,6 +2107,9 @@ def get_state_local_records(
         if db_level:
             where_clauses.append("jurisdiction.level = %s")
             params.append(db_level)
+        if jurisdiction_codes:
+            where_clauses.append("jurisdiction.code = ANY(%s)")
+            params.append(jurisdiction_codes)
         if flow_kind:
             where_clauses.append("money_flow.metadata->>'flow_kind' = %s")
             params.append(flow_kind)
@@ -2137,7 +2233,12 @@ def get_state_local_records(
             """,
             tuple(page_params),
         )
-    rows = _with_state_local_record_cursors(rows, db_level=db_level, flow_kind=flow_kind)
+    rows = _with_state_local_record_cursors(
+        rows,
+        db_level=db_level,
+        flow_kind=flow_kind,
+        jurisdiction_code=normalized_jurisdiction_code,
+    )
     has_more = len(rows) > limit
     records = rows[:limit]
     return _jsonable(
@@ -2147,6 +2248,8 @@ def get_state_local_records(
             "jurisdiction": "Loaded state/local coverage",
             "requested_level": level or "all",
             "db_level": db_level or "all",
+            "requested_jurisdiction_code": normalized_jurisdiction_code,
+            "db_jurisdiction_codes": jurisdiction_codes,
             "flow_kind": flow_kind,
             "records": records,
             "record_count": len(records),
@@ -2186,6 +2289,7 @@ def get_state_local_records(
 def get_state_local_summary(
     *,
     level: str | None = None,
+    jurisdiction_code: str | None = None,
     limit: int = 8,
     database_url: str | None = None,
 ) -> dict[str, Any]:
@@ -2193,10 +2297,14 @@ def get_state_local_summary(
     db_level = level_map.get(level or "") if level else None
     if level and db_level is None:
         raise ValueError("level must be state, council, local, or omitted")
+    filter_sql, filter_params, normalized_jurisdiction_code, jurisdiction_codes = (
+        _state_local_sql_filters(
+            db_level=db_level,
+            jurisdiction_code=jurisdiction_code,
+        )
+    )
 
     with connect(database_url) as conn:
-        level_filter = "AND jurisdiction.level = %s" if db_level else ""
-        params: tuple[Any, ...] = (db_level,) if db_level else ()
         totals_rows = _fetch_dicts(
             conn,
             f"""
@@ -2286,7 +2394,7 @@ def get_state_local_summary(
               ON jurisdiction.id = money_flow.jurisdiction_id
             WHERE money_flow.metadata->>'source_dataset' = ANY(%s)
               AND money_flow.is_current IS TRUE
-              {level_filter}
+              {filter_sql}
             GROUP BY jurisdiction.name, jurisdiction.level, jurisdiction.code
             ORDER BY jurisdiction.level, jurisdiction.name
             """,
@@ -2302,7 +2410,7 @@ def get_state_local_summary(
                 list(STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS),
                 list(STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS),
                 list(STATE_LOCAL_MONEY_SOURCE_DATASETS),
-                *params,
+                *filter_params,
             ),
         )
         freshness_rows = _fetch_dicts(
@@ -2318,15 +2426,16 @@ def get_state_local_summary(
               ON source_document.id = money_flow.source_document_id
             WHERE money_flow.metadata->>'source_dataset' = ANY(%s)
               AND money_flow.is_current IS TRUE
-              {level_filter}
+              {filter_sql}
             """,
-            (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), *params),
+            (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), *filter_params),
         )
         top_gift_donors = _qld_summary_rows(
             conn,
             role="source",
             flow_kind=STATE_LOCAL_GIFT_FLOW_KINDS,
             db_level=db_level,
+            jurisdiction_code=normalized_jurisdiction_code,
             limit=limit,
         )
         top_gift_recipients = _qld_summary_rows(
@@ -2334,6 +2443,7 @@ def get_state_local_summary(
             role="recipient",
             flow_kind=STATE_LOCAL_GIFT_FLOW_KINDS,
             db_level=db_level,
+            jurisdiction_code=normalized_jurisdiction_code,
             limit=limit,
         )
         top_expenditure_actors = _qld_summary_rows(
@@ -2341,6 +2451,7 @@ def get_state_local_summary(
             role="source",
             flow_kind="qld_electoral_expenditure",
             db_level=db_level,
+            jurisdiction_code=normalized_jurisdiction_code,
             limit=limit,
         )
         top_public_funding_recipients = _qld_summary_rows(
@@ -2348,6 +2459,7 @@ def get_state_local_summary(
             role="recipient",
             flow_kind=STATE_LOCAL_PUBLIC_FUNDING_FLOW_KINDS,
             db_level=db_level,
+            jurisdiction_code=normalized_jurisdiction_code,
             limit=limit,
         )
         top_return_summary_sources = _qld_summary_rows(
@@ -2355,6 +2467,7 @@ def get_state_local_summary(
             role="source",
             flow_kind=STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS,
             db_level=db_level,
+            jurisdiction_code=normalized_jurisdiction_code,
             limit=limit,
         )
         top_return_summary_recipients = _qld_summary_rows(
@@ -2362,23 +2475,27 @@ def get_state_local_summary(
             role="recipient",
             flow_kind=STATE_LOCAL_RETURN_SUMMARY_FLOW_KINDS,
             db_level=db_level,
+            jurisdiction_code=normalized_jurisdiction_code,
             limit=limit,
         )
         top_events = _qld_context_summary_rows(
             conn,
             context_key="event",
             db_level=db_level,
+            jurisdiction_code=normalized_jurisdiction_code,
             limit=limit,
         )
         top_local_electorates = _qld_context_summary_rows(
             conn,
             context_key="local_electorate",
             db_level=db_level,
+            jurisdiction_code=normalized_jurisdiction_code,
             limit=limit,
         )
         recent_records = _qld_recent_money_flow_rows(
             conn,
             db_level=db_level,
+            jurisdiction_code=normalized_jurisdiction_code,
             limit=limit,
         )
         aggregate_context_totals: list[dict[str, Any]] = []
@@ -2412,7 +2529,7 @@ def get_state_local_summary(
                   ON source_document.id = aggregate_context_observation.source_document_id
                 WHERE aggregate_context_observation.source_dataset = 'nsw_electoral_disclosures'
                   AND aggregate_context_observation.is_current IS TRUE
-                  {level_filter}
+                  {filter_sql}
                 GROUP BY
                     jurisdiction.name,
                     jurisdiction.level,
@@ -2421,7 +2538,7 @@ def get_state_local_summary(
                     aggregate_context_observation.context_type
                 ORDER BY jurisdiction.name, aggregate_context_observation.context_type
                 """,
-                params,
+                tuple(filter_params),
             )
             top_aggregate_donor_locations = _fetch_dicts(
                 conn,
@@ -2454,13 +2571,13 @@ def get_state_local_summary(
                   ON source_document.id = aggregate_context_observation.source_document_id
                 WHERE aggregate_context_observation.source_dataset = 'nsw_electoral_disclosures'
                   AND aggregate_context_observation.is_current IS TRUE
-                  {level_filter}
+                  {filter_sql}
                 ORDER BY aggregate_context_observation.amount DESC NULLS LAST,
                     aggregate_context_observation.record_count DESC NULLS LAST,
                     aggregate_context_observation.geography_name
                 LIMIT %s
                 """,
-                (*params, limit),
+                (*filter_params, limit),
             )
 
     return _jsonable(
@@ -2470,6 +2587,8 @@ def get_state_local_summary(
             "jurisdiction": "Loaded state/local coverage",
             "requested_level": level or "all",
             "db_level": db_level or "all",
+            "requested_jurisdiction_code": normalized_jurisdiction_code,
+            "db_jurisdiction_codes": jurisdiction_codes,
             "totals_by_level": totals_rows,
             "source_document_count": (
                 freshness_rows[0]["source_document_count"] if freshness_rows else 0

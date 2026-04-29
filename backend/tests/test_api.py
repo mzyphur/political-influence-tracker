@@ -124,14 +124,17 @@ def test_coverage_endpoint_delegates_to_query_layer(monkeypatch) -> None:
 def test_state_local_summary_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     captured = {}
 
-    def fake_summary(level=None, limit=8):
+    def fake_summary(level=None, jurisdiction_code=None, limit=8):
         captured["level"] = level
+        captured["jurisdiction_code"] = jurisdiction_code
         captured["limit"] = limit
         return {
             "status": "ok",
             "source_family": "qld_ecq_eds",
             "requested_level": level,
             "db_level": "local",
+            "requested_jurisdiction_code": jurisdiction_code,
+            "db_jurisdiction_codes": ["QLD-LOCAL"],
             "totals_by_level": [],
             "source_document_count": 0,
             "latest_source_fetched_at": None,
@@ -147,20 +150,31 @@ def test_state_local_summary_endpoint_delegates_to_query_layer(monkeypatch) -> N
     monkeypatch.setattr(queries, "get_state_local_summary", fake_summary)
     client = TestClient(app)
 
-    response = client.get("/api/state-local/summary", params={"level": "council", "limit": 5})
+    response = client.get(
+        "/api/state-local/summary",
+        params={"level": "council", "jurisdiction_code": "qld", "limit": 5},
+    )
 
     assert response.status_code == 200
     assert response.json()["source_family"] == "qld_ecq_eds"
-    assert captured == {"level": "council", "limit": 5}
+    assert captured == {"level": "council", "jurisdiction_code": "qld", "limit": 5}
 
 
 def test_state_local_records_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     captured = {}
 
-    def fake_records(level=None, flow_kind=None, cursor=None, limit=25, database_url=None):
+    def fake_records(
+        level=None,
+        jurisdiction_code=None,
+        flow_kind=None,
+        cursor=None,
+        limit=25,
+        database_url=None,
+    ):
         captured.update(
             {
                 "level": level,
+                "jurisdiction_code": jurisdiction_code,
                 "flow_kind": flow_kind,
                 "cursor": cursor,
                 "limit": limit,
@@ -172,6 +186,8 @@ def test_state_local_records_endpoint_delegates_to_query_layer(monkeypatch) -> N
             "source_family": "qld_ecq_eds",
             "requested_level": level,
             "db_level": "local",
+            "requested_jurisdiction_code": jurisdiction_code,
+            "db_jurisdiction_codes": ["WA"],
             "flow_kind": flow_kind,
             "records": [],
             "record_count": 0,
@@ -189,6 +205,7 @@ def test_state_local_records_endpoint_delegates_to_query_layer(monkeypatch) -> N
         "/api/state-local/records",
         params={
             "level": "council",
+            "jurisdiction_code": "WA",
             "flow_kind": "wa_political_contribution",
             "cursor": "abc123",
             "limit": "9",
@@ -199,6 +216,7 @@ def test_state_local_records_endpoint_delegates_to_query_layer(monkeypatch) -> N
     assert response.json()["flow_kind"] == "wa_political_contribution"
     assert captured == {
         "level": "council",
+        "jurisdiction_code": "WA",
         "flow_kind": "wa_political_contribution",
         "cursor": "abc123",
         "limit": 9,
@@ -209,13 +227,22 @@ def test_state_local_records_endpoint_delegates_to_query_layer(monkeypatch) -> N
 def test_state_local_records_endpoint_accepts_act_annual_flow_filters(monkeypatch) -> None:
     captured = []
 
-    def fake_records(level=None, flow_kind=None, cursor=None, limit=25, database_url=None):
+    def fake_records(
+        level=None,
+        jurisdiction_code=None,
+        flow_kind=None,
+        cursor=None,
+        limit=25,
+        database_url=None,
+    ):
         captured.append(flow_kind)
         return {
             "status": "ok",
             "source_family": "state_local_disclosures",
             "requested_level": level or "all",
             "db_level": level or "all",
+            "requested_jurisdiction_code": jurisdiction_code,
+            "db_jurisdiction_codes": [],
             "flow_kind": flow_kind,
             "records": [],
             "record_count": 0,

@@ -109,14 +109,29 @@ def coverage() -> dict:
 @app.get("/api/state-local/summary")
 def state_local_summary(
     level: Annotated[str | None, Query(pattern="^(state|council|local)$")] = None,
+    jurisdiction_code: Annotated[
+        str | None,
+        Query(pattern="^(ACT|NSW|NT|QLD|SA|TAS|VIC|WA|act|nsw|nt|qld|sa|tas|vic|wa)$"),
+    ] = None,
     limit: Annotated[int, Query(ge=1, le=25)] = 8,
 ) -> dict:
-    return queries.get_state_local_summary(level=level, limit=limit)
+    try:
+        return queries.get_state_local_summary(
+            level=level,
+            jurisdiction_code=jurisdiction_code,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/state-local/records")
 def state_local_records(
     level: Annotated[str | None, Query(pattern="^(state|council|local)$")] = None,
+    jurisdiction_code: Annotated[
+        str | None,
+        Query(pattern="^(ACT|NSW|NT|QLD|SA|TAS|VIC|WA|act|nsw|nt|qld|sa|tas|vic|wa)$"),
+    ] = None,
     flow_kind: Annotated[
         str | None,
         Query(
@@ -146,6 +161,7 @@ def state_local_records(
     try:
         return queries.get_state_local_records(
             level=level,
+            jurisdiction_code=jurisdiction_code,
             flow_kind=flow_kind,
             cursor=cursor,
             limit=limit,
