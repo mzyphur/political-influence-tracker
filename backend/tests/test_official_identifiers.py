@@ -10,6 +10,7 @@ from au_politics_money.ingest.official_identifiers import (
     MissingAbnLookupGuid,
     extract_official_identifiers_from_file,
     fetch_abn_lookup_web_record,
+    fetch_official_identifier_bulk_resources,
     format_abn,
     format_acn,
     is_valid_abn,
@@ -19,6 +20,7 @@ from au_politics_money.ingest.official_identifiers import (
     iter_acnc_charity_records,
     iter_asic_company_records,
     latest_official_identifier_jsonl_paths,
+    select_official_identifier_bulk_resources,
     write_lobbyist_identifier_records,
 )
 
@@ -376,6 +378,192 @@ def test_fetch_abn_lookup_web_record_uses_current_acn_method(
     assert Path(summary["official_identifiers_jsonl"]).name.endswith(
         "_acn_123456780.jsonl"
     )
+
+
+def test_select_official_identifier_bulk_resources_prefers_supported_hints() -> None:
+    discovery_payload = {
+        "packages": [
+            {
+                "source_id": "asic_companies_dataset",
+                "package_id": "asic-companies",
+                "canonical_package_id": "asic-canonical",
+                "resources": [
+                    {
+                        "id": "old",
+                        "name": "Company Dataset - Historical",
+                        "format": "CSV",
+                        "url": "https://example.test/old.csv",
+                    },
+                    {
+                        "id": "current",
+                        "name": "Company Dataset - Current",
+                        "format": "CSV",
+                        "url": "https://example.test/current.csv",
+                    },
+                ],
+            },
+            {
+                "source_id": "abn_lookup",
+                "package_id": "abn-bulk-extract",
+                "canonical_package_id": "abn-canonical",
+                "resources": [
+                    {
+                        "id": "resource-list",
+                        "name": "ABN Bulk Extract Resource List",
+                        "format": "CSV",
+                        "url": "https://example.test/resource-list.csv",
+                    },
+                    {
+                        "id": "part-1",
+                        "name": "ABN Bulk Extract Part 1",
+                        "format": "ZIP",
+                        "url": "https://example.test/part-1.zip",
+                    },
+                    {
+                        "id": "part-2",
+                        "name": "ABN Bulk Extract Part 2",
+                        "format": "ZIP",
+                        "url": "https://example.test/part-2.zip",
+                    },
+                ],
+            },
+        ]
+    }
+
+    selected = select_official_identifier_bulk_resources(discovery_payload)
+
+    selected_by_source = {}
+    for item in selected:
+        selected_by_source.setdefault(item["source_id"], []).append(item["resource"]["id"])
+    assert selected_by_source["asic_companies_dataset"] == ["current"]
+    assert selected_by_source["abn_lookup"] == ["part-1", "part-2"]
+    assert "resource-list" not in selected_by_source["abn_lookup"]
+
+
+def test_fetch_official_identifier_bulk_resources_groups_multi_part_sources(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    discovery_path = tmp_path / "discovery.json"
+    discovery_path.write_text(
+        json.dumps(
+            {
+                "packages": [
+                    {
+                        "source_id": "asic_companies_dataset",
+                        "package_id": "asic-companies",
+                        "canonical_package_id": "asic-canonical",
+                        "resources": [
+                            {
+                                "id": "asic-current",
+                                "name": "Company Dataset - Current",
+                                "format": "CSV",
+                                "url": "https://example.test/asic.csv",
+                            }
+                        ],
+                    },
+                    {
+                        "source_id": "abn_lookup",
+                        "package_id": "abn-bulk-extract",
+                        "canonical_package_id": "abn-canonical",
+                        "resources": [
+                            {
+                                "id": "abn-part-1",
+                                "name": "ABN Bulk Extract Part 1",
+                                "format": "XML",
+                                "url": "https://example.test/abn-part-1.xml",
+                            },
+                            {
+                                "id": "abn-part-2",
+                                "name": "ABN Bulk Extract Part 2",
+                                "format": "XML",
+                                "url": "https://example.test/abn-part-2.xml",
+                            },
+                        ],
+                    },
+                ]
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    def fake_open_bytes_with_retries(request, *, timeout=60, tries=4):
+        if request.full_url.endswith("asic.csv"):
+            return (
+                b"Company Name,ACN,ABN\nExample Energy Pty Ltd,123456780,51824753556\n",
+                200,
+                {"Content-Type": "text/csv"},
+            )
+        if request.full_url.endswith("abn-part-1.xml"):
+            return (
+                b"""
+                <ABRPayloadSearchResults>
+                  <ABR>
+                    <ABN status="Active">51824753556</ABN>
+                    <MainEntity>
+                      <NonIndividualName>
+                        <NonIndividualNameText>Example Energy Pty Ltd</NonIndividualNameText>
+                      </NonIndividualName>
+                    </MainEntity>
+                  </ABR>
+                </ABRPayloadSearchResults>
+                """,
+                200,
+                {"Content-Type": "text/xml"},
+            )
+        if request.full_url.endswith("abn-part-2.xml"):
+            return (
+                b"""
+                <ABRPayloadSearchResults>
+                  <ABR>
+                    <ABN status="Active">51824753556</ABN>
+                    <MainEntity>
+                      <NonIndividualName>
+                        <NonIndividualNameText>Second Example Pty Ltd</NonIndividualNameText>
+                      </NonIndividualName>
+                    </MainEntity>
+                  </ABR>
+                </ABRPayloadSearchResults>
+                """,
+                200,
+                {"Content-Type": "text/xml"},
+            )
+        raise AssertionError(request.full_url)
+
+    monkeypatch.setattr(
+        official_identifier_module,
+        "_open_bytes_with_retries",
+        fake_open_bytes_with_retries,
+    )
+
+    summary_path = fetch_official_identifier_bulk_resources(
+        source_ids=["asic_companies_dataset", "abn_lookup"],
+        discovery_path=discovery_path,
+        raw_dir=tmp_path / "raw",
+        processed_dir=tmp_path / "processed",
+    )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+    assert summary["source_ids"] == ["abn_lookup", "asic_companies_dataset"]
+    assert len(summary["downloaded_resources"]) == 3
+    jsonl_paths = [Path(path) for path in summary["official_identifiers_jsonl_paths"]]
+    assert len(jsonl_paths) == 2
+    abn_jsonl = next(path for path in jsonl_paths if "abn_lookup_bulk" in path.name)
+    abn_records = [
+        json.loads(line) for line in abn_jsonl.read_text(encoding="utf-8").splitlines()
+    ]
+    assert [record["display_name"] for record in abn_records] == [
+        "Example Energy Pty Ltd",
+        "Second Example Pty Ltd",
+    ]
+    assert summary["source_summaries"]["abn_lookup"]["record_count"] == 2
+    for download in summary["downloaded_resources"]:
+        metadata = json.loads(Path(download["source_metadata_path"]).read_text(encoding="utf-8"))
+        assert metadata["metadata_kind"] == "data_gov_official_identifier_resource"
+        assert Path(metadata["body_path"]).exists()
 
 
 def test_latest_official_identifier_paths_keep_all_incremental_abn_web_lookups(

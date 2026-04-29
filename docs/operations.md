@@ -366,15 +366,35 @@ cd backend
   --skip-official-decision-records --skip-official-decision-record-documents
 ```
 
-Targeted ABN Lookup web-service enrichment for a reviewed ABN or ACN:
+Official identifier bulk enrichment and targeted ABN Lookup web-service
+enrichment for a reviewed ABN or ACN:
 
 ```bash
 cd backend
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/au-politics-money discover-official-identifier-sources
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/au-politics-money fetch-official-identifier-bulk \
+    --source-id asic_companies_dataset \
+    --source-id acnc_register \
+    --extract-limit-per-source 5000
 .venv/bin/dotenv -f .env run -- \
   .venv/bin/au-politics-money fetch-abn-lookup-web abn "51 824 753 556"
 .venv/bin/dotenv -f .env run -- \
   .venv/bin/au-politics-money fetch-abn-lookup-web acn "123 456 780"
 ```
+
+`fetch-official-identifier-bulk` reads the data.gov CKAN discovery artifact,
+selects supported ASIC, ACNC, and ABN Bulk resources using source-specific
+hints, archives each selected body plus metadata under `data/raw/`, and emits
+one `official_identifier_record_v1` snapshot JSONL per source under
+`data/processed/official_identifiers/`. ABN Bulk resources can be multi-part;
+the fetcher groups selected ABN parts into one source snapshot so the loader
+does not accidentally treat only the newest part as current. Omit
+`--extract-limit-per-source` for a full refresh. Use
+`run-federal-foundation-pipeline --include-official-identifier-bulk` when a
+scheduled run should refresh these large bulk files; smoke runs cap extraction
+per source.
 
 This uses the current ABN Lookup document-style methods
 `SearchByABNv202001` and `SearchByASICv201408`, archives the returned XML,

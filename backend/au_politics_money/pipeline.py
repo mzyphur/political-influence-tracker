@@ -58,6 +58,7 @@ from au_politics_money.ingest.land_mask import (
 )
 from au_politics_money.ingest.official_identifiers import (
     discover_official_identifier_sources,
+    fetch_official_identifier_bulk_resources,
     fetch_lobbyist_register_snapshot,
 )
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
@@ -255,6 +256,7 @@ def run_federal_foundation_pipeline(
     skip_house_pdfs: bool = False,
     skip_pdf_text: bool = False,
     include_votes: bool = False,
+    include_official_identifier_bulk: bool = False,
     votes_start_date: str | None = None,
     votes_end_date: str | None = None,
 ) -> Path:
@@ -273,6 +275,7 @@ def run_federal_foundation_pipeline(
             "skip_house_pdfs": skip_house_pdfs,
             "skip_pdf_text": skip_pdf_text,
             "include_votes": include_votes,
+            "include_official_identifier_bulk": include_official_identifier_bulk,
             "votes_start_date": votes_start_date,
             "votes_end_date": votes_end_date,
             **_postcode_seed_metadata(postcode_seed),
@@ -407,6 +410,15 @@ def run_federal_foundation_pipeline(
 
     steps.append(("classify_entities", classify_entity_names))
     steps.append(("discover_official_identifier_sources", discover_official_identifier_sources))
+    if include_official_identifier_bulk:
+        steps.append(
+            (
+                "fetch_official_identifier_bulk_resources",
+                lambda: fetch_official_identifier_bulk_resources(
+                    extract_limit_per_source=25 if smoke else None,
+                ),
+            )
+        )
     steps.append(
         (
             "fetch_lobbyist_register_snapshot",

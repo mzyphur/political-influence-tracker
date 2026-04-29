@@ -383,6 +383,12 @@ Recommended initial schedule:
 - Use `run-federal-foundation-pipeline --refresh-existing-sources` for scheduled
   federal updates so cached but update-sensitive sources are fetched again and
   checksum changes are captured.
+- Use `run-federal-foundation-pipeline --include-official-identifier-bulk` on
+  scheduled identifier-refresh runs when ASIC, ACNC, or ABN Bulk register
+  snapshots should be refreshed. These large data.gov files are archived as raw
+  source snapshots and normalized into one official-identifier JSONL per source;
+  ABN multi-part resources are grouped so a current-source load does not drop
+  older parts of the same bulk extract.
 - Daily lightweight source-index check.
 - Manual review queue after each run.
 - Manual review decisions stored separately from machine-produced records.

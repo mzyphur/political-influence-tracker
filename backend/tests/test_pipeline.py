@@ -126,6 +126,13 @@ def test_pipeline_refresh_mode_refetches_cached_update_sensitive_sources(monkeyp
         lambda: "identifier-sources",
     )
     monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_official_identifier_bulk_resources",
+        lambda *, extract_limit_per_source=None: calls.setdefault(
+            "official_identifier_bulk_limit",
+            extract_limit_per_source,
+        ),
+    )
+    monkeypatch.setattr(
         "au_politics_money.pipeline.fetch_lobbyist_register_snapshot",
         lambda limit=None: f"lobbyists:{limit}",
     )
@@ -135,9 +142,12 @@ def test_pipeline_refresh_mode_refetches_cached_update_sensitive_sources(monkeyp
         refresh_existing_sources=True,
         skip_house_pdfs=True,
         skip_pdf_text=True,
+        include_official_identifier_bulk=True,
     )
 
     assert calls["manifest_parameters"]["refresh_existing_sources"] is True
+    assert calls["manifest_parameters"]["include_official_identifier_bulk"] is True
     assert calls["postcode_fetch"] == {"values": postcodes, "refetch": True}
     assert calls["boundary_refetch"] is True
     assert calls["aph_documents"] == {"only_missing": False, "limit": 10}
+    assert calls["official_identifier_bulk_limit"] == 25

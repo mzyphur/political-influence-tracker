@@ -233,6 +233,13 @@ Completed:
   views call the source-row endpoint directly rather than reusing the mixed
   summary sample, preserving pagination correctness and the gift/spend
   evidence-family distinction.
+- Added `fetch-official-identifier-bulk`, a reproducible data.gov bulk
+  identifier fetch/normalize path for ASIC, ACNC, and ABN Bulk resources. The
+  selector uses source-specific CKAN resource hints, archives selected bodies
+  plus metadata, writes one official-identifier JSONL snapshot per source, and
+  groups multi-part ABN resources so current-source loads do not accidentally
+  use only one part. The federal pipeline can opt into this via
+  `--include-official-identifier-bulk`; smoke runs cap extraction per source.
 - Added `prepare-review-bundle`, a reproducible CLI wrapper that materializes
   party/entity link candidates, exports party/entity and sector-policy review
   queues, runs sector-policy suggestions, and writes a manifest for reviewers

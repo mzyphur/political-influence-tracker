@@ -85,6 +85,7 @@ from au_politics_money.ingest.official_identifiers import (
     discover_official_identifier_sources,
     extract_official_identifiers_from_file,
     fetch_abn_lookup_web_record,
+    fetch_official_identifier_bulk_resources,
     fetch_lobbyist_register_snapshot,
 )
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
@@ -459,6 +460,20 @@ def discover_official_identifier_sources_command() -> int:
     return 0
 
 
+def fetch_official_identifier_bulk_command(
+    source_ids: list[str] | None,
+    discovery_path: str | None,
+    extract_limit_per_source: int | None,
+) -> int:
+    summary_path = fetch_official_identifier_bulk_resources(
+        source_ids=source_ids or None,
+        discovery_path=Path(discovery_path) if discovery_path else None,
+        extract_limit_per_source=extract_limit_per_source,
+    )
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
 def fetch_lobbyist_register_command(limit: int | None) -> int:
     summary_path = fetch_lobbyist_register_snapshot(limit=limit)
     print(str(Path(summary_path).resolve()))
@@ -506,6 +521,7 @@ def run_pipeline_command(
     skip_house_pdfs: bool,
     skip_pdf_text: bool,
     include_votes: bool,
+    include_official_identifier_bulk: bool,
     votes_start_date: str | None,
     votes_end_date: str | None,
 ) -> int:
@@ -515,6 +531,7 @@ def run_pipeline_command(
         skip_house_pdfs=skip_house_pdfs,
         skip_pdf_text=skip_pdf_text,
         include_votes=include_votes,
+        include_official_identifier_bulk=include_official_identifier_bulk,
         votes_start_date=votes_start_date,
         votes_end_date=votes_end_date,
     )
@@ -907,6 +924,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("discover-official-identifier-sources")
 
+    official_bulk_parser = subparsers.add_parser("fetch-official-identifier-bulk")
+    official_bulk_parser.add_argument(
+        "--source-id",
+        action="append",
+        choices=("asic_companies_dataset", "acnc_register", "abn_lookup"),
+        help="Limit bulk official identifier fetch to one source; repeat for multiple.",
+    )
+    official_bulk_parser.add_argument(
+        "--discovery-path",
+        help="Use an existing official_identifier_sources discovery JSON artifact.",
+    )
+    official_bulk_parser.add_argument(
+        "--extract-limit-per-source",
+        type=int,
+        help="Normalize at most this many records per source for smoke/testing runs.",
+    )
+
     lobbyist_parser = subparsers.add_parser("fetch-lobbyist-register")
     lobbyist_parser.add_argument("--limit", type=int)
 
@@ -1005,6 +1039,14 @@ def build_parser() -> argparse.ArgumentParser:
     pipeline_parser.add_argument("--skip-house-pdfs", action="store_true")
     pipeline_parser.add_argument("--skip-pdf-text", action="store_true")
     pipeline_parser.add_argument("--include-votes", action="store_true")
+    pipeline_parser.add_argument(
+        "--include-official-identifier-bulk",
+        action="store_true",
+        help=(
+            "Fetch and normalize data.gov ASIC/ACNC/ABN bulk identifier resources. "
+            "Smoke runs cap extraction per source."
+        ),
+    )
     pipeline_parser.add_argument("--votes-start-date")
     pipeline_parser.add_argument("--votes-end-date")
 
@@ -1139,6 +1181,12 @@ def main() -> int:
         return extract_official_aph_divisions_command()
     if args.command == "discover-official-identifier-sources":
         return discover_official_identifier_sources_command()
+    if args.command == "fetch-official-identifier-bulk":
+        return fetch_official_identifier_bulk_command(
+            args.source_id,
+            args.discovery_path,
+            args.extract_limit_per_source,
+        )
     if args.command == "fetch-lobbyist-register":
         return fetch_lobbyist_register_command(args.limit)
     if args.command == "extract-official-identifiers":
@@ -1194,6 +1242,7 @@ def main() -> int:
             args.skip_house_pdfs,
             args.skip_pdf_text,
             args.include_votes,
+            args.include_official_identifier_bulk,
             args.votes_start_date,
             args.votes_end_date,
         )

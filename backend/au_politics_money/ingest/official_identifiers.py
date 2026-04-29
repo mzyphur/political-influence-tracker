@@ -59,6 +59,15 @@ DATA_GOV_PACKAGES: tuple[dict[str, Any], ...] = (
         "resource_hints": ("ABN Bulk Extract Resource List", "ABN Bulk Extract Part"),
     },
 )
+DATA_GOV_PACKAGE_BY_SOURCE_ID = {
+    str(package["source_id"]): package for package in DATA_GOV_PACKAGES
+}
+OFFICIAL_IDENTIFIER_BULK_SOURCE_IDS = tuple(DATA_GOV_PACKAGE_BY_SOURCE_ID)
+OFFICIAL_IDENTIFIER_SUPPORTED_EXTENSIONS = {
+    "asic_companies_dataset": {".csv", ".zip"},
+    "acnc_register": {".csv", ".zip"},
+    "abn_lookup": {".xml", ".zip"},
+}
 
 ANZSIC_SECTIONS: tuple[dict[str, str], ...] = (
     {"code": "A", "label": "Agriculture, Forestry and Fishing"},
@@ -442,6 +451,313 @@ def discover_official_identifier_sources(processed_dir: Path = PROCESSED_DIR) ->
             f"Official identifier source discovery failed for {failed}; artifact: {output_path}"
         )
     return output_path
+
+
+def latest_official_identifier_sources_path(processed_dir: Path = PROCESSED_DIR) -> Path:
+    source_dir = processed_dir / "official_identifier_sources"
+    candidates = sorted(source_dir.glob("*.json"), reverse=True)
+    if not candidates:
+        raise FileNotFoundError("No official identifier source discovery artifact found.")
+    return candidates[0]
+
+
+def _resource_text(resource: dict[str, Any]) -> str:
+    return " ".join(
+        str(resource.get(key) or "")
+        for key in ("name", "format", "mimetype", "url")
+    ).lower()
+
+
+def _resource_suffix(resource: dict[str, Any]) -> str:
+    url = str(resource.get("url") or "").split("?", maxsplit=1)[0].lower()
+    for suffix in (".zip", ".csv", ".xml", ".txt"):
+        if url.endswith(suffix):
+            return suffix
+    resource_format = str(resource.get("format") or "").strip().lower()
+    if resource_format in {"zip", "csv", "xml"}:
+        return f".{resource_format}"
+    return ".bin"
+
+
+def _resource_supported_for_source(source_id: str, resource: dict[str, Any]) -> bool:
+    url = str(resource.get("url") or "").strip()
+    if not url.lower().startswith(("https://", "http://")):
+        return False
+    supported = OFFICIAL_IDENTIFIER_SUPPORTED_EXTENSIONS[source_id]
+    return _resource_suffix(resource) in supported
+
+
+def _resource_hint_score(source_id: str, resource: dict[str, Any]) -> int:
+    package = DATA_GOV_PACKAGE_BY_SOURCE_ID[source_id]
+    text = _resource_text(resource)
+    score = 0
+    for hint in package["resource_hints"]:
+        hint_text = str(hint).lower()
+        if hint_text and hint_text in text:
+            score += 100
+    if "current" in text:
+        score += 15
+    if _resource_supported_for_source(source_id, resource):
+        score += 25
+    if source_id == "abn_lookup":
+        if "part" in text and "resource list" not in text:
+            score += 100
+        if "resource list" in text:
+            score -= 200
+    return score
+
+
+def select_official_identifier_bulk_resources(
+    discovery_payload: dict[str, Any],
+    *,
+    source_ids: Iterable[str] | None = None,
+) -> list[dict[str, Any]]:
+    requested_source_ids = set(source_ids or OFFICIAL_IDENTIFIER_BULK_SOURCE_IDS)
+    unsupported = requested_source_ids - set(OFFICIAL_IDENTIFIER_BULK_SOURCE_IDS)
+    if unsupported:
+        raise ValueError(f"Unsupported official identifier bulk sources: {sorted(unsupported)}")
+
+    selected: list[dict[str, Any]] = []
+    for package in discovery_payload.get("packages", []):
+        source_id = package.get("source_id")
+        if source_id not in requested_source_ids:
+            continue
+        candidates = [
+            {
+                "source_id": source_id,
+                "package_id": package.get("package_id"),
+                "canonical_package_id": package.get("canonical_package_id"),
+                "resource": resource,
+                "selection_score": _resource_hint_score(source_id, resource),
+                "selection_reason": "",
+            }
+            for resource in package.get("resources", [])
+            if _resource_supported_for_source(source_id, resource)
+        ]
+        if not candidates:
+            continue
+        candidates.sort(
+            key=lambda item: (
+                item["selection_score"],
+                str(item["resource"].get("last_modified") or ""),
+                str(item["resource"].get("name") or ""),
+            ),
+            reverse=True,
+        )
+        if source_id == "abn_lookup":
+            abn_parts = [
+                item
+                for item in candidates
+                if "part" in _resource_text(item["resource"])
+                and "resource list" not in _resource_text(item["resource"])
+            ]
+            abn_parts.sort(
+                key=lambda item: (
+                    str(item["resource"].get("name") or ""),
+                    str(item["resource"].get("id") or ""),
+                )
+            )
+            chosen = abn_parts or candidates[:1]
+            for item in chosen:
+                item["selection_reason"] = "abn_bulk_part_resource"
+                selected.append(item)
+            continue
+        candidates[0]["selection_reason"] = "highest_scoring_supported_resource"
+        selected.append(candidates[0])
+    return selected
+
+
+def _download_official_identifier_resource(
+    item: dict[str, Any],
+    *,
+    timestamp: str,
+    raw_dir: Path,
+    timeout: int,
+) -> dict[str, Any]:
+    source_id = item["source_id"]
+    resource = item["resource"]
+    source = get_source(source_id)
+    resource_id = str(resource.get("id") or normalize_name(resource.get("name") or "resource"))
+    resource_slug = re.sub(r"[^A-Za-z0-9_.-]+", "_", resource_id).strip("_") or "resource"
+    target_dir = raw_dir / source_id / timestamp / resource_slug
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    request = Request(
+        str(resource["url"]),
+        headers={"Accept": "*/*", "User-Agent": USER_AGENT},
+    )
+    body, http_status, headers = _open_bytes_with_retries(request, timeout=timeout)
+    body_path = target_dir / f"body{_resource_suffix(resource)}"
+    body_path.write_bytes(body)
+    metadata_path = _write_json(
+        target_dir / "metadata.json",
+        {
+            "source": source.to_dict(),
+            "fetched_at": timestamp,
+            "ok": http_status is None or 200 <= http_status < 400,
+            "http_status": http_status,
+            "final_url": resource["url"],
+            "content_type": headers.get("Content-Type") or headers.get("content-type"),
+            "content_length": len(body),
+            "sha256": hashlib.sha256(body).hexdigest(),
+            "body_path": str(body_path.resolve()),
+            "headers": headers,
+            "metadata_kind": "data_gov_official_identifier_resource",
+            "data_gov_package_id": item.get("package_id"),
+            "data_gov_canonical_package_id": item.get("canonical_package_id"),
+            "data_gov_resource": resource,
+            "selection_score": item.get("selection_score"),
+            "selection_reason": item.get("selection_reason"),
+        },
+    )
+    return {
+        **item,
+        "body_path": body_path,
+        "source_metadata_path": metadata_path,
+    }
+
+
+def _iter_records_for_download(
+    source_id: str,
+    body_path: Path,
+    source_metadata_path: Path,
+    *,
+    remaining_limit: int | None,
+) -> Iterator[dict[str, Any]]:
+    if source_id == "asic_companies_dataset":
+        yield from iter_asic_company_records(
+            body_path,
+            source_metadata_path,
+            limit=remaining_limit,
+        )
+    elif source_id == "acnc_register":
+        yield from iter_acnc_charity_records(
+            body_path,
+            source_metadata_path,
+            limit=remaining_limit,
+        )
+    elif source_id == "abn_lookup":
+        yield from iter_abn_bulk_records(
+            body_path,
+            source_metadata_path,
+            limit=remaining_limit,
+        )
+    else:
+        raise ValueError(f"Unsupported official identifier bulk source: {source_id}")
+
+
+def fetch_official_identifier_bulk_resources(
+    *,
+    source_ids: Iterable[str] | None = None,
+    discovery_path: Path | None = None,
+    raw_dir: Path = RAW_DIR,
+    processed_dir: Path = PROCESSED_DIR,
+    extract_limit_per_source: int | None = None,
+    timeout: int = 60,
+) -> Path:
+    if extract_limit_per_source is not None and extract_limit_per_source < 1:
+        raise ValueError("extract_limit_per_source must be positive when supplied.")
+    requested_source_ids_arg = tuple(source_ids) if source_ids is not None else None
+    timestamp = _timestamp()
+    if discovery_path is None:
+        try:
+            discovery_path = latest_official_identifier_sources_path(processed_dir)
+        except FileNotFoundError:
+            discovery_path = discover_official_identifier_sources(processed_dir)
+
+    discovery_payload = json.loads(discovery_path.read_text(encoding="utf-8"))
+    selected = select_official_identifier_bulk_resources(
+        discovery_payload,
+        source_ids=requested_source_ids_arg,
+    )
+    requested_source_ids = set(requested_source_ids_arg or OFFICIAL_IDENTIFIER_BULK_SOURCE_IDS)
+    selected_source_ids = {item["source_id"] for item in selected}
+    missing_source_ids = sorted(requested_source_ids - selected_source_ids)
+    if missing_source_ids:
+        raise RuntimeError(
+            f"No supported data.gov resources selected for {missing_source_ids}; "
+            f"discovery artifact: {discovery_path}"
+        )
+
+    downloads = [
+        _download_official_identifier_resource(
+            item,
+            timestamp=timestamp,
+            raw_dir=raw_dir,
+            timeout=timeout,
+        )
+        for item in selected
+    ]
+
+    jsonl_paths: list[str] = []
+    source_summaries: dict[str, dict[str, Any]] = {}
+    for source_id in sorted(selected_source_ids):
+        source_downloads = [item for item in downloads if item["source_id"] == source_id]
+
+        def records_for_source() -> Iterator[dict[str, Any]]:
+            yielded = 0
+            for item in source_downloads:
+                remaining = (
+                    None
+                    if extract_limit_per_source is None
+                    else max(extract_limit_per_source - yielded, 0)
+                )
+                if remaining == 0:
+                    break
+                for record in _iter_records_for_download(
+                    source_id,
+                    item["body_path"],
+                    item["source_metadata_path"],
+                    remaining_limit=remaining,
+                ):
+                    yielded += 1
+                    yield record
+
+        artifact_id = f"{timestamp}_{source_id}_bulk"
+        jsonl_path = write_official_identifier_records(
+            records_for_source(),
+            processed_dir=processed_dir,
+            artifact_id=artifact_id,
+        )
+        jsonl_paths.append(str(jsonl_path))
+        source_summary_path = jsonl_path.with_suffix(".summary.json")
+        source_summaries[source_id] = json.loads(
+            source_summary_path.read_text(encoding="utf-8")
+        )
+
+    summary_path = _write_json(
+        processed_dir / "official_identifier_bulk_fetches" / f"{timestamp}.summary.json",
+        {
+            "generated_at": timestamp,
+            "source_ids": sorted(selected_source_ids),
+            "requested_source_ids": sorted(requested_source_ids),
+            "discovery_path": str(discovery_path),
+            "extract_limit_per_source": extract_limit_per_source,
+            "selected_resources": [
+                {
+                    "source_id": item["source_id"],
+                    "resource_id": item["resource"].get("id"),
+                    "resource_name": item["resource"].get("name"),
+                    "resource_url": item["resource"].get("url"),
+                    "selection_score": item.get("selection_score"),
+                    "selection_reason": item.get("selection_reason"),
+                }
+                for item in selected
+            ],
+            "downloaded_resources": [
+                {
+                    "source_id": item["source_id"],
+                    "resource_id": item["resource"].get("id"),
+                    "body_path": str(item["body_path"]),
+                    "source_metadata_path": str(item["source_metadata_path"]),
+                }
+                for item in downloads
+            ],
+            "official_identifiers_jsonl_paths": jsonl_paths,
+            "source_summaries": source_summaries,
+        },
+    )
+    return summary_path
 
 
 def _canonical_header(value: str) -> str:
