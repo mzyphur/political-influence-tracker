@@ -79,7 +79,7 @@ export async function fetchStateLocalSummary(options: {
 
 export async function fetchStateLocalRecords(options: {
   level?: "state" | "council" | "local";
-  flowKind?: "qld_gift" | "qld_electoral_expenditure";
+  flowKind?: "act_gift_in_kind" | "act_gift_of_money" | "qld_gift" | "qld_electoral_expenditure";
   cursor?: string;
   limit?: number;
   signal?: AbortSignal;

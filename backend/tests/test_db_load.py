@@ -10,6 +10,7 @@ from au_politics_money.db.load import (
     MAX_COASTLINE_REPAIR_BUFFER_METERS,
     _can_create_house_interest_person,
     _senate_interest_extraction_confidence,
+    act_gift_return_path_from_pipeline_manifest,
     apply_schema,
     classify_interest_event,
     classify_money_event_type,
@@ -608,6 +609,95 @@ def test_nsw_pipeline_manifest_selects_aggregate_context_artifact(tmp_path) -> N
         nsw_aggregate_context_path_from_pipeline_manifest(manifest_path)
 
 
+def test_act_pipeline_manifest_selects_gift_return_artifact(tmp_path) -> None:
+    def sha256_path(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    source_body_path = tmp_path / "act-gift-returns.html"
+    source_body_path.write_text("<html>fixture</html>", encoding="utf-8")
+    source_body_sha256 = sha256_path(source_body_path)
+    source_metadata_path = tmp_path / "metadata.json"
+    source_metadata_path.write_text(
+        json.dumps(
+            {
+                "body_path": str(source_body_path),
+                "sha256": source_body_sha256,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    source_metadata_sha256 = sha256_path(source_metadata_path)
+    jsonl_path = tmp_path / "act-gift-returns.jsonl"
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "source_id": "act_gift_returns_2025_2026",
+                "source_dataset": "act_elections_gift_returns",
+                "normalizer_name": "act_gift_return_html_normalizer",
+                "source_metadata_path": str(source_metadata_path),
+                "source_metadata_sha256": source_metadata_sha256,
+                "source_body_path": str(source_body_path),
+                "source_body_sha256": source_body_sha256,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary_path = tmp_path / "act-gift-returns.summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "normalizer_name": "act_gift_return_html_normalizer",
+                "source_dataset": "act_elections_gift_returns",
+                "source_id": "act_gift_returns_2025_2026",
+                "jsonl_path": str(jsonl_path),
+                "jsonl_sha256": sha256_path(jsonl_path),
+                "source_metadata_path": str(source_metadata_path),
+                "source_metadata_sha256": source_metadata_sha256,
+                "source_body_path": str(source_body_path),
+                "source_body_sha256": source_body_sha256,
+                "source_counts": {"act_gift_returns_2025_2026": 1},
+                "total_count": 1,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "state_local_act_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "act_elections_gift_returns",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_act_gift_returns",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": sha256_path(summary_path),
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    assert act_gift_return_path_from_pipeline_manifest(manifest_path) == jsonl_path
+
+    source_body_path.write_text("<html>changed</html>", encoding="utf-8")
+    with pytest.raises(ValueError, match="Source body hash mismatch"):
+        act_gift_return_path_from_pipeline_manifest(manifest_path)
+
+
 def test_display_geometry_repair_buffer_validates_range() -> None:
     with pytest.raises(ValueError, match="non-negative"):
         load_electorate_boundary_display_geometries(
@@ -628,6 +718,7 @@ def test_money_event_classifier_keeps_donations_visible() -> None:
         "campaign_expenditure"
     )
     assert classify_money_event_type("", "Discretionary Benefit") == "discretionary_benefit"
+    assert classify_money_event_type("act_gift_in_kind", "Gift in kind") == "gift_in_kind"
     assert classify_money_event_type("loan", "") == "loan"
     assert classify_money_event_type("", "") == "money_flow"
 

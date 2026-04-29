@@ -1569,6 +1569,83 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
     assert council_records["records"][0]["flow_kind"] == "qld_electoral_expenditure"
     assert council_records["records"][0]["local_electorate_name"] == "Whitsunday Regional"
 
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO source_document (
+                    source_id, source_name, source_type, jurisdiction, url, fetched_at,
+                    http_status, content_type, sha256, storage_path, metadata
+                )
+                VALUES (
+                    'act_gift_returns_2025_2026',
+                    'Elections ACT Gift Returns 2025-2026',
+                    'state_financial_disclosure_gift_return_table',
+                    'Australian Capital Territory',
+                    'https://www.elections.act.gov.au/funding-disclosures-and-registers/gift-returns/gift-returns-2025-2026',
+                    now(), 200, 'text/html', 'pytest-act-sha256', '/tmp/act.html', '{}'::jsonb
+                )
+                RETURNING id
+                """
+            )
+            act_source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO jurisdiction (name, level, code)
+                VALUES ('Australian Capital Territory', 'state', 'ACT')
+                RETURNING id
+                """
+            )
+            act_state_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO money_flow (
+                    external_key, source_raw_name, recipient_raw_name, amount,
+                    date_received, date_reported, financial_year, receipt_type,
+                    disclosure_category, jurisdiction_id, source_document_id,
+                    source_row_ref, original_text, confidence, is_current, metadata
+                )
+                VALUES (
+                    'pytest-act-gift-in-kind', 'Canberra Theatre Centre',
+                    'Australian Labor Party (ACT Branch)', 294, DATE '2026-03-08',
+                    DATE '2026-03-12', '2025-2026', 'Gift in kind',
+                    'act_gift_in_kind', %s, %s, 'act_gift_returns_2025_2026_html:4',
+                    '{"description_of_gift_in_kind":"GIK-Theatre Tickets"}',
+                    'unresolved', TRUE, %s
+                )
+                """,
+                (
+                    act_state_id,
+                    act_source_document_id,
+                    Jsonb(
+                        {
+                            "description": "GIK-Theatre Tickets",
+                            "flow_kind": "act_gift_in_kind",
+                            "public_amount_counting_role": "single_observation",
+                            "source_dataset": "act_elections_gift_returns",
+                            "transaction_kind": "gift_in_kind",
+                        }
+                    ),
+                ),
+            )
+        conn.commit()
+
+    act_records_response = client.get(
+        "/api/state-local/records",
+        params={
+            "level": "state",
+            "flow_kind": "act_gift_in_kind",
+            "limit": "5",
+        },
+    )
+    assert act_records_response.status_code == 200
+    act_records = act_records_response.json()
+    assert act_records["total_count"] == 1
+    assert act_records["records"][0]["source_dataset"] == "act_elections_gift_returns"
+    assert act_records["records"][0]["flow_kind"] == "act_gift_in_kind"
+    assert act_records["records"][0]["description_of_goods_or_services"] == "GIK-Theatre Tickets"
+    assert act_records["records"][0]["source_document_sha256"] == "pytest-act-sha256"
+
     invalid_cursor_response = client.get(
         "/api/state-local/records",
         params={"level": "state", "cursor": "not-a-valid-cursor"},

@@ -39,13 +39,17 @@ a small subset. It is for CI/development only, not production data publication.
 
 ## Current Subnational Pipeline
 
-The first active state/local adapter is Queensland ECQ EDS. It is deliberately
-separate from the federal foundation command while the state/council framework
-is being generalized, but it now has its own manifest-producing runner:
+The active state/local adapters are deliberately separate from the federal
+foundation command while the state/council framework is being generalized.
+Queensland ECQ EDS, NSW aggregate donor-location context, and ACT gift returns
+now have manifest-producing runners:
 
 ```bash
 cd backend
 MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction qld)
+.venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction act)
 .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 ```
 
@@ -127,6 +131,19 @@ and manifest replay refuses to load rows if those hashes no longer match.
 The source page caveat about unmapped donor locations and NSWEC Creative
 Commons Attribution 4.0 requirements must be preserved in public displays and
 derived data documentation.
+
+The ACT adapter archives the official Elections ACT 2025-2026 gift-return page
+and normalizes the current HTML tables into
+`data/processed/act_gift_return_money_flows/`. Current normalized coverage is
+225 rows: 206 gifts of money and 19 gifts-in-kind with $87,394.50 in reported
+value. These rows are source-backed ACT state disclosure records. Gift-in-kind
+rows are reported non-cash values and are not cash payments. The ACT disclosure
+trigger is cumulative: a party grouping or non-party candidate grouping must
+report a gift, or cumulative gifts from a single donor, totalling $1,000 or more
+during the relevant period. Individual rows may therefore be below $1,000. The
+normalizer and manifest loader preserve and verify source metadata, source body,
+summary, and JSONL SHA-256 hashes before loading.
+
 Donors are ECQ-identifier-backed only when they also appear in an accepted ECQ
 participant lookup record.
 
@@ -199,11 +216,11 @@ reproducible artifacts. `--include-vote-divisions` should be added only when a
 They Vote For You API key is configured.
 
 Federal-only scheduled loads use `load-postgres --skip-qld-ecq
---skip-nsw-aggregates` unless the relevant state/local fetch/normalize steps
-also ran. QLD state/local public summaries filter to current `money_flow` rows,
-and NSW aggregate summaries filter to current `aggregate_context_observation`
-rows, but the schedule should still avoid refreshing a state/local source
-family from stale processed artifacts.
+--skip-nsw-aggregates --skip-act-gift-returns` unless the relevant state/local
+fetch/normalize steps also ran. QLD and ACT state/local public summaries filter
+to current `money_flow` rows, and NSW aggregate summaries filter to current
+`aggregate_context_observation` rows, but the schedule should still avoid
+refreshing a state/local source family from stale processed artifacts.
 
 Routine update jobs should run the serving-database QA gate after loading:
 

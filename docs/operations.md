@@ -127,9 +127,9 @@ Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command
 also loads QLD ECQ EDS rows and participant identifiers by default, but
 federal-only scheduled runs use `load-postgres --skip-qld-ecq
---skip-nsw-aggregates` so stale state/local artifacts are not promoted when the
-state/local fetch/normalize steps did not run. Public QLD API summaries read
-only `money_flow.is_current = true` rows.
+--skip-nsw-aggregates --skip-act-gift-returns` so stale state/local artifacts
+are not promoted when the state/local fetch/normalize steps did not run. Public
+QLD API summaries read only `money_flow.is_current = true` rows.
 
 NSW is now wired as an aggregate-context state adapter:
 
@@ -152,6 +152,31 @@ be displayed as donations received by an MP, candidate, party, or councillor.
 The runner verifies that the current explanatory page still links to the
 registered heatmap URL, and the loader validates source metadata/body hashes
 from the normalized artifact before inserting rows.
+
+ACT is wired as a current gift-return state adapter:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction act)
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli migrate-postgres
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
+```
+
+The ACT runner archives the official Elections ACT 2025-2026 gift-return page
+and normalizes the current HTML tables into
+`data/processed/act_gift_return_money_flows/`. Rows are loaded into
+`money_flow` as ACT state disclosure records. `act_gift_of_money` rows are
+money records; `act_gift_in_kind` rows are reported non-cash gift values and
+derive `influence_event` rows with event type `gift_in_kind`. The source
+threshold is cumulative: a party grouping or non-party candidate grouping must
+report a gift, or cumulative gifts from one donor, totalling $1,000 or more
+during the relevant period. Individual rows can therefore be below $1,000 and
+must not be described as each independently above threshold. The loader
+validates manifest summary hashes, JSONL hashes, source metadata hashes, source
+body hashes, source ID, source dataset, non-zero counts, and row counts before
+inserting rows.
 
 ECQ gift/donation rows are money records. ECQ expenditure rows are
 campaign-support records with event type `state_local_electoral_expenditure`;
@@ -204,9 +229,10 @@ file and still refreshes the rest of the federal database. The federal pipeline
 runs with `--refresh-existing-sources`, so update-sensitive cached sources such
 as AEC postcode lookups, current AEC boundaries, and official APH
 decision-record documents are fetched again instead of being silently reused.
-The weekly federal load also uses `--skip-qld-ecq --skip-nsw-aggregates`; QLD
-and NSW state/local rows should be refreshed by the jurisdiction-specific
-commands above.
+The weekly federal load also uses
+`--skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns`; QLD, NSW, and
+ACT state/local rows should be refreshed by the jurisdiction-specific commands
+above.
 After loading, the script runs `qa-serving-database`. That QA gate fails the
 weekly run before the database is treated as releasable if core serving
 invariants break, including missing House boundaries, active events pointing at

@@ -67,6 +67,7 @@ under `data/processed/discovered_links/`.
 | `tas_tec_disclosure_funding` | Tasmania | TEC disclosure and funding | https://www.tec.tas.gov.au/disclosure-and-funding/ | New disclosure and funding regime from 2025-07-01; preserve regime-start date in coverage caveats. |
 | `nt_ntec_annual_returns` | Northern Territory | NTEC annual returns | https://ntec.nt.gov.au/about-us/media-and-publications/media-releases/2025/20242025-annual-returns | Annual gift returns, annual returns, candidate returns, donor returns, and election expenditure context. |
 | `act_elections_funding_disclosure` | ACT | Elections ACT funding/disclosure obligations | https://www.elections.act.gov.au/funding-disclosures-and-registers/funding-and-disclosure-obligations | Gift returns, annual returns, election returns, expenditure caps, public funding, receipts, gifts, payments, and debts. Party-endorsed candidate expenditure may sit in party grouping returns. |
+| `act_gift_returns_2025_2026` | ACT | Elections ACT gift returns 2025-2026 | https://www.elections.act.gov.au/funding-disclosures-and-registers/gift-returns/gift-returns-2025-2026 | Active reproducible HTML-table adapter. Current artifact has 225 rows: 206 gifts of money and 19 gifts-in-kind. The ACT threshold is a gift, or cumulative gifts from one donor, totalling $1,000 or more, so individual rows may be below $1,000. Gift-in-kind values are non-cash reported values, not cash payments. |
 
 ## Known Data Risks
 

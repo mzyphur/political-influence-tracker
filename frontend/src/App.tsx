@@ -61,7 +61,12 @@ import type {
 
 const states = ["All", "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"];
 type DataLevel = "federal" | "state" | "council";
-type StateLocalFlowFilter = "all" | "qld_gift" | "qld_electoral_expenditure";
+type StateLocalFlowFilter =
+  | "all"
+  | "act_gift_in_kind"
+  | "act_gift_of_money"
+  | "qld_gift"
+  | "qld_electoral_expenditure";
 type GraphRoot = {
   kind: "person" | "party" | "entity";
   id: number | string;
@@ -92,8 +97,10 @@ const stateLocalFlowFilterOptions: Array<{
   label: string;
 }> = [
   { value: "all", label: "All" },
-  { value: "qld_gift", label: "Gifts" },
-  { value: "qld_electoral_expenditure", label: "Spend" }
+  { value: "qld_gift", label: "QLD gifts" },
+  { value: "act_gift_of_money", label: "ACT money gifts" },
+  { value: "act_gift_in_kind", label: "ACT in-kind gifts" },
+  { value: "qld_electoral_expenditure", label: "QLD spend" }
 ];
 
 const levelLabels: Record<DataLevel, string> = {
@@ -979,23 +986,23 @@ function StateLocalSummaryPanel({
     return (
       <div className="inline-alert" role="alert">
         <AlertCircle size={16} />
-        <span>QLD disclosure summary failed: {error}</span>
+        <span>State/local disclosure summary failed: {error}</span>
       </div>
     );
   }
-  const hasQldRows = Boolean(summary && summary.totals_by_level.length > 0);
+  const hasStateLocalRows = Boolean(summary && summary.totals_by_level.length > 0);
   const hasAggregateContext = Boolean(
     summary &&
       (summary.aggregate_context_totals.length > 0 ||
         summary.top_aggregate_donor_locations.length > 0)
   );
 
-  if (!summary || (!hasQldRows && !hasAggregateContext)) {
+  if (!summary || (!hasStateLocalRows && !hasAggregateContext)) {
     return (
       <div className="scope-notice">
         <strong>{levelLabels[level]} map drilldown is being built.</strong>
         <span>
-          QLD ECQ disclosure ingestion is wired, but no rows were returned for this level.
+          State/local disclosure ingestion is wired, but no rows were returned for this level.
         </span>
       </div>
     );
@@ -1004,8 +1011,10 @@ function StateLocalSummaryPanel({
   const totals = rollupStateLocalTotals(summary);
   const identifierBackedRowSides =
     totals.sourceIdentifierBacked + totals.recipientIdentifierBacked;
-  const headerTitle = hasQldRows ? "QLD ECQ disclosures" : "State/local aggregate context";
-  const headerStatus = hasQldRows
+  const headerTitle = hasStateLocalRows
+    ? "State/local disclosures"
+    : "State/local aggregate context";
+  const headerStatus = hasStateLocalRows
     ? `${levelName} partial data · refreshed ${formatCompactDateTime(
         summary.latest_source_fetched_at
       )}`
@@ -1017,7 +1026,7 @@ function StateLocalSummaryPanel({
         <strong>{headerTitle}</strong>
         <span>{headerStatus}</span>
       </div>
-      {hasQldRows ? (
+      {hasStateLocalRows ? (
         <>
           <div className="state-summary-grid">
             <Metric
@@ -1029,6 +1038,11 @@ function StateLocalSummaryPanel({
               icon={<Gift size={16} />}
               label="Gifts"
               value={totals.giftOrDonationCount.toLocaleString("en-AU")}
+            />
+            <Metric
+              icon={<Gift size={16} />}
+              label="In-kind"
+              value={totals.giftInKindCount.toLocaleString("en-AU")}
             />
             <Metric
               icon={<Banknote size={16} />}
@@ -1052,16 +1066,18 @@ function StateLocalSummaryPanel({
             <strong>{totals.localElectorateContextBacked.toLocaleString("en-AU")}</strong>
           </div>
           <div className="state-summary-money-row">
-            <span>Gift/donation total</span>
+            <span>Gift disclosed value total</span>
             <strong>{formatMoney(totals.giftOrDonationReportedAmountTotal)}</strong>
             <span>Campaign expenditure incurred</span>
             <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
-            <span>Money-flow export snapshots</span>
+            <span>Source snapshots</span>
             <strong>{summary.source_document_count.toLocaleString("en-AU")}</strong>
           </div>
           <p className="state-local-inline-caveat">
-            ECQ gift/donation rows are money records. Expenditure rows are campaign activity
-            incurred by an actor, not money personally received by an MP, councillor, or candidate.
+            State/local gift rows are source-backed disclosure records. ACT gift-in-kind
+            rows are reported non-cash values. Expenditure rows are campaign activity
+            incurred by an actor, not money personally received by an MP, councillor, or
+            candidate.
           </p>
         </>
       ) : null}
@@ -1070,7 +1086,7 @@ function StateLocalSummaryPanel({
         rows={summary.top_aggregate_donor_locations}
         caveat={summary.aggregate_context_caveat}
       />
-      {hasQldRows ? (
+      {hasStateLocalRows ? (
         <>
           <StateLocalRecentRecords
             rows={mergedRecentRows}
@@ -1083,12 +1099,12 @@ function StateLocalSummaryPanel({
             onLoadMore={loadMoreRecords}
           />
           <StateLocalRankList
-            title="Top gift donors"
+            title="Top gift and gift-in-kind donors"
             rows={summary.top_gift_donors}
             onOpenEntityProfile={onOpenEntityProfile}
           />
           <StateLocalRankList
-            title="Top gift recipients"
+            title="Top gift and gift-in-kind recipients"
             rows={summary.top_gift_recipients}
             onOpenEntityProfile={onOpenEntityProfile}
           />
@@ -1302,6 +1318,8 @@ function mergeStateLocalRecords(
 
 function stateLocalRecordKind(row: StateLocalSummaryRecord): string {
   if (row.flow_kind === "qld_electoral_expenditure") return "Campaign spend incurred";
+  if (row.flow_kind === "act_gift_in_kind") return "Gift-in-kind value";
+  if (row.flow_kind === "act_gift_of_money") return "Gift of money";
   return row.receipt_type || "Gift/donation row";
 }
 
@@ -1309,6 +1327,9 @@ function stateLocalRecordHeadline(row: StateLocalSummaryRecord): string {
   const source = row.source_name || "Source not identified";
   if (row.flow_kind === "qld_electoral_expenditure") {
     return `${source} incurred electoral expenditure`;
+  }
+  if (row.flow_kind === "act_gift_in_kind") {
+    return `${source} provided a gift-in-kind to ${row.recipient_name || "recipient not identified"}`;
   }
   return `${source} to ${row.recipient_name || "recipient not identified"}`;
 }
@@ -1333,6 +1354,10 @@ function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
     row.transaction_kind ? `Transaction kind: ${row.transaction_kind}` : null,
     row.public_amount_counting_role
       ? `Amount counting role: ${row.public_amount_counting_role}`
+      : null,
+    row.source_dataset ? `Source dataset: ${row.source_dataset}` : null,
+    row.flow_kind === "act_gift_in_kind"
+      ? "Interpretation: reported value of a non-cash gift, not a cash payment."
       : null,
     row.flow_kind === "qld_electoral_expenditure"
       ? "Interpretation: expenditure incurred, not money received by the named actor."
@@ -1452,6 +1477,7 @@ function StateLocalContextList({
 function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
   moneyFlowCount: number;
   giftOrDonationCount: number;
+  giftInKindCount: number;
   electoralExpenditureCount: number;
   sourceIdentifierBacked: number;
   recipientIdentifierBacked: number;
@@ -1464,6 +1490,7 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
     (acc, row) => {
       acc.moneyFlowCount += numberValue(row.money_flow_count);
       acc.giftOrDonationCount += numberValue(row.gift_or_donation_count);
+      acc.giftInKindCount += numberValue(row.gift_in_kind_count);
       acc.electoralExpenditureCount += numberValue(row.electoral_expenditure_count);
       acc.sourceIdentifierBacked += numberValue(row.source_identifier_backed_count);
       acc.recipientIdentifierBacked += numberValue(row.recipient_identifier_backed_count);
@@ -1495,6 +1522,7 @@ function rollupStateLocalTotals(summary: StateLocalSummaryResponse): {
     {
       moneyFlowCount: 0,
       giftOrDonationCount: 0,
+      giftInKindCount: 0,
       electoralExpenditureCount: 0,
       sourceIdentifierBacked: 0,
       recipientIdentifierBacked: 0,

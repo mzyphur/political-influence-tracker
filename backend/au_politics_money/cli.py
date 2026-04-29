@@ -552,6 +552,7 @@ def load_postgres_command(
     skip_money_flows: bool,
     skip_qld_ecq: bool,
     skip_nsw_aggregates: bool,
+    skip_act_gift_returns: bool,
     skip_house_interests: bool,
     skip_senate_interests: bool,
     skip_electorate_boundaries: bool,
@@ -572,6 +573,7 @@ def load_postgres_command(
         include_money_flows=not skip_money_flows,
         include_qld_ecq=not skip_qld_ecq,
         include_nsw_aggregates=not skip_nsw_aggregates,
+        include_act_gift_returns=not skip_act_gift_returns,
         include_house_interests=not skip_house_interests,
         include_senate_interests=not skip_senate_interests,
         include_electorate_boundaries=not skip_electorate_boundaries,
@@ -1126,9 +1128,9 @@ def build_parser() -> argparse.ArgumentParser:
     state_local_pipeline_parser = subparsers.add_parser("run-state-local-pipeline")
     state_local_pipeline_parser.add_argument(
         "--jurisdiction",
-        choices=("qld", "nsw"),
+        choices=("act", "qld", "nsw"),
         default="qld",
-        help="State/local adapter to run. Currently supported: qld, nsw.",
+        help="State/local adapter to run. Currently supported: act, qld, nsw.",
     )
     state_local_pipeline_parser.add_argument(
         "--smoke",
@@ -1158,6 +1160,14 @@ def build_parser() -> argparse.ArgumentParser:
         help=(
             "Skip NSW aggregate context artifacts during this load. These rows are "
             "state-level donor-location aggregates, not money-flow records."
+        ),
+    )
+    load_parser.add_argument(
+        "--skip-act-gift-returns",
+        action="store_true",
+        help=(
+            "Skip ACT Elections gift-return artifacts during this load. These rows "
+            "include gifts of money and gift-in-kind values from ACT disclosure tables."
         ),
     )
     load_parser.add_argument("--skip-house-interests", action="store_true")
@@ -1363,6 +1373,7 @@ def main() -> int:
             args.skip_money_flows,
             args.skip_qld_ecq,
             args.skip_nsw_aggregates,
+            args.skip_act_gift_returns,
             args.skip_house_interests,
             args.skip_senate_interests,
             args.skip_electorate_boundaries,

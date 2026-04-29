@@ -20,6 +20,11 @@ from au_politics_money.ingest.aec_boundaries import (
 from au_politics_money.ingest.aec_electorate_finder import (
     latest_aec_electorate_finder_postcodes_jsonl,
 )
+from au_politics_money.ingest.act_elections import (
+    GIFT_RETURNS_SOURCE_ID as ACT_GIFT_RETURNS_SOURCE_ID,
+    PARSER_NAME as ACT_GIFT_RETURN_PARSER_NAME,
+    SOURCE_DATASET as ACT_GIFT_RETURN_SOURCE_DATASET,
+)
 from au_politics_money.ingest.aph_decision_records import (
     latest_aph_decision_record_index_jsonl_paths,
     latest_aph_decision_record_documents_summary,
@@ -411,6 +416,8 @@ def classify_money_event_type(disclosure_category: str, receipt_type: str) -> st
     combined = f"{category} {receipt}".strip()
     if "discretionary benefit" in combined:
         return "discretionary_benefit"
+    if "gift in kind" in combined or "gift-in-kind" in combined:
+        return "gift_in_kind"
     if "advertis" in combined or "broadcast" in combined or "campaign material" in combined:
         return "campaign_expenditure"
     if "gift" in combined or "donation" in combined:
@@ -1515,6 +1522,7 @@ def _load_aec_money_flow_jsonl(
     default_source_dataset: str,
 ) -> dict[str, int]:
     source_doc_cache: dict[str, int] = {}
+    verified_source_hashes: set[tuple[str, str, str, str]] = set()
     jurisdiction_cache: dict[tuple[str, str, str], int] = {}
     deactivated_before_reload = _begin_money_flow_source_refresh(conn, default_source_dataset)
 
@@ -1532,6 +1540,15 @@ def _load_aec_money_flow_jsonl(
         for line in handle:
             record = json.loads(line)
             metadata_path = record["source_metadata_path"]
+            source_hash_key = (
+                str(record.get("source_metadata_path") or ""),
+                str(record.get("source_metadata_sha256") or ""),
+                str(record.get("source_body_path") or ""),
+                str(record.get("source_body_sha256") or ""),
+            )
+            if source_hash_key not in verified_source_hashes:
+                _validate_money_flow_source_hashes(record)
+                verified_source_hashes.add(source_hash_key)
             if metadata_path not in source_doc_cache:
                 source_doc_cache[metadata_path] = upsert_source_document(conn, Path(metadata_path))
             source_document_id = source_doc_cache[metadata_path]
@@ -1542,6 +1559,9 @@ def _load_aec_money_flow_jsonl(
             date_received, date_validation = parse_aec_money_flow_date(
                 record.get("date") or "",
                 record.get("financial_year") or "",
+            )
+            date_reported = parse_date(
+                str(record.get("date_reported") or record.get("reported_date") or "")
             )
             source_dataset = record.get("source_dataset") or default_source_dataset
             jurisdiction_id = record_jurisdiction_id(record)
@@ -1559,7 +1579,8 @@ def _load_aec_money_flow_jsonl(
                     INSERT INTO money_flow (
                         external_key, source_entity_id, source_raw_name,
                         recipient_entity_id, recipient_raw_name, amount,
-                        financial_year, date_received, return_type, receipt_type,
+                        financial_year, date_received, date_reported,
+                        return_type, receipt_type,
                         disclosure_category, jurisdiction_id, source_document_id,
                         source_row_ref, original_text, confidence, is_current,
                         last_seen_at, withdrawn_at, metadata
@@ -1567,7 +1588,8 @@ def _load_aec_money_flow_jsonl(
                     VALUES (
                         %s, %s, %s,
                         %s, %s, %s,
-                        %s, %s, %s, %s,
+                        %s, %s, %s,
+                        %s, %s,
                         %s, %s, %s,
                         %s, %s, %s, TRUE,
                         now(), NULL, %s
@@ -1580,6 +1602,7 @@ def _load_aec_money_flow_jsonl(
                         amount = EXCLUDED.amount,
                         financial_year = EXCLUDED.financial_year,
                         date_received = EXCLUDED.date_received,
+                        date_reported = EXCLUDED.date_reported,
                         return_type = EXCLUDED.return_type,
                         receipt_type = EXCLUDED.receipt_type,
                         disclosure_category = EXCLUDED.disclosure_category,
@@ -1605,6 +1628,7 @@ def _load_aec_money_flow_jsonl(
                         amount,
                         record.get("financial_year") or None,
                         date_received,
+                        date_reported,
                         record.get("return_type") or None,
                         record.get("receipt_type") or None,
                         record.get("flow_kind") or source_dataset,
@@ -1678,6 +1702,21 @@ def load_qld_ecq_eds_money_flows(conn, jsonl_path: Path | None = None) -> dict[s
             "skipped_reason": "no_processed_qld_ecq_eds_money_flows",
         }
     return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="qld_ecq_eds")
+
+
+def load_act_gift_return_money_flows(conn, jsonl_path: Path | None = None) -> dict[str, Any]:
+    try:
+        path = jsonl_path or latest_file(PROCESSED_DIR / "act_gift_return_money_flows", "*.jsonl")
+    except FileNotFoundError:
+        return {
+            "money_flows": 0,
+            "skipped_reason": "no_processed_act_gift_return_money_flows",
+        }
+    return _load_aec_money_flow_jsonl(
+        conn,
+        path,
+        default_source_dataset=ACT_GIFT_RETURN_SOURCE_DATASET,
+    )
 
 
 def _validate_nsw_aggregate_source_hashes(record: dict[str, Any]) -> None:
@@ -1889,6 +1928,33 @@ def _jsonl_line_count(path: Path) -> int:
     return count
 
 
+def _validate_money_flow_source_hashes(record: dict[str, Any]) -> None:
+    metadata_path_value = str(record.get("source_metadata_path") or "")
+    body_path_value = str(record.get("source_body_path") or "")
+    expected_metadata_sha256 = str(record.get("source_metadata_sha256") or "")
+    expected_body_sha256 = str(record.get("source_body_sha256") or "")
+    if not expected_metadata_sha256 and not expected_body_sha256:
+        return
+    if expected_metadata_sha256:
+        if not metadata_path_value:
+            raise ValueError("Money-flow record is missing source_metadata_path")
+        actual_metadata_sha256 = _sha256_path(Path(metadata_path_value))
+        if actual_metadata_sha256 != expected_metadata_sha256:
+            raise ValueError(
+                f"Source metadata hash mismatch for {metadata_path_value}: "
+                f"record={expected_metadata_sha256} actual={actual_metadata_sha256}"
+            )
+    if expected_body_sha256:
+        if not body_path_value:
+            raise ValueError("Money-flow record is missing source_body_path")
+        actual_body_sha256 = _sha256_path(Path(body_path_value))
+        if actual_body_sha256 != expected_body_sha256:
+            raise ValueError(
+                f"Source body hash mismatch for {body_path_value}: "
+                f"record={expected_body_sha256} actual={actual_body_sha256}"
+            )
+
+
 def _pipeline_step_output(manifest: dict[str, Any], step_name: str) -> tuple[Path, str]:
     steps = manifest.get("steps")
     if not isinstance(steps, list):
@@ -2090,6 +2156,89 @@ def nsw_aggregate_context_path_from_pipeline_manifest(manifest_path: Path) -> Pa
     return path
 
 
+def act_gift_return_path_from_pipeline_manifest(manifest_path: Path) -> Path:
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if manifest.get("pipeline_name") != "state_local":
+        raise ValueError("Expected a state_local pipeline manifest")
+    parameters = manifest.get("parameters")
+    if (
+        not isinstance(parameters, dict)
+        or parameters.get("source_family") != ACT_GIFT_RETURN_SOURCE_DATASET
+    ):
+        raise ValueError("Expected an ACT Elections gift-return state/local manifest")
+    if parameters.get("loads_database") is not False:
+        raise ValueError("Expected a non-mutating acquisition/normalization manifest")
+
+    summary_path, summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_act_gift_returns",
+    )
+    actual_summary_sha256 = _sha256_path(summary_path)
+    if summary_sha256 and actual_summary_sha256 != summary_sha256:
+        raise ValueError(
+            f"Summary hash mismatch for {summary_path}: "
+            f"manifest={summary_sha256} actual={actual_summary_sha256}"
+        )
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    if summary.get("normalizer_name") != ACT_GIFT_RETURN_PARSER_NAME:
+        raise ValueError(
+            f"Unexpected normalizer in {summary_path}: {summary.get('normalizer_name')!r}"
+        )
+    if summary.get("source_dataset") != ACT_GIFT_RETURN_SOURCE_DATASET:
+        raise ValueError(
+            f"Unexpected source_dataset in {summary_path}: {summary.get('source_dataset')!r}"
+        )
+    if summary.get("source_id") != ACT_GIFT_RETURNS_SOURCE_ID:
+        raise ValueError(f"Unexpected source_id in {summary_path}: {summary.get('source_id')!r}")
+    counts = summary.get("source_counts")
+    if counts != {ACT_GIFT_RETURNS_SOURCE_ID: summary.get("total_count")}:
+        raise ValueError(
+            f"ACT gift-return source_counts do not match total_count in {summary_path}"
+        )
+    source_metadata_path = Path(str(summary.get("source_metadata_path") or ""))
+    source_body_path = Path(str(summary.get("source_body_path") or ""))
+    expected_source_metadata_sha256 = str(summary.get("source_metadata_sha256") or "")
+    expected_source_body_sha256 = str(summary.get("source_body_sha256") or "")
+    if not expected_source_metadata_sha256:
+        raise ValueError(f"Summary is missing source_metadata_sha256: {summary_path}")
+    if not expected_source_body_sha256:
+        raise ValueError(f"Summary is missing source_body_sha256: {summary_path}")
+    actual_source_metadata_sha256 = _sha256_path(source_metadata_path)
+    if actual_source_metadata_sha256 != expected_source_metadata_sha256:
+        raise ValueError(
+            f"Source metadata hash mismatch for {source_metadata_path}: "
+            f"summary={expected_source_metadata_sha256} "
+            f"actual={actual_source_metadata_sha256}"
+        )
+    actual_source_body_sha256 = _sha256_path(source_body_path)
+    if actual_source_body_sha256 != expected_source_body_sha256:
+        raise ValueError(
+            f"Source body hash mismatch for {source_body_path}: "
+            f"summary={expected_source_body_sha256} actual={actual_source_body_sha256}"
+        )
+    jsonl_path = summary.get("jsonl_path")
+    if not jsonl_path:
+        raise ValueError(f"Summary is missing jsonl_path: {summary_path}")
+    path = Path(str(jsonl_path))
+    expected_jsonl_sha256 = str(summary.get("jsonl_sha256") or "")
+    actual_jsonl_sha256 = _sha256_path(path)
+    if expected_jsonl_sha256 and actual_jsonl_sha256 != expected_jsonl_sha256:
+        raise ValueError(
+            f"JSONL hash mismatch for {path}: "
+            f"summary={expected_jsonl_sha256} actual={actual_jsonl_sha256}"
+        )
+    total_count = int(summary.get("total_count") or 0)
+    if total_count <= 0:
+        raise ValueError(f"Summary has no records: {summary_path}")
+    counted_records = _jsonl_line_count(path)
+    if counted_records != total_count:
+        raise ValueError(
+            f"Summary total_count does not match JSONL rows for {path}: "
+            f"summary={total_count} rows={counted_records}"
+        )
+    return path
+
+
 def load_qld_ecq_eds_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2130,6 +2279,26 @@ def load_nsw_electoral_from_pipeline_manifest(conn, manifest_path: Path) -> dict
     }
 
 
+def load_act_elections_from_pipeline_manifest(
+    conn,
+    manifest_path: Path,
+    *,
+    include_influence_events: bool = True,
+) -> dict[str, Any]:
+    path = act_gift_return_path_from_pipeline_manifest(manifest_path)
+    summary: dict[str, Any] = {
+        "pipeline_manifest_path": str(manifest_path),
+        "artifact_paths": {"money_flows": str(path)},
+        "act_gift_return_money_flows": load_act_gift_return_money_flows(
+            conn,
+            jsonl_path=path,
+        ),
+    }
+    if include_influence_events:
+        summary["influence_events"] = load_influence_events(conn)
+    return summary
+
+
 def load_state_local_from_pipeline_manifest(
     conn,
     manifest_path: Path,
@@ -2147,6 +2316,12 @@ def load_state_local_from_pipeline_manifest(
         )
     if source_family == NSW_SOURCE_DATASET:
         return load_nsw_electoral_from_pipeline_manifest(conn, manifest_path)
+    if source_family == ACT_GIFT_RETURN_SOURCE_DATASET:
+        return load_act_elections_from_pipeline_manifest(
+            conn,
+            manifest_path,
+            include_influence_events=include_influence_events,
+        )
     raise ValueError(f"Unsupported state/local manifest source_family: {source_family!r}")
 
 
@@ -4110,7 +4285,11 @@ def load_influence_events(conn) -> dict[str, Any]:
             event_family = "campaign_support"
             event_type = campaign_support_event_type(base_metadata, event_type)
         else:
-            event_family = "benefit" if event_type == "discretionary_benefit" else "money"
+            event_family = (
+                "benefit"
+                if event_type in {"discretionary_benefit", "gift_in_kind"}
+                else "money"
+            )
         attribution = (
             campaign_support_attribution(base_metadata) if campaign_support_record else None
         )
@@ -4212,7 +4391,10 @@ def load_influence_events(conn) -> dict[str, Any]:
             "date_reported": date_reported,
             "chamber": None,
             "disclosure_system": disclosure_system,
-            "disclosure_threshold": "AEC financial disclosure threshold for the reporting period.",
+            "disclosure_threshold": (
+                base_metadata.get("disclosure_threshold")
+                or "AEC financial disclosure threshold for the reporting period."
+            ),
             "evidence_status": "official_record_parsed",
             "extraction_method": extraction_method,
             "review_status": "not_required",
@@ -6703,6 +6885,7 @@ def load_processed_artifacts(
     include_money_flows: bool = True,
     include_qld_ecq: bool = True,
     include_nsw_aggregates: bool = True,
+    include_act_gift_returns: bool = True,
     include_house_interests: bool = True,
     include_senate_interests: bool = True,
     include_electorate_boundaries: bool = True,
@@ -6736,6 +6919,8 @@ def load_processed_artifacts(
                 summary["qld_ecq_eds_money_flows"] = load_qld_ecq_eds_money_flows(conn)
                 summary["qld_ecq_eds_participants"] = load_qld_ecq_eds_participants(conn)
                 summary["qld_ecq_eds_contexts"] = load_qld_ecq_eds_contexts(conn)
+            if include_act_gift_returns:
+                summary["act_gift_return_money_flows"] = load_act_gift_return_money_flows(conn)
         if include_nsw_aggregates:
             summary["nsw_aggregate_context_observations"] = (
                 load_nsw_aggregate_context_observations(conn)

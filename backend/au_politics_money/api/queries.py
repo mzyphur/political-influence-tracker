@@ -26,6 +26,26 @@ SEARCH_TYPES = {
     "postcode",
 }
 
+STATE_LOCAL_MONEY_SOURCE_DATASETS = (
+    "act_elections_gift_returns",
+    "qld_ecq_eds",
+)
+STATE_LOCAL_RECORD_FLOW_KINDS = {
+    "act_gift_in_kind",
+    "act_gift_of_money",
+    "qld_electoral_expenditure",
+    "qld_gift",
+}
+STATE_LOCAL_GIFT_FLOW_KINDS = (
+    "act_gift_in_kind",
+    "act_gift_of_money",
+    "qld_gift",
+)
+STATE_LOCAL_MONEY_GIFT_FLOW_KINDS = (
+    "act_gift_of_money",
+    "qld_gift",
+)
+
 PARTY_PUBLIC_LABELS = {
     "AG": "Australian Greens",
     "ALP": "Australian Labor Party",
@@ -1362,7 +1382,7 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             """,
             (),
         )
-        qld_ecq_rows = _fetch_dicts(
+        state_local_money_rows = _fetch_dicts(
             conn,
             """
             SELECT
@@ -1371,8 +1391,11 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
                 jurisdiction.code AS jurisdiction_code,
                 count(*) AS money_flow_count,
                 count(*) FILTER (
-                    WHERE money_flow.metadata->>'flow_kind' = 'qld_gift'
+                    WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
                 ) AS gift_or_donation_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = 'act_gift_in_kind'
+                ) AS gift_in_kind_count,
                 count(*) FILTER (
                     WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
                 ) AS electoral_expenditure_count,
@@ -1385,12 +1408,15 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             FROM money_flow
             JOIN jurisdiction
               ON jurisdiction.id = money_flow.jurisdiction_id
-            WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+            WHERE money_flow.metadata->>'source_dataset' = ANY(%s)
               AND money_flow.is_current IS TRUE
             GROUP BY jurisdiction.name, jurisdiction.level, jurisdiction.code
             ORDER BY jurisdiction.level, jurisdiction.name
             """,
-            (),
+            (
+                list(STATE_LOCAL_GIFT_FLOW_KINDS),
+                list(STATE_LOCAL_MONEY_SOURCE_DATASETS),
+            ),
         )
         vote_rows = _fetch_dicts(
             conn,
@@ -1409,17 +1435,28 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
         )
 
     totals = influence_total_rows[0] if influence_total_rows else {}
-    qld_state = next(
-        (row for row in qld_ecq_rows if row.get("jurisdiction_level") == "state"),
-        {},
-    )
-    qld_local = next(
-        (row for row in qld_ecq_rows if row.get("jurisdiction_level") == "local"),
-        {},
-    )
+    state_money_rows = [
+        row
+        for row in state_local_money_rows
+        if row.get("jurisdiction_level") == "state"
+    ]
+    local_money_rows = [
+        row
+        for row in state_local_money_rows
+        if row.get("jurisdiction_level") == "local"
+    ]
+
+    def sum_rows(rows: list[dict[str, Any]], key: str) -> Any:
+        values = [row.get(key) for row in rows if row.get(key) is not None]
+        return sum(values) if values else 0
+
+    def jurisdiction_codes(rows: list[dict[str, Any]]) -> str | None:
+        codes = [str(row.get("jurisdiction_code")) for row in rows if row.get("jurisdiction_code")]
+        return ", ".join(sorted(codes)) if codes else None
+
     federal_status = "active"
-    state_status = "partial" if qld_state else "planned"
-    council_status = "partial" if qld_local else "planned"
+    state_status = "partial" if state_money_rows else "planned"
+    council_status = "partial" if local_money_rows else "planned"
     layers = [
         {
             "id": "federal_representatives",
@@ -1488,19 +1525,27 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             "label": "State and territory money/gift/lobbying records",
             "level": "state",
             "status": state_status,
-            "jurisdiction": "QLD" if qld_state else None,
+            "jurisdiction": jurisdiction_codes(state_money_rows),
             "attribution": (
-                "Queensland ECQ EDS active; other state/territory adapters planned. "
-                "Expenditure rows are campaign support, not personal receipt."
-                if qld_state
+                "State/territory disclosure adapters active for the listed jurisdictions. "
+                "Gift-in-kind rows are reported non-cash values; expenditure rows are "
+                "campaign support, not personal receipt."
+                if state_money_rows
                 else "adapter-ready, not yet ingested"
             ),
             "counts": {
-                "money_flow_rows": qld_state.get("money_flow_count") or 0,
-                "gift_or_donation_rows": qld_state.get("gift_or_donation_count") or 0,
-                "electoral_expenditure_rows": qld_state.get("electoral_expenditure_count") or 0,
-                "reported_amount_events": qld_state.get("reported_amount_event_count") or 0,
-                "reported_amount_total": qld_state.get("reported_amount_total"),
+                "money_flow_rows": sum_rows(state_money_rows, "money_flow_count"),
+                "gift_or_donation_rows": sum_rows(state_money_rows, "gift_or_donation_count"),
+                "gift_in_kind_rows": sum_rows(state_money_rows, "gift_in_kind_count"),
+                "electoral_expenditure_rows": sum_rows(
+                    state_money_rows,
+                    "electoral_expenditure_count",
+                ),
+                "reported_amount_events": sum_rows(
+                    state_money_rows,
+                    "reported_amount_event_count",
+                ),
+                "reported_amount_total": sum_rows(state_money_rows, "reported_amount_total"),
             },
         },
         {
@@ -1508,19 +1553,26 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
             "label": "Council/local disclosures and meeting records",
             "level": "council",
             "status": council_status,
-            "jurisdiction": "QLD-LOCAL" if qld_local else None,
+            "jurisdiction": jurisdiction_codes(local_money_rows),
             "attribution": (
                 "Queensland ECQ EDS local-government disclosure rows active; "
                 "meeting/register adapters planned."
-                if qld_local
+                if local_money_rows
                 else "adapter-ready, not yet ingested"
             ),
             "counts": {
-                "money_flow_rows": qld_local.get("money_flow_count") or 0,
-                "gift_or_donation_rows": qld_local.get("gift_or_donation_count") or 0,
-                "electoral_expenditure_rows": qld_local.get("electoral_expenditure_count") or 0,
-                "reported_amount_events": qld_local.get("reported_amount_event_count") or 0,
-                "reported_amount_total": qld_local.get("reported_amount_total"),
+                "money_flow_rows": sum_rows(local_money_rows, "money_flow_count"),
+                "gift_or_donation_rows": sum_rows(local_money_rows, "gift_or_donation_count"),
+                "gift_in_kind_rows": sum_rows(local_money_rows, "gift_in_kind_count"),
+                "electoral_expenditure_rows": sum_rows(
+                    local_money_rows,
+                    "electoral_expenditure_count",
+                ),
+                "reported_amount_events": sum_rows(
+                    local_money_rows,
+                    "reported_amount_event_count",
+                ),
+                "reported_amount_total": sum_rows(local_money_rows, "reported_amount_total"),
             },
         },
     ]
@@ -1584,7 +1636,7 @@ def _qld_summary_rows(
     conn,
     *,
     role: str,
-    flow_kind: str,
+    flow_kind: str | tuple[str, ...],
     db_level: str | None,
     limit: int,
 ) -> list[dict[str, Any]]:
@@ -1593,8 +1645,11 @@ def _qld_summary_rows(
     entity_column = "source_entity_id" if role == "source" else "recipient_entity_id"
     raw_name_column = "source_raw_name" if role == "source" else "recipient_raw_name"
     level_filter = "AND jurisdiction.level = %s" if db_level else ""
+    flow_kinds = (flow_kind,) if isinstance(flow_kind, str) else flow_kind
     params: tuple[Any, ...] = (
-        (flow_kind, db_level, limit) if db_level else (flow_kind, limit)
+        (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), list(flow_kinds), db_level, limit)
+        if db_level
+        else (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), list(flow_kinds), limit)
     )
     return _fetch_dicts(
         conn,
@@ -1616,11 +1671,10 @@ def _qld_summary_rows(
             SELECT count(*) AS identifier_count
             FROM entity_identifier
             WHERE entity_identifier.entity_id = entity.id
-              AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
         ) identifier_counts ON TRUE
-        WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+        WHERE money_flow.metadata->>'source_dataset' = ANY(%s)
           AND money_flow.is_current IS TRUE
-          AND money_flow.metadata->>'flow_kind' = %s
+          AND money_flow.metadata->>'flow_kind' = ANY(%s)
           {level_filter}
         GROUP BY entity.id, COALESCE(entity.canonical_name, money_flow.{raw_name_column})
         ORDER BY sum(money_flow.amount) DESC NULLS LAST, count(*) DESC, name
@@ -1719,7 +1773,11 @@ def _qld_recent_money_flow_rows(
     limit: int,
 ) -> list[dict[str, Any]]:
     level_filter = "AND jurisdiction.level = %s" if db_level else ""
-    params: tuple[Any, ...] = (db_level, limit) if db_level else (limit,)
+    params: tuple[Any, ...] = (
+        (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), db_level, limit)
+        if db_level
+        else (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), limit)
+    )
     rows = _fetch_dicts(
         conn,
         f"""
@@ -1728,6 +1786,7 @@ def _qld_recent_money_flow_rows(
             jurisdiction.name AS jurisdiction_name,
             jurisdiction.level AS jurisdiction_level,
             jurisdiction.code AS jurisdiction_code,
+            money_flow.metadata->>'source_dataset' AS source_dataset,
             money_flow.metadata->>'flow_kind' AS flow_kind,
             money_flow.receipt_type,
             money_flow.disclosure_category,
@@ -1746,7 +1805,10 @@ def _qld_recent_money_flow_rows(
             money_flow.original_text,
             money_flow.confidence,
             money_flow.metadata->>'transaction_kind' AS transaction_kind,
-            money_flow.metadata->>'description_of_goods_or_services'
+            COALESCE(
+                money_flow.metadata->>'description_of_goods_or_services',
+                money_flow.metadata->>'description'
+            )
                 AS description_of_goods_or_services,
             money_flow.metadata->>'purpose_of_expenditure' AS purpose_of_expenditure,
             money_flow.metadata->>'public_amount_counting_role' AS public_amount_counting_role,
@@ -1755,13 +1817,11 @@ def _qld_recent_money_flow_rows(
                 SELECT 1
                 FROM entity_identifier
                 WHERE entity_identifier.entity_id = money_flow.source_entity_id
-                  AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
             ) AS source_identifier_backed,
             EXISTS (
                 SELECT 1
                 FROM entity_identifier
                 WHERE entity_identifier.entity_id = money_flow.recipient_entity_id
-                  AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
             ) AS recipient_identifier_backed,
             money_flow.metadata->'qld_ecq_context'->'event'->>'external_id'
                 AS event_external_id,
@@ -1789,7 +1849,7 @@ def _qld_recent_money_flow_rows(
           ON source_entity.id = money_flow.source_entity_id
         LEFT JOIN entity recipient_entity
           ON recipient_entity.id = money_flow.recipient_entity_id
-        WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+        WHERE money_flow.metadata->>'source_dataset' = ANY(%s)
           AND money_flow.is_current IS TRUE
           {level_filter}
         ORDER BY
@@ -1814,11 +1874,11 @@ def get_state_local_records(
     db_level = level_map.get(level or "") if level else None
     if level and db_level is None:
         raise ValueError("level must be state, council, local, or omitted")
-    if flow_kind is not None and flow_kind not in {
-        "qld_gift",
-        "qld_electoral_expenditure",
-    }:
-        raise ValueError("flow_kind must be qld_gift, qld_electoral_expenditure, or omitted")
+    if flow_kind is not None and flow_kind not in STATE_LOCAL_RECORD_FLOW_KINDS:
+        raise ValueError(
+            "flow_kind must be one of "
+            f"{', '.join(sorted(STATE_LOCAL_RECORD_FLOW_KINDS))}, or omitted"
+        )
     if limit < 1 or limit > 100:
         raise ValueError("State/local record page limit must be between 1 and 100.")
 
@@ -1829,10 +1889,10 @@ def get_state_local_records(
     )
     with connect(database_url) as conn:
         where_clauses = [
-            "money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'",
+            "money_flow.metadata->>'source_dataset' = ANY(%s)",
             "money_flow.is_current IS TRUE",
         ]
-        params: list[Any] = []
+        params: list[Any] = [list(STATE_LOCAL_MONEY_SOURCE_DATASETS)]
         if db_level:
             where_clauses.append("jurisdiction.level = %s")
             params.append(db_level)
@@ -1870,6 +1930,7 @@ def get_state_local_records(
                 jurisdiction.name AS jurisdiction_name,
                 jurisdiction.level AS jurisdiction_level,
                 jurisdiction.code AS jurisdiction_code,
+                money_flow.metadata->>'source_dataset' AS source_dataset,
                 money_flow.metadata->>'flow_kind' AS flow_kind,
                 money_flow.receipt_type,
                 money_flow.disclosure_category,
@@ -1888,7 +1949,10 @@ def get_state_local_records(
                 money_flow.original_text,
                 money_flow.confidence,
                 money_flow.metadata->>'transaction_kind' AS transaction_kind,
-                money_flow.metadata->>'description_of_goods_or_services'
+                COALESCE(
+                    money_flow.metadata->>'description_of_goods_or_services',
+                    money_flow.metadata->>'description'
+                )
                     AS description_of_goods_or_services,
                 money_flow.metadata->>'purpose_of_expenditure' AS purpose_of_expenditure,
                 money_flow.metadata->>'public_amount_counting_role'
@@ -1899,13 +1963,11 @@ def get_state_local_records(
                     SELECT 1
                     FROM entity_identifier
                     WHERE entity_identifier.entity_id = money_flow.source_entity_id
-                      AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
                 ) AS source_identifier_backed,
                 EXISTS (
                     SELECT 1
                     FROM entity_identifier
                     WHERE entity_identifier.entity_id = money_flow.recipient_entity_id
-                      AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
                 ) AS recipient_identifier_backed,
                 money_flow.metadata->'qld_ecq_context'->'event'->>'external_id'
                     AS event_external_id,
@@ -1948,8 +2010,8 @@ def get_state_local_records(
     return _jsonable(
         {
             "status": "ok",
-            "source_family": "qld_ecq_eds",
-            "jurisdiction": "Queensland",
+            "source_family": "state_local_disclosures",
+            "jurisdiction": "Loaded state/local coverage",
             "requested_level": level or "all",
             "db_level": db_level or "all",
             "flow_kind": flow_kind,
@@ -1960,11 +2022,12 @@ def get_state_local_records(
             "has_more": has_more,
             "next_cursor": records[-1]["pagination_cursor"] if has_more and records else None,
             "caveat": (
-                "Queensland ECQ EDS record pages expose current source rows only. "
-                "Gift/donation rows and electoral expenditure rows are different "
-                "evidence families; expenditure is campaign-support context, not "
-                "personal receipt. Local electorate and event labels are disclosure "
-                "context labels, not candidate/councillor attribution. Records are "
+                "State/local record pages expose current source rows only. Gift, "
+                "gift-in-kind, and expenditure rows are different evidence families. "
+                "ACT gift-in-kind amounts are reported non-cash values; Queensland "
+                "expenditure is campaign-support context, not personal receipt. "
+                "Context labels are disclosure metadata, not candidate/councillor "
+                "attribution unless another source supports that link. Records are "
                 "not claims of wrongdoing, causation, quid pro quo, or improper influence."
             ),
         }
@@ -1994,18 +2057,21 @@ def get_state_local_summary(
                 jurisdiction.code AS jurisdiction_code,
                 count(*) AS money_flow_count,
                 count(*) FILTER (
-                    WHERE money_flow.metadata->>'flow_kind' = 'qld_gift'
+                    WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
                 ) AS gift_or_donation_count,
+                count(*) FILTER (
+                    WHERE money_flow.metadata->>'flow_kind' = 'act_gift_in_kind'
+                ) AS gift_in_kind_count,
                 count(*) FILTER (
                     WHERE money_flow.metadata->>'flow_kind' = 'qld_electoral_expenditure'
                 ) AS electoral_expenditure_count,
                 CASE
                     WHEN count(*) FILTER (
-                        WHERE money_flow.metadata->>'flow_kind' = 'qld_gift'
+                        WHERE money_flow.metadata->>'flow_kind' = ANY(%s)
                     ) = 0 THEN 0
                     ELSE sum(money_flow.amount) FILTER (
                         WHERE money_flow.amount IS NOT NULL
-                          AND money_flow.metadata->>'flow_kind' = 'qld_gift'
+                          AND money_flow.metadata->>'flow_kind' = ANY(%s)
                     )
                 END AS gift_or_donation_reported_amount_total,
                 CASE
@@ -2022,7 +2088,6 @@ def get_state_local_summary(
                         SELECT 1
                         FROM entity_identifier
                         WHERE entity_identifier.entity_id = money_flow.source_entity_id
-                          AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
                     )
                 ) AS source_identifier_backed_count,
                 count(*) FILTER (
@@ -2030,7 +2095,6 @@ def get_state_local_summary(
                         SELECT 1
                         FROM entity_identifier
                         WHERE entity_identifier.entity_id = money_flow.recipient_entity_id
-                          AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
                     )
                 ) AS recipient_identifier_backed_count,
                 count(*) FILTER (
@@ -2043,13 +2107,19 @@ def get_state_local_summary(
             FROM money_flow
             JOIN jurisdiction
               ON jurisdiction.id = money_flow.jurisdiction_id
-            WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+            WHERE money_flow.metadata->>'source_dataset' = ANY(%s)
               AND money_flow.is_current IS TRUE
               {level_filter}
             GROUP BY jurisdiction.name, jurisdiction.level, jurisdiction.code
             ORDER BY jurisdiction.level, jurisdiction.name
             """,
-            params,
+            (
+                list(STATE_LOCAL_GIFT_FLOW_KINDS),
+                list(STATE_LOCAL_GIFT_FLOW_KINDS),
+                list(STATE_LOCAL_GIFT_FLOW_KINDS),
+                list(STATE_LOCAL_MONEY_SOURCE_DATASETS),
+                *params,
+            ),
         )
         freshness_rows = _fetch_dicts(
             conn,
@@ -2062,23 +2132,23 @@ def get_state_local_summary(
               ON jurisdiction.id = money_flow.jurisdiction_id
             JOIN source_document
               ON source_document.id = money_flow.source_document_id
-            WHERE money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'
+            WHERE money_flow.metadata->>'source_dataset' = ANY(%s)
               AND money_flow.is_current IS TRUE
               {level_filter}
             """,
-            params,
+            (list(STATE_LOCAL_MONEY_SOURCE_DATASETS), *params),
         )
         top_gift_donors = _qld_summary_rows(
             conn,
             role="source",
-            flow_kind="qld_gift",
+            flow_kind=STATE_LOCAL_GIFT_FLOW_KINDS,
             db_level=db_level,
             limit=limit,
         )
         top_gift_recipients = _qld_summary_rows(
             conn,
             role="recipient",
-            flow_kind="qld_gift",
+            flow_kind=STATE_LOCAL_GIFT_FLOW_KINDS,
             db_level=db_level,
             limit=limit,
         )
@@ -2220,13 +2290,14 @@ def get_state_local_summary(
                 "used under CC BY 4.0 unless otherwise noted; no endorsement is implied."
             ),
             "caveat": (
-                "Queensland ECQ EDS rows are state/local disclosure records. "
-                "Gift and donation rows are source-backed money records; electoral "
-                "expenditure rows are campaign-support context and not personal receipt. "
-                "Event and local-electorate labels are exact matches to archived ECQ "
-                "lookup APIs; event dates describe the election event, not transaction dates, "
-                "and local-electorate labels do not attribute money or campaign expenditure "
-                "to a candidate, councillor, or MP."
+                "State/local rows are disclosure records from implemented jurisdiction "
+                "adapters. Queensland gift/donation rows and ACT gift-of-money rows are "
+                "source-backed money records; ACT gift-in-kind rows are reported non-cash "
+                "values; Queensland electoral expenditure rows are campaign-support "
+                "context and not personal receipt. Event, local-electorate, candidate, "
+                "or party labels are disclosure metadata and do not attribute money or "
+                "campaign expenditure to a candidate, councillor, or MP unless a separate "
+                "source supports that link."
             ),
         }
     )

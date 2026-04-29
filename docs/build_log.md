@@ -4,6 +4,18 @@
 
 Completed:
 
+- Added `run-state-local-pipeline --jurisdiction act` for the first ACT
+  state-level money/gift adapter. It archives the official Elections ACT
+  2025-2026 gift-return page, validates the current table headers, normalizes
+  225 rows into `data/processed/act_gift_return_money_flows/`, and loads those
+  exact manifest-referenced artifacts into Postgres after checking summary,
+  JSONL, source metadata, and source body hashes. Current local coverage is 206
+  gifts of money and 19 gifts-in-kind with $87,394.50 in reported value.
+- Generalized `/api/state-local/summary`, `/api/state-local/records`, and the
+  State/Council frontend panel beyond QLD-only rows. ACT gift-in-kind rows are
+  displayed as reported non-cash values, QLD expenditure remains
+  campaign-support context, and NSW donor-location aggregates stay separate
+  from donor-recipient money-flow rows.
 - Added `run-state-local-pipeline --jurisdiction qld` as the first
   manifest-producing state/local orchestration command. It refreshes ECQ form
   pages and lookup API snapshots, fetches current ECQ CSV exports, normalizes

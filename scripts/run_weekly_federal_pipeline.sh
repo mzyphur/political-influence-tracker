@@ -17,7 +17,7 @@ if [[ ! -x ".venv/bin/python" ]]; then
 fi
 
 PIPELINE_ARGS=(run-federal-foundation-pipeline --refresh-existing-sources)
-LOAD_ARGS=(load-postgres --skip-qld-ecq --skip-nsw-aggregates)
+LOAD_ARGS=(load-postgres --skip-qld-ecq --skip-nsw-aggregates --skip-act-gift-returns)
 if .venv/bin/dotenv -f .env run -- \
   bash -c 'test -n "${THEY_VOTE_FOR_YOU_API_KEY:-${TVFY_API_KEY:-}}"'; then
   PIPELINE_ARGS+=(--include-votes)

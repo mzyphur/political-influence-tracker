@@ -119,7 +119,7 @@ def state_local_records(
     level: Annotated[str | None, Query(pattern="^(state|council|local)$")] = None,
     flow_kind: Annotated[
         str | None,
-        Query(pattern="^(qld_gift|qld_electoral_expenditure)$"),
+        Query(pattern="^(act_gift_in_kind|act_gift_of_money|qld_gift|qld_electoral_expenditure)$"),
     ] = None,
     cursor: Annotated[str | None, Query(min_length=1, max_length=600)] = None,
     limit: Annotated[int, Query(ge=1, le=100)] = 25,

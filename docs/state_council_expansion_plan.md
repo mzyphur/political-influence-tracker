@@ -203,6 +203,17 @@ Notes:
   can be included in the party grouping return. This matches the federal
   campaign-support rule: show party-channelled candidate support separately from
   personal receipt.
+- First implemented adapter:
+  `run-state-local-pipeline --jurisdiction act` archives the official
+  Elections ACT 2025-2026 gift-return page and normalizes current HTML table
+  rows into `data/processed/act_gift_return_money_flows/`. Current coverage is
+  225 rows: 206 gifts of money and 19 gifts-in-kind with $87,394.50 in reported
+  value. Gift-in-kind values are non-cash reported values. The ACT threshold is
+  cumulative by donor, so individual rows may be below $1,000.
+- ACT gift-return rows are source-backed party/non-party-candidate grouping
+  disclosure records. They should be displayed as state disclosure context until
+  separate candidate/electorate/office-holder evidence supports a more specific
+  attribution.
 
 ## First Implementation Sequence
 

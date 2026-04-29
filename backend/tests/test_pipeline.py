@@ -314,6 +314,49 @@ def test_state_local_nsw_pipeline_records_aggregate_context_steps(monkeypatch) -
     assert calls["source_page_link_context"]
 
 
+def test_state_local_act_pipeline_records_gift_return_steps(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+
+    monkeypatch.setattr("au_politics_money.pipeline._git_commit", lambda: "act123")
+    monkeypatch.setattr("au_politics_money.pipeline._dependency_versions", lambda: {})
+
+    def fake_write_manifest(manifest):
+        calls["manifest"] = manifest
+        return "manifest.json"
+
+    def fake_fetch_source(source):
+        return f"fetch:{source.source_id}"
+
+    def fake_normalize_act(*, metadata_path):
+        calls["metadata_path"] = str(metadata_path)
+        return "act-gift-return-summary"
+
+    monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
+    monkeypatch.setattr("au_politics_money.pipeline.fetch_source", fake_fetch_source)
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.normalize_act_gift_returns",
+        fake_normalize_act,
+    )
+
+    assert run_state_local_pipeline(jurisdiction="act", smoke=True) == "manifest.json"
+
+    manifest = calls["manifest"]
+    assert manifest.pipeline_name == "state_local"
+    assert manifest.git_commit == "act123"
+    assert manifest.parameters["jurisdiction"] == "act"
+    assert manifest.parameters["source_family"] == "act_elections_gift_returns"
+    assert manifest.parameters["loads_database"] is False
+    assert "gift-in-kind" in manifest.parameters["claim_boundary"]
+    assert [step.name for step in manifest.steps] == [
+        "fetch_act_gift_return_source",
+        "normalize_act_gift_returns",
+    ]
+    assert manifest.steps[0].output["metadata_paths"] == {
+        "act_gift_returns_2025_2026": "fetch:act_gift_returns_2025_2026"
+    }
+    assert calls["metadata_path"] == "fetch:act_gift_returns_2025_2026"
+
+
 def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:
     with pytest.raises(ValueError, match="Unsupported state/local jurisdiction"):
         run_state_local_pipeline(jurisdiction="wa")

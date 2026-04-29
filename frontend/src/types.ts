@@ -151,6 +151,7 @@ export type StateLocalSummaryTotalRow = {
   jurisdiction_code: string;
   money_flow_count: number;
   gift_or_donation_count: number;
+  gift_in_kind_count: number;
   electoral_expenditure_count: number;
   gift_or_donation_reported_amount_total: number | null;
   electoral_expenditure_reported_amount_total: number | null;
@@ -203,6 +204,7 @@ export type StateLocalSummaryRecord = {
   jurisdiction_name: string;
   jurisdiction_level: string;
   jurisdiction_code: string;
+  source_dataset: string | null;
   flow_kind: string | null;
   receipt_type: string | null;
   disclosure_category: string | null;

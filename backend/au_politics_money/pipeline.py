@@ -21,6 +21,10 @@ from au_politics_money.ingest.aec_electorate_finder import (
     fetch_aec_electorate_finder_postcodes,
     normalize_aec_electorate_finder_postcodes,
 )
+from au_politics_money.ingest.act_elections import (
+    GIFT_RETURNS_SOURCE_ID as ACT_GIFT_RETURNS_SOURCE_ID,
+    normalize_act_gift_returns,
+)
 from au_politics_money.ingest.aec_annual import (
     normalize_aec_annual_money_flows,
     summarize_aec_annual_zip,
@@ -520,10 +524,19 @@ def run_federal_foundation_pipeline(
 
 def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) -> Path:
     normalized_jurisdiction = jurisdiction.strip().lower()
-    if normalized_jurisdiction not in {"qld", "queensland", "nsw", "new south wales"}:
+    if normalized_jurisdiction not in {
+        "act",
+        "australian capital territory",
+        "qld",
+        "queensland",
+        "nsw",
+        "new south wales",
+    }:
         raise ValueError(
-            "Unsupported state/local jurisdiction. Currently supported: qld, nsw."
+            "Unsupported state/local jurisdiction. Currently supported: act, qld, nsw."
         )
+    if normalized_jurisdiction in {"act", "australian capital territory"}:
+        return _run_act_state_local_pipeline(smoke=smoke)
     if normalized_jurisdiction in {"nsw", "new south wales"}:
         return _run_nsw_state_local_pipeline(smoke=smoke)
 
@@ -604,6 +617,68 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
             "normalize_qld_ecq_eds_contexts",
             lambda: normalize_qld_ecq_eds_contexts(
                 lookup_metadata_paths=qld_artifacts["lookup_metadata_paths"],
+            ),
+        ),
+    ]
+
+    try:
+        for name, func in steps:
+            manifest.steps.append(_run_step(name, func))
+        manifest.status = "succeeded"
+    except PipelineStepError as exc:
+        manifest.steps.append(exc.result)
+        manifest.status = "failed"
+    finally:
+        finished = utc_now()
+        manifest.finished_at = finished.isoformat()
+        manifest.duration_seconds = (finished - started).total_seconds()
+
+    manifest_path = _write_manifest(manifest)
+    if manifest.status == "failed":
+        raise RuntimeError(f"Pipeline failed. Manifest: {manifest_path}")
+    return manifest_path
+
+
+def _run_act_state_local_pipeline(*, smoke: bool = False) -> Path:
+    started = utc_now()
+    act_artifacts: dict[str, Path] = {}
+
+    def fetch_act_sources() -> dict[str, Any]:
+        metadata_path = fetch_source(get_source(ACT_GIFT_RETURNS_SOURCE_ID))
+        act_artifacts["gift_returns_metadata_path"] = Path(metadata_path)
+        return {
+            "source_count": 1,
+            "metadata_paths": {ACT_GIFT_RETURNS_SOURCE_ID: str(metadata_path)},
+        }
+
+    manifest = PipelineManifest(
+        pipeline_name="state_local",
+        run_id=f"state_local_act_{timestamp(started)}",
+        status="running",
+        started_at=started.isoformat(),
+        git_commit=_git_commit(),
+        dependency_versions=_dependency_versions(),
+        parameters={
+            "jurisdiction": "act",
+            "source_family": "act_elections_gift_returns",
+            "smoke": smoke,
+            "loads_database": False,
+            "claim_boundary": (
+                "Fetch and normalize ACT Elections current gift-return rows. "
+                "Rows are source-backed party/non-party-candidate grouping gifts "
+                "of money or gift-in-kind values; gift-in-kind values are non-cash "
+                "benefits and none of these rows alone imply wrongdoing, personal "
+                "receipt by a later office-holder, or policy causation."
+            ),
+        },
+    )
+
+    steps: list[tuple[str, Callable[[], Any]]] = [
+        ("fetch_act_gift_return_source", fetch_act_sources),
+        (
+            "normalize_act_gift_returns",
+            lambda: normalize_act_gift_returns(
+                metadata_path=act_artifacts["gift_returns_metadata_path"],
             ),
         ),
     ]

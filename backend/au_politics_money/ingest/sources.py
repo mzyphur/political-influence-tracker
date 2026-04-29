@@ -777,6 +777,29 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="act_gift_returns_2025_2026",
+        name="Elections ACT Gift Returns 2025-2026",
+        jurisdiction="Australian Capital Territory",
+        level="state",
+        source_type="state_financial_disclosure_gift_return_table",
+        url=(
+            "https://www.elections.act.gov.au/funding-disclosures-and-registers/"
+            "gift-returns/gift-returns-2025-2026"
+        ),
+        expected_format="html_tables",
+        update_frequency="regular_gifts",
+        priority="high",
+        notes=(
+            "Official Elections ACT current gift-return table for gifts received "
+            "when a party grouping or non-party candidate grouping receives a gift, "
+            "or cumulative gifts from one donor, totalling $1,000 or more. Rows "
+            "include money gifts and gift-in-kind values such as event tickets or "
+            "services, and individual row amounts may be below $1,000 when the "
+            "threshold is cumulative. Individual home addresses are not fully "
+            "published online; only the public address surface should be stored."
+        ),
+    ),
+    SourceRecord(
         source_id="nacc_corrupt_conduct",
         name="NACC What is Corrupt Conduct",
         jurisdiction="Commonwealth",

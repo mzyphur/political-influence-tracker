@@ -59,16 +59,16 @@ http://127.0.0.1:8008/docs
   `party_entity_link` rows only; `include_candidates=true` adds candidate
   party/entity link edges with `evidence_status="candidate_requires_review"`.
 - `GET /api/state-local/summary` - first state/local summary surface. It
-  returns QLD ECQ source-family totals, ECQ identifier-backed counts, top gift
-  donors/recipients, and top campaign-spend actors. It also returns NSW
-  donor-location aggregate context from the official 2023 State Election
-  heatmap when loaded. State/council maps and representative joins remain under
-  construction.
-- `GET /api/state-local/records` - paginated QLD ECQ source-row feed for the
-  state/local summary panel. It accepts `level=state|council|local`,
-  `flow_kind=qld_gift|qld_electoral_expenditure`, `limit`, and an opaque
-  `cursor`; cursors are bound to the current level and flow-kind filters so
-  rows are not skipped if a UI changes slices.
+  returns QLD ECQ and ACT Elections source-family totals, identifier-backed
+  counts where available, top gift/gift-in-kind donors and recipients, and top
+  campaign-spend actors. It also returns NSW donor-location aggregate context
+  from the official 2023 State Election heatmap when loaded. State/council maps
+  and representative joins remain under construction.
+- `GET /api/state-local/records` - paginated state/local source-row feed for
+  the summary panel. It accepts `level=state|council|local`,
+  `flow_kind=act_gift_of_money|act_gift_in_kind|qld_gift|qld_electoral_expenditure`,
+  `limit`, and an opaque `cursor`; cursors are bound to the current level and
+  flow-kind filters so rows are not skipped if a UI changes slices.
 
 ## Search Behaviour
 
@@ -211,31 +211,32 @@ classifications.
 
 `/api/state-local/summary` is the first public API surface for non-federal data.
 It currently supports Queensland ECQ Electronic Disclosure System money-flow
-rows and NSW Electoral Commission aggregate donor-location context.
+rows, ACT Elections gift-return rows, and NSW Electoral Commission aggregate
+donor-location context.
 
 Useful parameters:
 
-- `level=state|council|local`; `council` and `local` both select ECQ local
-  government rows. NSW aggregate context is state-level only. Omit `level` to
-  aggregate all loaded state/local rows.
+- `level=state|council|local`; `council` and `local` both select local
+  government rows where a loaded adapter has them. ACT and NSW aggregate
+  context are state-level only. Omit `level` to aggregate all loaded
+  state/local rows.
 - `limit=1..25` controls each top-actor list.
 
 The response includes:
 
 - `source_document_count` and `latest_source_fetched_at`: freshness indicators
-  for the current ECQ money-flow export source documents backing the loaded
-  rows. These values help users see when the gift/donation and expenditure
-  exports behind the state/local disclosure family were last refreshed; they
-  do not count ECQ lookup API snapshots and they are not completeness
-  guarantees.
-- `totals_by_level`: money-flow row counts, gift/donation counts, electoral
-  expenditure counts, separate gift/donation and electoral-expenditure reported
-  amount totals, ECQ event/local-electorate context-backed row counts, and
-  source/recipient row counts where that side of the row is backed by an ECQ
-  participant identifier. There is intentionally no combined reported-amount
-  total because gift/donation money and campaign expenditure are different
-  evidence families. These are row-side counts, not counts of distinct ECQ IDs.
-- `top_gift_donors` and `top_gift_recipients`: disclosed gift/donation actors.
+  for the current source documents backing the loaded state/local money-flow
+  rows. These values do not count every lookup API snapshot and they are not
+  completeness guarantees.
+- `totals_by_level`: money-flow row counts, gift/donation counts,
+  gift-in-kind counts, electoral expenditure counts, separate gift/gift-in-kind
+  and electoral-expenditure reported amount totals, ECQ event/local-electorate
+  context-backed row counts, and source/recipient row counts where that side of
+  the row is backed by an accepted identifier. There is intentionally no
+  combined "personal receipt" total because cash gifts, non-cash gifts, and
+  campaign expenditure are different evidence families.
+- `top_gift_donors` and `top_gift_recipients`: disclosed gift and
+  gift-in-kind actors.
 - `top_expenditure_actors`: electoral expenditure actors, which are
   campaign-support context rather than personal receipt.
 - `top_events` and `top_local_electorates`: exact unique matches from archived
@@ -243,8 +244,8 @@ The response includes:
   election event, not the gift/donation/expenditure transaction date; local
   electorate labels are context labels, not candidate/councillor attribution.
 - `recent_records`: a compact current-row feed with source/recipient names,
-  reported amount, ECQ event/local-electorate context where matched, source-row
-  reference, source-document URL, and row-side ECQ identifier signals.
+  reported amount or value, ECQ event/local-electorate context where matched,
+  source-row reference, source-document URL, and row-side identifier signals.
 - `aggregate_context_totals` and `top_aggregate_donor_locations`: NSW
   aggregate donor-location rows from the official static 2023 State Election
   heatmap. These rows are not donor-recipient money-flow records and must not
@@ -254,15 +255,16 @@ The response includes:
   locations that cannot be mapped, plus NSWEC CC BY 4.0 attribution and
   no-endorsement requirements.
 
-`/api/state-local/records` returns the concrete current ECQ rows behind that
-summary with cursor pagination. Each row includes the normalized source and
-recipient names, amount, date fields, ECQ identifier-backed flags,
-event/local-electorate context, source row reference, source URL, source
-document id, source fetch timestamp, SHA-256 snapshot hash, and selected row
-metadata such as expenditure purpose and goods or services where ECQ provides
-them. Gift/donation rows are donor-recipient records. Electoral expenditure rows
-are expenditure incurred by a named actor; they are campaign-support context,
-not evidence that another person or office-holder received money.
+`/api/state-local/records` returns the concrete current state/local rows behind
+that summary with cursor pagination. Each row includes the normalized source and
+recipient names, amount/date fields, identifier-backed flags, event/local
+context where matched, source row reference, source URL, source document id,
+source fetch timestamp, SHA-256 snapshot hash, and selected row metadata such
+as gift-in-kind description, expenditure purpose, or goods/services where the
+source provides them. Gift/donation rows are donor-recipient records.
+Gift-in-kind rows are reported non-cash values. Electoral expenditure rows are
+expenditure incurred by a named actor; they are campaign-support context, not
+evidence that another person or office-holder received money.
 
 ECQ identifiers are attached only when the archived public lookup APIs provide
 an evidence-backed participant ID and the loader can make an exact unique match
