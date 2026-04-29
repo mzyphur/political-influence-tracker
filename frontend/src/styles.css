@@ -1274,6 +1274,16 @@ a:focus-visible {
   padding-top: 11px;
 }
 
+.benefit-highlights-panel {
+  border-top: 1px solid rgba(240, 109, 53, 0.2);
+  padding-top: 11px;
+}
+
+.benefit-highlights-panel .signal-row {
+  border-color: rgba(240, 109, 53, 0.18);
+  background: rgba(255, 249, 242, 0.78);
+}
+
 .campaign-summary-grid {
   margin-top: 10px;
 }

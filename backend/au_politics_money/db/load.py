@@ -5199,7 +5199,9 @@ def _senate_interest_extraction_confidence(record: dict[str, Any]) -> str:
     provider_method = (
         str(extraction.get("method") or "") if isinstance(extraction, dict) else ""
     )
-    if provider_method.startswith("subject_provider_verb:"):
+    if provider_method.startswith("subject_provider_verb:") or provider_method in {
+        "leading_provider_benefit_phrase",
+    }:
         return "official_api_structured_provider_heuristic"
     return "official_api_structured"
 

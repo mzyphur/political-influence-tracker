@@ -348,6 +348,15 @@ Each recent event includes source-document labels/URLs, source refs, evidence
 status, review status, amount status, and missing-data flags so the frontend can
 show the evidentiary trail rather than only a summary claim.
 
+The same response includes `benefit_summary` and `benefit_provider_summary` for
+public-facing gift, travel, hospitality, ticket, lounge, meal, flight, membership,
+and service highlights. These are descriptive summaries of non-rejected
+person-linked benefit records. They expose named-provider counts, reported-value
+counts/totals, missing-data counts, and pending-review counts so consumers do not
+mistake a parser-derived provider or missing dollar value for a settled factual
+claim. Missing values mean no dollar amount is recorded in the normalized data;
+they are not zeros.
+
 `/api/representatives/{person_id}/evidence` pages through the same event shape
 for selected representatives. It uses stable cursor pagination over
 `event_date`, `date_reported`, and event id so load-more interactions do not

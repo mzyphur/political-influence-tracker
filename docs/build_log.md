@@ -4,6 +4,25 @@
 
 Completed:
 
+- Added representative-level benefit highlights to the API and frontend. The
+  representative profile now exposes source-backed summaries of declared
+  benefit forms (for example private flights, tickets, lounge access, meals,
+  accommodation, subscriptions/services) plus the top named benefit providers.
+  The details pane shows these as "Gifts, Travel & Hospitality Highlights" so
+  users can see the small but politically meaningful influence channels before
+  opening raw source cards. The raw records and missing-data caveats remain
+  available; the summary does not imply wrongdoing or causation.
+- Improved conservative benefit-provider extraction for recurring public-register
+  wording. The parser now catches narrow leading-provider descriptions such as
+  `Cricket Australia - 2 x tickets` and `McKinnon Institute, covering...`, and
+  expands Virgin lounge/club wording to `Virgin Australia`. Senate leading-provider
+  matches are review-gated as heuristics. The leading-provider rule deliberately
+  rejects generic event/place/route titles such as `Melbourne Cup - 2 x tickets`,
+  `State of Origin - hospitality`, and `Sydney to Melbourne - flights`.
+- Tightened benefit-highlight claim discipline after review. Benefit summaries
+  now expose named-provider counts, missing-data counts, and pending-review
+  counts, and the frontend wording says missing values are not recorded in the
+  normalized data rather than assuming the public source never published them.
 - Added click-level QLD council disclosure context without turning the council
   boundary into a recipient. `GET /api/electorates/{id}` now returns a
   `qld_ecq_local_disclosure_context` object for QLD council features when ECQ

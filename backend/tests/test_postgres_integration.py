@@ -3226,59 +3226,82 @@ def test_representative_evidence_endpoint_pages_records_without_mixing_campaign_
             source_document_id = cur.fetchone()[0]
             cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
             jurisdiction_id = cur.fetchone()[0]
-            for external_key, family, amount, event_date, source_ref in (
+            for (
+                external_key,
+                family,
+                event_type,
+                event_subtype,
+                amount,
+                event_date,
+                source_ref,
+                missing_flags,
+            ) in (
                 (
                     "influence:clean-energy:jane-citizen:page-direct-1",
                     "benefit",
+                    "gift",
+                    "event_ticket_or_pass",
                     "100.00",
                     "2024-01-01",
                     "page-direct-1",
+                    [],
                 ),
                 (
                     "influence:clean-energy:jane-citizen:page-direct-2",
                     "private_interest",
+                    "fixture_private_interest",
+                    None,
                     None,
                     "2024-01-01",
                     "page-direct-2",
+                    [],
                 ),
                 (
                     "influence:clean-energy:jane-citizen:page-direct-undated",
                     "benefit",
+                    "sponsored_travel_or_hospitality",
+                    "private_aircraft_or_flight",
                     None,
                     None,
                     "page-direct-undated",
+                    ["value_not_disclosed", "event_date_not_disclosed"],
                 ),
                 (
                     "influence:clean-energy:jane-citizen:page-campaign",
                     "campaign_support",
+                    "candidate_or_senate_group_donation",
+                    None,
                     "5000.00",
                     "2025-01-01",
                     "page-campaign",
+                    [],
                 ),
             ):
                 cur.execute(
                     """
                     INSERT INTO influence_event (
-                        external_key, event_family, event_type, source_entity_id,
-                        source_raw_name, recipient_person_id, recipient_raw_name,
-                        jurisdiction_id, amount, amount_status, event_date,
+                        external_key, event_family, event_type, event_subtype,
+                        source_entity_id, source_raw_name, recipient_person_id,
+                        recipient_raw_name, jurisdiction_id, amount, amount_status, event_date,
                         date_reported, chamber, disclosure_system, evidence_status,
                         extraction_method, review_status, description,
                         source_document_id, source_ref, missing_data_flags, metadata
                     )
                     VALUES (
-                        %s, %s, 'fixture_record', %s, 'Clean Energy Pty Ltd',
+                        %s, %s, %s, %s, %s, 'Clean Energy Pty Ltd',
                         %s, 'Jane Citizen', %s, %s,
                         CASE WHEN %s::numeric IS NULL THEN 'not_disclosed' ELSE 'reported' END,
                         %s::date, '2024-02-01', 'house', 'pytest fixture',
                         'official_record', 'fixture_seed', 'not_required',
                         'Fixture representative evidence pagination row.',
-                        %s, %s, '[]'::jsonb, %s
+                        %s, %s, %s, %s
                     )
                     """,
                     (
                         external_key,
                         family,
+                        event_type,
+                        event_subtype,
                         integration_db.entity_id,
                         integration_db.person_id,
                         jurisdiction_id,
@@ -3287,12 +3310,31 @@ def test_representative_evidence_endpoint_pages_records_without_mixing_campaign_
                         event_date,
                         source_document_id,
                         source_ref,
+                        Jsonb(missing_flags),
                         Jsonb({"fixture": True}),
                     ),
                 )
         conn.commit()
 
     client = TestClient(app)
+
+    representative_response = client.get(f"/api/representatives/{integration_db.person_id}")
+    assert representative_response.status_code == 200
+    representative_payload = representative_response.json()
+    benefit_summary = {
+        row["event_subtype"]: row for row in representative_payload["benefit_summary"]
+    }
+    assert benefit_summary["event_ticket_or_pass"]["event_count"] == 1
+    assert benefit_summary["event_ticket_or_pass"]["reported_amount_total"] == 100.0
+    assert benefit_summary["private_aircraft_or_flight"]["event_count"] == 1
+    assert benefit_summary["private_aircraft_or_flight"]["needs_review_event_count"] == 0
+    assert benefit_summary["private_aircraft_or_flight"]["missing_data_event_count"] == 1
+    assert benefit_summary["private_aircraft_or_flight"]["named_provider_event_count"] == 1
+    assert representative_payload["benefit_provider_summary"][0]["provider_name"] == (
+        "Clean Energy Pty Ltd"
+    )
+    assert representative_payload["benefit_provider_summary"][0]["event_count"] == 2
+    assert representative_payload["benefit_provider_summary"][0]["needs_review_event_count"] == 0
 
     first_page_response = client.get(
         f"/api/representatives/{integration_db.person_id}/evidence",

@@ -126,6 +126,12 @@ def test_senate_interest_subject_provider_requires_review_gate() -> None:
         )
         == "official_api_structured"
     )
+    assert (
+        _senate_interest_extraction_confidence(
+            {"counterparty_extraction": {"method": "leading_provider_benefit_phrase"}}
+        )
+        == "official_api_structured_provider_heuristic"
+    )
 
 
 def test_normalize_electorate_name_strips_ocr_old_suffix() -> None:

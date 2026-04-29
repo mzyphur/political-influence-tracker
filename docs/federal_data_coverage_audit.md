@@ -1,6 +1,6 @@
 # Federal Data Coverage Audit
 
-Last updated: 2026-04-28
+Last updated: 2026-04-30
 
 This audit tracks whether the federal build can show useful, source-backed
 information about money, gifts, hospitality, travel, interests, lobbying/access,
@@ -83,6 +83,15 @@ because the wording needs manual review.
 Immediate implication: the UI should surface these records as disclosed benefits
 with missing-data labels, and the review queue should prioritize provider/date
 extraction where the text supports it.
+
+Implementation status: representative profiles now expose a public-facing
+benefit-highlight summary grouped by benefit form and named provider. This is
+intended to make small but important influence channels, such as private flights,
+event tickets, lounge memberships, meals, accommodation, and subscriptions,
+visible without forcing users to inspect every raw register row. These summaries
+are descriptive counts of disclosed records. They do not convert missing dollar
+values to zero, and they do not imply that a declared benefit caused a vote,
+policy position, or improper conduct.
 
 ### 3. Lobbying is registry context, not meeting/access evidence
 

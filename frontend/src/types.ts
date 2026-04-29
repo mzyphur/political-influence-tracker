@@ -382,6 +382,35 @@ export type RepresentativeCampaignSupportSummary = {
   last_event_date: string | null;
 };
 
+export type RepresentativeBenefitSummary = {
+  event_type: string;
+  event_subtype: string;
+  event_count: number;
+  provider_linked_event_count: number;
+  named_provider_event_count: number;
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  dated_event_count: number;
+  needs_review_event_count: number;
+  missing_data_event_count: number;
+  first_event_date: string | null;
+  last_event_date: string | null;
+};
+
+export type RepresentativeBenefitProviderSummary = {
+  provider_name: string;
+  provider_entity_id: number | null;
+  event_count: number;
+  event_types: string[];
+  event_subtypes: string[];
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  needs_review_event_count: number;
+  missing_data_event_count: number;
+  first_event_date: string | null;
+  last_event_date: string | null;
+};
+
 export type RepresentativeInfluenceSectorSummary = {
   public_sector: string;
   influence_event_count: number;
@@ -476,6 +505,8 @@ export type RepresentativeProfile = {
   };
   contact: RepresentativeContact;
   event_summary: RepresentativeEventSummary[];
+  benefit_summary: RepresentativeBenefitSummary[];
+  benefit_provider_summary: RepresentativeBenefitProviderSummary[];
   recent_events: RepresentativeEvent[];
   campaign_support_summary: RepresentativeCampaignSupportSummary[];
   campaign_support_recent_events: RepresentativeEvent[];

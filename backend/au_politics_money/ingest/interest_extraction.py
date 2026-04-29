@@ -72,6 +72,28 @@ SUBJECT_PROVIDER_PATTERN = re.compile(
     r"(?P<verb>provided|supplied|hosted|sponsored|funded|paid\s+for|"
     r"donated|gifted|facilitated|arranged|organised|organized|invited)\b",
 )
+LEADING_PROVIDER_PATTERN = re.compile(
+    r"^\s*(?P<name>[A-Z][A-Za-z0-9&'’.,() -]{2,90}?)"
+    r"(?:\s+-\s+|,\s+(?:covering|including|for|with|providing)\b)",
+)
+BENEFIT_CONTEXT_PATTERN = re.compile(
+    r"\b(ticket|tickets|pass|passes|hospitality|gift|gifts|travel|flight|flights|"
+    r"lounge|membership|dinner|lunch|meal|accommodation|conference|function|"
+    r"event|race|match|game|gala|reception)\b",
+    flags=re.IGNORECASE,
+)
+LEADING_PROVIDER_ORG_PATTERN = re.compile(
+    r"\b("
+    r"aboriginal corporation|association|bank|club|college|company|corporation|"
+    r"council|federation|foundation|guild|institute|limited|ltd|network|"
+    r"organisation|organization|pty|society|trust|union|university|"
+    r"australia|new zealand"
+    r")\b",
+    flags=re.IGNORECASE,
+)
+TRAVEL_ROUTE_PATTERN = re.compile(
+    r"^[A-Z][A-Za-z'’ -]{2,60}\s+to\s+[A-Z][A-Za-z'’ -]{2,60}$"
+)
 
 BRANDED_PROVIDER_PATTERNS = (
     (
@@ -82,7 +104,12 @@ BRANDED_PROVIDER_PATTERNS = (
     (
         "Virgin Australia",
         "virgin_australia",
-        re.compile(r"\b(virgin australia|virgin beyond|beyond lounge|virgin club)\b", re.IGNORECASE),
+        re.compile(
+            r"\b(virgin australia|virgin beyond|beyond lounge|beyond club|"
+            r"virgin club|virgin the club|virgin lounge|virgin velocity lounge|"
+            r"velocity lounge|club lounge membership \(virgin\))\b",
+            re.IGNORECASE,
+        ),
     ),
     (
         "Qatar Airways",
@@ -231,6 +258,40 @@ def _generic_subject_provider(value: str) -> bool:
     }
 
 
+def _looks_like_benefit_context(value: str) -> bool:
+    return bool(BENEFIT_CONTEXT_PATTERN.search(value or ""))
+
+
+def _looks_like_leading_provider(value: str) -> bool:
+    cleaned = _clean_text(value)
+    if TRAVEL_ROUTE_PATTERN.fullmatch(cleaned):
+        return False
+    return bool(LEADING_PROVIDER_ORG_PATTERN.search(cleaned))
+
+
+def _leading_provider_payload(text: str, *, source_field: str) -> dict[str, Any] | None:
+    if not _looks_like_benefit_context(text):
+        return None
+    match = LEADING_PROVIDER_PATTERN.search(text)
+    if match is None:
+        return None
+    provider = _clean_provider_name(match.group("name"))
+    if not provider or _generic_subject_provider(provider):
+        return None
+    if not _looks_like_leading_provider(provider):
+        return None
+    if provider.lower() in GENERIC_PROVIDER_VALUES:
+        return None
+    if len(provider) < 3 or provider.isdigit():
+        return None
+    return {
+        "value": provider[:250],
+        "source_field": source_field,
+        "method": "leading_provider_benefit_phrase",
+        "raw_span": match.group(0).strip(),
+    }
+
+
 def _explicit_provider_payload(
     match: re.Match[str],
     *,
@@ -295,6 +356,10 @@ def extract_provider(description: str, *, fields: dict[str, Any] | None = None) 
                 "method": f"subject_provider_verb:{match.group('verb').lower()}",
                 "raw_span": match.group(0).strip(),
             }
+    for field_name, text in texts:
+        payload = _leading_provider_payload(text, source_field=field_name)
+        if payload:
+            return payload
     for field_name, text in texts:
         for provider, method_suffix, pattern in BRANDED_PROVIDER_PATTERNS:
             match = pattern.search(text)

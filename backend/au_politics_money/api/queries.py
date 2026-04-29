@@ -3227,6 +3227,92 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             """,
             (person_id,),
         )
+        benefit_summary = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                influence_event.event_type,
+                COALESCE(influence_event.event_subtype, 'unspecified') AS event_subtype,
+                count(*) AS event_count,
+                count(*) FILTER (WHERE influence_event.source_entity_id IS NOT NULL)
+                    AS provider_linked_event_count,
+                count(*) FILTER (
+                    WHERE COALESCE(
+                        source_entity.canonical_name,
+                        NULLIF(influence_event.source_raw_name, '')
+                    ) IS NOT NULL
+                ) AS named_provider_event_count,
+                count(*) FILTER (WHERE amount_status = 'reported') AS reported_amount_event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total,
+                count(*) FILTER (WHERE influence_event.event_date IS NOT NULL)
+                    AS dated_event_count,
+                count(*) FILTER (WHERE influence_event.review_status = 'needs_review')
+                    AS needs_review_event_count,
+                count(*) FILTER (
+                    WHERE COALESCE(jsonb_array_length(influence_event.missing_data_flags), 0) > 0
+                ) AS missing_data_event_count,
+                min(influence_event.event_date) AS first_event_date,
+                max(influence_event.event_date) AS last_event_date
+            FROM influence_event
+            LEFT JOIN entity source_entity
+              ON source_entity.id = influence_event.source_entity_id
+            WHERE influence_event.recipient_person_id = %s
+              AND influence_event.review_status <> 'rejected'
+              AND influence_event.event_family = 'benefit'
+            GROUP BY
+                influence_event.event_type,
+                COALESCE(influence_event.event_subtype, 'unspecified')
+            ORDER BY
+                event_count DESC,
+                reported_amount_total DESC NULLS LAST,
+                influence_event.event_type,
+                COALESCE(influence_event.event_subtype, 'unspecified')
+            LIMIT 25
+            """,
+            (person_id,),
+        )
+        benefit_provider_summary = _fetch_dicts(
+            conn,
+            """
+            SELECT
+                COALESCE(source_entity.canonical_name, NULLIF(influence_event.source_raw_name, ''))
+                    AS provider_name,
+                source_entity.id AS provider_entity_id,
+                count(*) AS event_count,
+                array_remove(array_agg(DISTINCT influence_event.event_type), NULL) AS event_types,
+                array_remove(array_agg(DISTINCT influence_event.event_subtype), NULL)
+                    AS event_subtypes,
+                count(*) FILTER (WHERE influence_event.amount_status = 'reported')
+                    AS reported_amount_event_count,
+                sum(influence_event.amount) FILTER (
+                    WHERE influence_event.amount_status = 'reported'
+                ) AS reported_amount_total,
+                count(*) FILTER (WHERE influence_event.review_status = 'needs_review')
+                    AS needs_review_event_count,
+                count(*) FILTER (
+                    WHERE COALESCE(jsonb_array_length(influence_event.missing_data_flags), 0) > 0
+                ) AS missing_data_event_count,
+                min(influence_event.event_date) AS first_event_date,
+                max(influence_event.event_date) AS last_event_date
+            FROM influence_event
+            LEFT JOIN entity source_entity
+              ON source_entity.id = influence_event.source_entity_id
+            WHERE influence_event.recipient_person_id = %s
+              AND influence_event.review_status <> 'rejected'
+              AND influence_event.event_family = 'benefit'
+              AND COALESCE(source_entity.canonical_name, NULLIF(influence_event.source_raw_name, ''))
+                    IS NOT NULL
+            GROUP BY provider_name, source_entity.id
+            ORDER BY
+                event_count DESC,
+                reported_amount_total DESC NULLS LAST,
+                provider_name
+            LIMIT 12
+            """,
+            (person_id,),
+        )
         recent_events = _fetch_dicts(
             conn,
             """
@@ -3390,6 +3476,8 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             ),
             "office_terms": terms,
             "event_summary": event_summary,
+            "benefit_summary": benefit_summary,
+            "benefit_provider_summary": benefit_provider_summary,
             "recent_events": _with_representative_evidence_cursors(recent_events),
             "campaign_support_summary": campaign_support_summary,
             "campaign_support_recent_events": _with_representative_evidence_cursors(

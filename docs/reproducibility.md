@@ -447,7 +447,11 @@ The federal foundation pipeline currently performs:
     captures subject-provider wording such as "Example Foundation provided..."
     or "Commonwealth Bank hosted..." when the source text names the provider
     before the verb. That subject-provider pattern is treated as a review-gated
-    heuristic in Senate API rows, and passive fragments such as "tickets were
+    heuristic in Senate API rows. A narrow leading-provider pattern also captures
+    benefit descriptions such as "Cricket Australia - 2 x tickets" or
+    "McKinnon Institute, covering..." when the text clearly names a provider
+    before a benefit description; this is likewise review-gated for Senate API
+    rows. Passive fragments such as "tickets were
     provided" or "I was gifted" are rejected as provider names. Date parsing
     includes numeric dates, day-month dates, day-range starts, and month-first
     dates. A narrow branded-benefit pass also identifies source providers for

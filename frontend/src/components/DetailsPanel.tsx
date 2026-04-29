@@ -89,6 +89,8 @@ export function DetailsPanel({
   const recentEvents = representativeProfile?.recent_events ?? [];
   const campaignSupportSummary = representativeProfile?.campaign_support_summary ?? [];
   const campaignSupportEvents = representativeProfile?.campaign_support_recent_events ?? [];
+  const benefitHighlights = representativeProfile?.benefit_summary ?? [];
+  const topBenefitProviders = representativeProfile?.benefit_provider_summary ?? [];
   const directPageKey = `${selectedPersonId ?? "none"}:${eventFamilyFilter}`;
   const directPageState = directEvidencePages[directPageKey] ?? emptyEvidencePageState;
   const topSectors = useMemo(
@@ -724,6 +726,41 @@ export function DetailsPanel({
         </div>
       </section>
 
+      {representativeProfileStatus === "ready" &&
+        representativeProfile &&
+        benefitHighlights.length > 0 && (
+          <section className="panel-section benefit-highlights-panel">
+            <h3>Gifts, Travel & Hospitality Highlights</h3>
+            <p className="scope-caption">
+              These are declared gifts, hospitality, travel, tickets, memberships,
+              flights, meals, and similar benefit records. Missing values mean no
+              dollar amount is recorded in the normalized data; they are not zeros.
+            </p>
+            <SignalBlock title="Benefit forms">
+              {benefitHighlights.slice(0, 6).map((summary) => (
+                <SignalRow
+                  key={`${summary.event_type}:${summary.event_subtype}`}
+                  label={benefitFormLabel(summary.event_type, summary.event_subtype)}
+                  value={`${summary.event_count.toLocaleString("en-AU")} records`}
+                  detail={benefitSummaryDetail(summary)}
+                />
+              ))}
+            </SignalBlock>
+            {topBenefitProviders.length > 0 && (
+              <SignalBlock title="Named providers">
+                {topBenefitProviders.slice(0, 5).map((provider) => (
+                  <SignalRow
+                    key={`${provider.provider_entity_id ?? "raw"}:${provider.provider_name}`}
+                    label={provider.provider_name}
+                    value={`${provider.event_count.toLocaleString("en-AU")} records`}
+                    detail={benefitProviderDetail(provider)}
+                  />
+                ))}
+              </SignalBlock>
+            )}
+          </section>
+        )}
+
       <section className="panel-section campaign-support-panel">
         <h3>Campaign Support Context, Not Personal Receipts</h3>
         <p className="scope-caption">
@@ -1114,6 +1151,92 @@ function eventFamilyLabel(value: string): string {
     access: "Access context"
   };
   return labels[value] ?? humanize(value);
+}
+
+function benefitFormLabel(eventType: string, eventSubtype: string | null | undefined): string {
+  const subtype = normalizeStatusKey(eventSubtype);
+  const subtypeLabels: Record<string, string> = {
+    accommodation_or_travel_hospitality: "Accommodation or travel hospitality",
+    event_ticket_or_pass: "Tickets, passes or hosted events",
+    meal_or_reception: "Meals or receptions",
+    membership_or_lounge_access: "Memberships or lounge access",
+    private_aircraft_or_flight: "Private flights or aviation benefits",
+    subscription_or_service: "Subscriptions or services",
+    unspecified: ""
+  };
+  if (subtype && subtypeLabels[subtype]) return subtypeLabels[subtype];
+  return eventTypeLabel({
+    event_type: eventType,
+    event_family: "benefit",
+    event_subtype: eventSubtype ?? null
+  } as RepresentativeEvent);
+}
+
+function benefitSummaryDetail(summary: {
+  event_type: string;
+  event_subtype: string | null;
+  named_provider_event_count: number;
+  provider_linked_event_count: number;
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  dated_event_count: number;
+  needs_review_event_count: number;
+  missing_data_event_count: number;
+  first_event_date: string | null;
+  last_event_date: string | null;
+}) {
+  const details = [
+    eventTypeLabel({
+      event_type: summary.event_type,
+      event_family: "benefit",
+      event_subtype: summary.event_subtype
+    } as RepresentativeEvent),
+    `${summary.named_provider_event_count.toLocaleString("en-AU")} with named provider`,
+    summary.reported_amount_event_count > 0
+      ? `${formatMoney(summary.reported_amount_total)} reported`
+      : "value not disclosed or not extracted",
+    summary.needs_review_event_count > 0
+      ? `${summary.needs_review_event_count.toLocaleString("en-AU")} pending review`
+      : "",
+    summary.missing_data_event_count > 0
+      ? `${summary.missing_data_event_count.toLocaleString("en-AU")} with missing fields`
+      : "",
+    summary.dated_event_count > 0
+      ? voteDateSpan(summary.first_event_date, summary.last_event_date)
+      : "dates often not published"
+  ];
+  return details.filter(Boolean).join(" · ");
+}
+
+function benefitProviderDetail(provider: {
+  event_types: string[];
+  event_subtypes: string[];
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  needs_review_event_count: number;
+  missing_data_event_count: number;
+  first_event_date: string | null;
+  last_event_date: string | null;
+}) {
+  const forms = provider.event_subtypes
+    .map((subtype) => benefitFormLabel("", subtype))
+    .filter(Boolean);
+  const types = provider.event_types.map(humanize).filter(Boolean);
+  return [
+    forms.length ? Array.from(new Set(forms)).slice(0, 2).join(", ") : types.slice(0, 2).join(", "),
+    provider.reported_amount_event_count > 0
+      ? `${formatMoney(provider.reported_amount_total)} reported`
+      : "value not disclosed or not extracted",
+    provider.needs_review_event_count > 0
+      ? `${provider.needs_review_event_count.toLocaleString("en-AU")} pending review`
+      : "",
+    provider.missing_data_event_count > 0
+      ? `${provider.missing_data_event_count.toLocaleString("en-AU")} with missing fields`
+      : "",
+    voteDateSpan(provider.first_event_date, provider.last_event_date)
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function eventSourceLabel(event: RepresentativeEvent): string {
