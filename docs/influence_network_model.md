@@ -153,6 +153,9 @@ Every `modelled_allocation_edge` must include:
 - `allocation_basis`
 - `allocation_denominator`
 - `allocation_weight`
+- `event_period_scope`
+- `representative_scope`
+- `party_context_label`
 - `amount_estimate`
 - `amount_lower_bound`
 - `amount_upper_bound`
@@ -165,8 +168,9 @@ Current API graph scaffold:
 
 - `modelled_party_money_exposure`
   - Uses reviewed party/entity links and current office-term party membership.
-  - Reports `party_context_reported_amount_total` as the aggregate party/entity
-    money context.
+  - Reports `party_context_reported_amount_total` as loaded-period reviewed
+    party/entity receipts. The current implementation does not claim this is
+    term-bounded to an individual representative's service period.
   - Reports `modelled_amount_total` as a labelled equal-share exposure index
     when `allocation_method = equal_current_representative_share`.
   - Keeps `reported_amount_total` unset on the party-to-person edge so the
@@ -182,8 +186,9 @@ Current API graph scaffold:
 - Modelled allocation appears only after the user can see the method and caveat.
 - Representative profiles may show a compact `party_exposure_summary` derived
   from the same reviewed party/entity links and equal-share model, but it must
-  remain visually separate from direct money and campaign support and must retain
-  the "not a disclosed personal receipt" caveat.
+  remain visually separate from direct money and campaign support, must retain
+  the "not a disclosed personal receipt" caveat, and must label loaded-period
+  estimates as exposure indexes rather than money received.
 - Direct, campaign, party/entity, and modelled totals are not summed into a
   single "money received" number.
 - Network paths can show indirect relationships, but each edge must expose its

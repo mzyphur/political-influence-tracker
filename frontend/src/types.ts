@@ -405,6 +405,9 @@ export type RepresentativePartyExposureSummary = {
   last_event_date: string | null;
   input_event_count: number;
   input_source_document_count: number;
+  event_period_scope: string;
+  representative_scope: string;
+  party_context_label: string;
   claim_scope: string;
 };
 
@@ -764,6 +767,9 @@ export type InfluenceGraphEdge = {
   modelled_amount_total?: number | null;
   model_name?: string | null;
   model_version?: string | null;
+  event_period_scope?: string | null;
+  representative_scope?: string | null;
+  party_context_label?: string | null;
   input_event_ids?: number[];
   input_source_document_ids?: number[];
   amount_estimate?: number | null;

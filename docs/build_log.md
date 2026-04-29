@@ -29,6 +29,22 @@ Completed:
   The details pane shows this separately from direct money and campaign support,
   with explicit wording that the estimate is analytical context and not money
   received by the representative.
+- Tightened the party-mediated exposure model after review. The API and graph now
+  label the estimate as a loaded-period reviewed party/entity receipts exposure
+  index, not a term-bounded total, and the UI prefixes the primary value with
+  `Est. exposure`. Integration tests now assert that these party/entity receipts
+  stay out of direct representative event summaries, recent source cards, and the
+  default representative evidence feed.
+- Hardened direct representative feeds against over-linked rows. If a money row
+  points to a reviewed party/entity recipient, representative profile summaries,
+  evidence pages, and map direct totals exclude it from direct person-level
+  money even when a person id is also present. The row can still support
+  party/entity context and modelled exposure with the appropriate caveat.
+- Focused the party/entity review queue on useful representative exposure paths.
+  The generator now skips non-party labels such as `Independent` and, by default,
+  only materializes candidate links for party rows with current office-term
+  representatives. Historical/no-current-rep party rows can still be included
+  deliberately with `--include-without-current-representatives`.
 - Added click-level QLD council disclosure context without turning the council
   boundary into a recipient. `GET /api/electorates/{id}` now returns a
   `qld_ecq_local_disclosure_context` object for QLD council features when ECQ

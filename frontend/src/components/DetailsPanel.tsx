@@ -862,11 +862,12 @@ export function DetailsPanel({
         representativeProfile &&
         partyExposureSummary.length > 0 && (
           <section className="panel-section party-exposure-panel">
-            <h3>Party-Mediated Money Context</h3>
+            <h3>Party-Linked Money Exposure</h3>
             <p className="scope-caption">
-              These records flow through reviewed party or associated-entity links.
-              Equal-share values are analytical exposure estimates only; they are
-              not disclosed money received by this representative.
+              These are loaded-period receipts to reviewed party or associated-entity
+              pathways. Equal-share values are analytical exposure estimates only;
+              they are not term-bounded totals or disclosed money received by this
+              representative.
             </p>
             <SignalBlock title="Reviewed party pathways">
               {partyExposureSummary.map((summary) => (
@@ -876,7 +877,7 @@ export function DetailsPanel({
                   value={
                     summary.modelled_amount_total !== null &&
                     summary.modelled_amount_total !== undefined
-                      ? formatMoney(summary.modelled_amount_total)
+                      ? `Est. exposure ${formatMoney(summary.modelled_amount_total)}`
                       : "No estimate"
                   }
                   detail={partyExposureDetail(summary)}
@@ -1278,14 +1279,22 @@ function partyExposureDetail(summary: {
   input_source_document_count: number;
   first_event_date: string | null;
   last_event_date: string | null;
+  event_period_scope?: string | null;
+  representative_scope?: string | null;
+  party_context_label?: string | null;
   claim_scope: string;
 }) {
+  const periodScope =
+    summary.event_period_scope === "all_loaded_reviewed_party_entity_receipts"
+      ? "all loaded reviewed party/entity receipt records"
+      : summary.event_period_scope?.replaceAll("_", " ");
   return [
-    `${summary.event_count.toLocaleString("en-AU")} reviewed party/entity money records`,
-    `${formatMoney(summary.party_context_reported_amount_total)} party context total`,
+    `${summary.event_count.toLocaleString("en-AU")} reviewed party/entity receipt records`,
+    `${formatMoney(summary.party_context_reported_amount_total)} loaded-period party context`,
     summary.allocation_denominator
       ? `equal share across ${summary.allocation_denominator.toLocaleString("en-AU")} current party representatives`
       : summary.allocation_method.replaceAll("_", " "),
+    periodScope,
     `${summary.input_source_document_count.toLocaleString("en-AU")} source documents`,
     voteDateSpan(summary.first_event_date, summary.last_event_date),
     summary.claim_scope

@@ -198,8 +198,9 @@ GRAPH_CAVEAT = (
 
 REPRESENTATIVE_EVIDENCE_DIRECT_CAVEAT = (
     "Direct evidence pages include source-backed, non-rejected records linked to "
-    "this person and exclude campaign-support rows. Counts are descriptive and do "
-    "not imply wrongdoing, causation, or improper influence."
+    "this person and exclude campaign-support rows and reviewed party/entity "
+    "receipt context rows. Counts are descriptive and do not imply wrongdoing, "
+    "causation, or improper influence."
 )
 
 REPRESENTATIVE_EVIDENCE_CAMPAIGN_CAVEAT = (
@@ -212,6 +213,18 @@ REPRESENTATIVE_EVIDENCE_CAMPAIGN_CAVEAT = (
 
 REPRESENTATIVE_EVIDENCE_GROUPS = {"direct", "campaign_support"}
 _REPRESENTATIVE_EVIDENCE_MIN_DATE = date(1, 1, 1)
+DIRECT_REPRESENTATIVE_EVENT_SQL = """
+NOT (
+    influence_event.event_family = 'money'
+    AND influence_event.recipient_entity_id IS NOT NULL
+    AND EXISTS (
+        SELECT 1
+        FROM party_entity_link direct_party_entity_link
+        WHERE direct_party_entity_link.entity_id = influence_event.recipient_entity_id
+          AND direct_party_entity_link.review_status = 'reviewed'
+    )
+)
+"""
 
 
 def _jsonable(value: Any) -> Any:
@@ -1368,6 +1381,7 @@ def get_electorate_map(
                 JOIN influence_event
                   ON influence_event.recipient_person_id = current_people.person_id
                 WHERE influence_event.review_status <> 'rejected'
+                  AND {DIRECT_REPRESENTATIVE_EVENT_SQL}
             ) influence_summary ON TRUE
             WHERE electorate.chamber = %s
             {state_filter}
@@ -2968,6 +2982,7 @@ def _get_senate_map(
                 JOIN influence_event
                   ON influence_event.recipient_person_id = current_people.person_id
                 WHERE influence_event.review_status <> 'rejected'
+                  AND {DIRECT_REPRESENTATIVE_EVENT_SQL}
             ) influence_summary ON TRUE
             WHERE electorate.chamber = 'senate'
               AND NULLIF(electorate.state_or_territory, '') IS NOT NULL
@@ -3052,6 +3067,7 @@ def get_representative_evidence_events(
             where_clauses.append("influence_event.event_family = 'campaign_support'")
         else:
             where_clauses.append("influence_event.event_family <> 'campaign_support'")
+            where_clauses.append(DIRECT_REPRESENTATIVE_EVENT_SQL)
         if event_family is not None:
             where_clauses.append("influence_event.event_family = %s")
             params.append(event_family)
@@ -3192,7 +3208,7 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
         )
         event_summary = _fetch_dicts(
             conn,
-            """
+            f"""
             SELECT
                 event_family,
                 count(*) AS event_count,
@@ -3222,6 +3238,7 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             WHERE recipient_person_id = %s
               AND review_status <> 'rejected'
               AND event_family <> 'campaign_support'
+              AND {DIRECT_REPRESENTATIVE_EVENT_SQL}
             GROUP BY event_family
             ORDER BY event_count DESC, event_family
             """,
@@ -3315,7 +3332,7 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
         )
         recent_events = _fetch_dicts(
             conn,
-            """
+            f"""
             SELECT
                 influence_event.id,
                 influence_event.event_family,
@@ -3350,6 +3367,7 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             WHERE influence_event.recipient_person_id = %s
               AND influence_event.review_status <> 'rejected'
               AND influence_event.event_family <> 'campaign_support'
+              AND {DIRECT_REPRESENTATIVE_EVENT_SQL}
             ORDER BY
                 influence_event.event_date DESC NULLS LAST,
                 influence_event.date_reported DESC NULLS LAST,
@@ -3496,8 +3514,10 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             "party_exposure_summary": party_exposure_summary,
             "party_exposure_caveat": (
                 "Party-mediated exposure summaries use reviewed party/entity links and "
-                "current office-term party membership. Equal-share amounts are analytical "
-                "context estimates only and are not disclosed personal receipts."
+                "current office-term party membership. They allocate all loaded reviewed "
+                "party/entity receipts across current party representatives as an "
+                "analytical exposure index only; amounts are not term-bounded and are "
+                "not disclosed personal receipts."
             ),
             "influence_by_sector": influence,
             "vote_topics": votes,
@@ -4631,12 +4651,12 @@ def _representative_party_exposure_summary(
                     else None
                 ),
                 "allocation_basis": (
-                    "reviewed_party_entity_money_total_divided_by_current_party_representatives"
+                    "loaded_period_reviewed_party_entity_receipts_divided_by_current_party_representatives"
                     if modelled_amount is not None
                     else None
                 ),
                 "model_name": (
-                    "equal_current_representative_party_exposure"
+                    "loaded_period_equal_current_representative_party_exposure"
                     if modelled_amount is not None
                     else None
                 ),
@@ -4650,12 +4670,16 @@ def _representative_party_exposure_summary(
                 "last_event_date": party_money["last_event_date"],
                 "input_event_count": len(party_money["input_event_ids"]),
                 "input_source_document_count": len(party_money["input_source_document_ids"]),
+                "event_period_scope": "all_loaded_reviewed_party_entity_receipts",
+                "representative_scope": "current_office_term_party_membership",
+                "party_context_label": "loaded-period reviewed party/entity receipts",
                 "claim_scope": (
-                    "Analytical equal-share exposure to reviewed party/entity money; "
-                    "not a disclosed personal receipt."
+                    "Analytical equal-share exposure to all loaded reviewed party/entity "
+                    "receipts for the current party; not a disclosed personal receipt "
+                    "or term-bounded total."
                     if modelled_amount is not None
-                    else "Current party relationship with reviewed party/entity money; "
-                    "no allocation estimate is available."
+                    else "Current party relationship with loaded reviewed party/entity "
+                    "receipts; no allocation estimate is available."
                 ),
             }
         )
@@ -4766,14 +4790,14 @@ def _append_person_party_exposure_context(
             allocation_denominator=representative_count or None,
             allocation_weight=allocation_weight,
             allocation_basis=(
-                "reviewed_party_entity_money_total_divided_by_current_party_representatives"
+                "loaded_period_reviewed_party_entity_receipts_divided_by_current_party_representatives"
                 if modelled_amount is not None
                 else None
             ),
             party_context_reported_amount_total=party_total,
             modelled_amount_total=modelled_amount,
             model_name=(
-                "equal_current_representative_party_exposure"
+                "loaded_period_equal_current_representative_party_exposure"
                 if modelled_amount is not None
                 else None
             ),
@@ -4798,7 +4822,7 @@ def _append_person_party_exposure_context(
                 else None
             ),
             display_caveat=(
-                "Estimated indirect exposure only; not a disclosed personal receipt."
+                "Estimated indirect loaded-period exposure only; not a disclosed personal receipt."
                 if modelled_amount is not None
                 else None
             ),
@@ -4808,10 +4832,26 @@ def _append_person_party_exposure_context(
                 else None
             ),
             claim_scope=(
-                "Analytical equal-share exposure to reviewed party/entity money; "
-                "not a disclosed personal receipt."
+                "Analytical equal-share exposure to all loaded reviewed party/entity "
+                "receipts for the current party; not a disclosed personal receipt "
+                "or term-bounded total."
                 if modelled_amount is not None
                 else "Current office-term party relationship; no money allocation applied."
+            ),
+            event_period_scope=(
+                "all_loaded_reviewed_party_entity_receipts"
+                if modelled_amount is not None
+                else None
+            ),
+            representative_scope=(
+                "current_office_term_party_membership"
+                if modelled_amount is not None
+                else None
+            ),
+            party_context_label=(
+                "loaded-period reviewed party/entity receipts"
+                if modelled_amount is not None
+                else None
             ),
             chamber=party["chamber"],
             state_or_territory=party["state_or_territory"],

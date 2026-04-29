@@ -4202,10 +4202,43 @@ def test_party_profile_aggregates_reviewed_party_entity_money(
     assert party_exposure["party_context_reported_amount_total"] == 5000.0
     assert party_exposure["modelled_amount_total"] == 1250.0
     assert party_exposure["allocation_method"] == "equal_current_representative_share"
+    assert (
+        party_exposure["allocation_basis"]
+        == "loaded_period_reviewed_party_entity_receipts_divided_by_current_party_representatives"
+    )
+    assert party_exposure["event_period_scope"] == "all_loaded_reviewed_party_entity_receipts"
+    assert party_exposure["representative_scope"] == "current_office_term_party_membership"
     assert party_exposure["allocation_denominator"] == 4
     assert party_exposure["input_source_document_count"] == 1
     assert "not a disclosed personal receipt" in party_exposure["claim_scope"]
+    assert "term-bounded total" in party_exposure["claim_scope"]
     assert "not disclosed personal receipts" in representative_payload["party_exposure_caveat"]
+    assert "not term-bounded" in representative_payload["party_exposure_caveat"]
+
+    direct_money_summary = [
+        row for row in representative_payload["event_summary"] if row["event_family"] == "money"
+    ][0]
+    assert direct_money_summary["event_count"] == 1
+    assert direct_money_summary["reported_amount_total"] == 1250.0
+    assert len(representative_payload["recent_events"]) == 1
+    assert representative_payload["recent_events"][0]["source_raw_name"] == "Clean Energy Pty Ltd"
+    assert all(
+        event["source_raw_name"] not in {"Example Donor Pty Ltd", "Second Donor Pty Ltd"}
+        for event in representative_payload["recent_events"]
+    )
+
+    direct_evidence_response = client.get(
+        f"/api/representatives/{integration_db.person_id}/evidence",
+        params={"limit": "10"},
+    )
+    assert direct_evidence_response.status_code == 200
+    direct_evidence_payload = direct_evidence_response.json()
+    assert direct_evidence_payload["total_count"] == 1
+    assert direct_evidence_payload["events"][0]["source_raw_name"] == "Clean Energy Pty Ltd"
+    assert all(
+        event["source_raw_name"] not in {"Example Donor Pty Ltd", "Second Donor Pty Ltd"}
+        for event in direct_evidence_payload["events"]
+    )
 
     person_graph_response = client.get(
         "/api/graph/influence",
@@ -4228,10 +4261,139 @@ def test_party_profile_aggregates_reviewed_party_entity_money(
     assert modelled_edges[0].get("reported_amount_total") is None
     assert modelled_edges[0]["party_context_reported_amount_total"] == 5000.0
     assert modelled_edges[0]["modelled_amount_total"] == 1250.0
-    assert modelled_edges[0]["model_name"] == "equal_current_representative_party_exposure"
+    assert (
+        modelled_edges[0]["model_name"]
+        == "loaded_period_equal_current_representative_party_exposure"
+    )
+    assert (
+        modelled_edges[0]["event_period_scope"]
+        == "all_loaded_reviewed_party_entity_receipts"
+    )
     assert modelled_edges[0]["input_event_ids"]
     assert modelled_edges[0]["input_source_document_ids"]
     assert "not a disclosed personal receipt" in modelled_edges[0]["claim_scope"]
+    assert "term-bounded total" in modelled_edges[0]["claim_scope"]
+
+
+def test_dual_linked_party_entity_receipt_stays_out_of_direct_representative_surfaces(
+    integration_db: IntegrationDatabase,
+) -> None:
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'CWLTH'")
+            jurisdiction_id = cur.fetchone()[0]
+            cur.execute("SELECT id FROM party WHERE name = 'Example Party'")
+            party_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity (
+                    canonical_name, normalized_name, entity_type, country, source_document_id
+                )
+                VALUES (
+                    'Example Party Campaign Account',
+                    'example party campaign account',
+                    'political_party',
+                    'AU',
+                    %s
+                )
+                RETURNING id
+                """,
+                (source_document_id,),
+            )
+            party_entity_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO entity (
+                    canonical_name, normalized_name, entity_type, country, source_document_id
+                )
+                VALUES ('Dual Linked Donor Pty Ltd', 'dual linked donor pty ltd', 'company', 'AU', %s)
+                RETURNING id
+                """,
+                (source_document_id,),
+            )
+            donor_entity_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO party_entity_link (
+                    party_id, entity_id, link_type, method, confidence,
+                    review_status, reviewer, reviewed_at, source_document_id, evidence_note
+                )
+                VALUES (
+                    %s, %s, 'party_branch', 'manual', 'manual_reviewed',
+                    'reviewed', 'pytest', now(), %s,
+                    'Fixture reviewed party/entity link.'
+                )
+                """,
+                (party_id, party_entity_id, source_document_id),
+            )
+            cur.execute(
+                """
+                INSERT INTO influence_event (
+                    external_key, event_family, event_type, source_entity_id,
+                    source_raw_name, recipient_entity_id, recipient_person_id,
+                    recipient_raw_name, jurisdiction_id, amount, amount_status,
+                    event_date, reporting_period, disclosure_system, evidence_status,
+                    extraction_method, review_status, description, source_document_id,
+                    source_ref, missing_data_flags, metadata
+                )
+                VALUES (
+                    'party-entity:dual-linked-person-row', 'money', 'donation_or_gift',
+                    %s, 'Dual Linked Donor Pty Ltd', %s, %s,
+                    'Example Party Campaign Account', %s, 7000.00, 'reported',
+                    '2024-07-01', '2023-24', 'pytest fixture',
+                    'official_record_parsed', 'fixture_seed', 'not_required',
+                    'Fixture broad party/entity receipt that is also person-linked.',
+                    %s, 'dual-linked-row', '[]'::jsonb, %s
+                )
+                """,
+                (
+                    donor_entity_id,
+                    party_entity_id,
+                    integration_db.person_id,
+                    jurisdiction_id,
+                    source_document_id,
+                    Jsonb({"return_type": "Political Party Return"}),
+                ),
+            )
+        conn.commit()
+
+    client = TestClient(app)
+    representative_response = client.get(f"/api/representatives/{integration_db.person_id}")
+    assert representative_response.status_code == 200
+    representative_payload = representative_response.json()
+    direct_money_summary = [
+        row for row in representative_payload["event_summary"] if row["event_family"] == "money"
+    ][0]
+    assert direct_money_summary["event_count"] == 1
+    assert direct_money_summary["reported_amount_total"] == 1250.0
+    assert len(representative_payload["recent_events"]) == 1
+    assert representative_payload["recent_events"][0]["source_raw_name"] == "Clean Energy Pty Ltd"
+
+    evidence_response = client.get(
+        f"/api/representatives/{integration_db.person_id}/evidence",
+        params={"limit": "10"},
+    )
+    assert evidence_response.status_code == 200
+    evidence_payload = evidence_response.json()
+    assert evidence_payload["total_count"] == 1
+    assert evidence_payload["events"][0]["source_raw_name"] == "Clean Energy Pty Ltd"
+
+    map_response = client.get(
+        "/api/map/electorates",
+        params={"chamber": "house", "include_geometry": "false"},
+    )
+    assert map_response.status_code == 200
+    map_payload = map_response.json()
+    melbourne = next(
+        feature
+        for feature in map_payload["features"]
+        if feature["properties"]["electorate_id"] == integration_db.electorate_id
+    )
+    properties = melbourne["properties"]
+    assert properties["current_representative_lifetime_money_event_count"] == 1
+    assert properties["current_representative_lifetime_reported_amount_total"] == 1250.0
 
 
 def test_party_entity_link_review_accepts_and_rejects_candidates(

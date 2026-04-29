@@ -789,7 +789,11 @@ This materializes current `party_entity_link` candidates, exports the
 `party-entity-links`, and `sector-policy-links` queues, runs sector-policy
 suggestions, and writes a manifest under `data/audit/review_bundles/`. Use
 `--limit` for smaller working files and `--limit-per-party` to restrict
-party/entity candidate generation. The bundle is review input only: public
+party/entity candidate generation. The party/entity generator defaults to party
+rows with current office-term representatives and skips non-party labels such as
+`Independent`; use `materialize-party-entity-links
+--include-without-current-representatives` only when intentionally preparing
+historical/no-current-rep party review queues. The bundle is review input only: public
 benefit, identifier, classification, and network claims still require imported
 accepted/revised decisions with the supporting-source roles enforced by the
 importer where those roles are required.

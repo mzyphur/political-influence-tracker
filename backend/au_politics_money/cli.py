@@ -785,9 +785,16 @@ def suggest_sector_policy_links_command(limit: int | None) -> int:
     return 0
 
 
-def materialize_party_entity_links_command(limit_per_party: int | None) -> int:
+def materialize_party_entity_links_command(
+    limit_per_party: int | None,
+    include_without_current_representatives: bool,
+) -> int:
     with connect() as conn:
-        summary = materialize_party_entity_link_candidates(conn, limit_per_party=limit_per_party)
+        summary = materialize_party_entity_link_candidates(
+            conn,
+            limit_per_party=limit_per_party,
+            include_without_current_representatives=include_without_current_representatives,
+        )
     print(json.dumps(summary, indent=2, sort_keys=True))
     return 0
 
@@ -1194,6 +1201,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     party_entity_parser = subparsers.add_parser("materialize-party-entity-links")
     party_entity_parser.add_argument("--limit-per-party", type=int)
+    party_entity_parser.add_argument(
+        "--include-without-current-representatives",
+        action="store_true",
+        help=(
+            "Also generate review candidates for party rows without current "
+            "office-term representatives. Defaults to current-representation "
+            "parties to keep the representative exposure queue focused."
+        ),
+    )
 
     review_bundle_parser = subparsers.add_parser("prepare-review-bundle")
     review_bundle_parser.add_argument("--limit", type=int)
@@ -1541,7 +1557,10 @@ def main() -> int:
     if args.command == "suggest-sector-policy-links":
         return suggest_sector_policy_links_command(args.limit)
     if args.command == "materialize-party-entity-links":
-        return materialize_party_entity_links_command(args.limit_per_party)
+        return materialize_party_entity_links_command(
+            args.limit_per_party,
+            args.include_without_current_representatives,
+        )
     if args.command == "prepare-review-bundle":
         return prepare_review_bundle_command(args.limit, args.limit_per_party)
     if args.command == "import-review-decisions":

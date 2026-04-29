@@ -359,10 +359,12 @@ they are not zeros.
 
 Representative profiles also include `party_exposure_summary` when reviewed
 party/entity links connect the representative's current party to disclosed money
-records. These rows expose the aggregate party/entity money total and, when
-possible, an `equal_current_representative_share` modelled exposure value. This
-is an analytical context estimate, not a disclosed personal receipt; consumers
-must not add it to direct representative money totals.
+records. These rows expose loaded-period reviewed party/entity receipt totals
+and, when possible, an `equal_current_representative_share` modelled exposure
+value. The scope is deliberately explicit: it is an all-loaded-records exposure
+index for the representative's current party relationship, not a term-bounded
+total and not a disclosed personal receipt. Consumers must not add it to direct
+representative money totals.
 
 `/api/representatives/{person_id}/evidence` pages through the same event shape
 for selected representatives. It uses stable cursor pagination over
@@ -371,6 +373,10 @@ skip or duplicate same-date disclosures. By default `group=direct` excludes
 `campaign_support`; `group=campaign_support` must be requested explicitly.
 Optional `event_family` filtering is available only for direct records. The
 endpoint rejects invalid cursors and returns 404 for unknown people.
+Direct representative feeds also exclude reviewed party/entity receipt-context
+rows even if a malformed or over-linked source row contains a person id; those
+rows belong in party/entity and modelled exposure surfaces unless a narrower
+source-backed person-level receipt is separately established.
 
 Campaign-return and party-channelled records are deliberately separated from
 the direct feed. The response includes `campaign_support_summary`,
@@ -453,7 +459,10 @@ totals until reviewed.
 
 Party/entity candidates are now materialized during database loading with
 `materialize-party-entity-links`, then reviewed through the standard audit
-workflow:
+workflow. By default the generator focuses on party rows with current
+office-term representatives and skips non-party labels such as `Independent`;
+use `--include-without-current-representatives` only for historical or archival
+party-profile review work.
 
 ```bash
 cd backend

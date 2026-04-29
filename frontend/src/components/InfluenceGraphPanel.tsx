@@ -476,17 +476,29 @@ function GraphEdgeCard({ edge }: { edge: InfluenceGraphEdge }) {
         </div>
         {edge.modelled_amount_total !== null && edge.modelled_amount_total !== undefined && (
           <div>
-            <dt>Modelled exposure</dt>
+            <dt>Loaded-period estimated exposure</dt>
             <dd>{formatMoney(edge.modelled_amount_total)}</dd>
           </div>
         )}
         {edge.party_context_reported_amount_total !== null &&
           edge.party_context_reported_amount_total !== undefined && (
             <div>
-              <dt>Party context total</dt>
+              <dt>{edge.party_context_label || "Loaded-period party context"}</dt>
               <dd>{formatMoney(edge.party_context_reported_amount_total)}</dd>
             </div>
           )}
+        {edge.event_period_scope && (
+          <div>
+            <dt>Period scope</dt>
+            <dd>{edge.event_period_scope.replaceAll("_", " ")}</dd>
+          </div>
+        )}
+        {edge.representative_scope && (
+          <div>
+            <dt>Representative scope</dt>
+            <dd>{edge.representative_scope.replaceAll("_", " ")}</dd>
+          </div>
+        )}
         <div>
           <dt>Evidence</dt>
           <dd>

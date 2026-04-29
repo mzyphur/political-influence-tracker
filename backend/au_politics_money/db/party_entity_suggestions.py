@@ -8,16 +8,31 @@ from psycopg.types.json import Jsonb
 
 
 PARSER_NAME = "party_entity_link_candidates_v1"
-PARSER_VERSION = "2"
+PARSER_VERSION = "3"
+NON_PARTY_LABELS = {
+    "deputy president",
+    "dpres",
+    "ind",
+    "independent",
+    "independents",
+    "pres",
+    "president",
+}
 
 
 def _normalize_text(value: str) -> str:
     return re.sub(r"\s+", " ", value.strip().lower())
 
 
+def _is_non_party_label(value: str) -> bool:
+    return _normalize_text(value) in NON_PARTY_LABELS
+
+
 def party_entity_name_patterns(party: dict[str, Any]) -> list[str]:
     name = str(party.get("name") or "")
     short_name = str(party.get("short_name") or "")
+    if _is_non_party_label(name) or _is_non_party_label(short_name):
+        return []
     normalized = f"{name} {short_name}".lower()
     is_lnp = "liberal national" in normalized or "lnp" in normalized
     is_clp = "country liberal" in normalized or "clp" in normalized
@@ -44,7 +59,7 @@ def party_entity_name_patterns(party: dict[str, Any]) -> list[str]:
         patterns.extend(["Jacqui Lambie Network%"])
     for value in (name, short_name):
         cleaned = " ".join(str(value or "").split())
-        if len(cleaned) >= 4 and cleaned.upper() not in {"IND", "PRES", "DPRES"}:
+        if len(cleaned) >= 4 and not _is_non_party_label(cleaned):
             patterns.append(f"{cleaned}%")
     deduped: list[str] = []
     for pattern in patterns:
@@ -56,6 +71,8 @@ def party_entity_name_patterns(party: dict[str, Any]) -> list[str]:
 def party_entity_name_terms(party: dict[str, Any]) -> list[str]:
     name = str(party.get("name") or "")
     short_name = str(party.get("short_name") or "")
+    if _is_non_party_label(name) or _is_non_party_label(short_name):
+        return []
     normalized = f"{name} {short_name}".lower()
     is_lnp = "liberal national" in normalized or "lnp" in normalized
     is_clp = "country liberal" in normalized or "clp" in normalized
@@ -82,7 +99,7 @@ def party_entity_name_terms(party: dict[str, Any]) -> list[str]:
         terms.extend(["jacqui lambie network", "jln"])
     for value in (name, short_name):
         cleaned = _normalize_text(str(value or ""))
-        if len(cleaned) >= 4 and cleaned.upper() not in {"IND", "PRES", "DPRES"}:
+        if len(cleaned) >= 4 and not _is_non_party_label(cleaned):
             terms.append(cleaned)
     deduped: list[str] = []
     for term in terms:
@@ -101,7 +118,7 @@ def _party_candidate_matches_entity(party: dict[str, Any], entity_name: str) -> 
     return any(_term_matches(text, term) for term in party_entity_name_terms(party))
 
 
-def _parties(conn) -> list[dict[str, Any]]:
+def _parties(conn, *, include_without_current_representatives: bool = False) -> list[dict[str, Any]]:
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -110,23 +127,41 @@ def _parties(conn) -> list[dict[str, Any]]:
                 party.name,
                 party.short_name,
                 jurisdiction.code AS jurisdiction_code,
-                jurisdiction.level AS jurisdiction_level
+                jurisdiction.level AS jurisdiction_level,
+                count(DISTINCT office_term.person_id) FILTER (
+                    WHERE office_term.term_end IS NULL
+                ) AS current_representative_count
             FROM party
             LEFT JOIN jurisdiction ON jurisdiction.id = party.jurisdiction_id
+            LEFT JOIN office_term ON office_term.party_id = party.id
             WHERE COALESCE(party.name, '') <> ''
-            ORDER BY jurisdiction.code NULLS LAST, party.name, party.short_name
+            GROUP BY party.id, party.name, party.short_name, jurisdiction.code, jurisdiction.level
+            ORDER BY
+                count(DISTINCT office_term.person_id) FILTER (
+                    WHERE office_term.term_end IS NULL
+                ) DESC,
+                jurisdiction.code NULLS LAST,
+                party.name,
+                party.short_name
             """
         )
-        return [
-            {
+        parties = []
+        for row in cur.fetchall():
+            current_representative_count = int(row[5] or 0)
+            if current_representative_count <= 0 and not include_without_current_representatives:
+                continue
+            party = {
                 "id": row[0],
                 "name": row[1],
                 "short_name": row[2],
                 "jurisdiction_code": row[3],
                 "jurisdiction_level": row[4],
+                "current_representative_count": current_representative_count,
             }
-            for row in cur.fetchall()
-        ]
+            if not party_entity_name_patterns(party):
+                continue
+            parties.append(party)
+        return parties
 
 
 def _candidate_rows_for_party(
@@ -330,8 +365,12 @@ def materialize_party_entity_link_candidates(
     conn,
     *,
     limit_per_party: int | None = None,
+    include_without_current_representatives: bool = False,
 ) -> dict[str, Any]:
-    parties = _parties(conn)
+    parties = _parties(
+        conn,
+        include_without_current_representatives=include_without_current_representatives,
+    )
     candidates_seen = 0
     inserted_or_refreshed = 0
     skipped_existing = 0
@@ -359,6 +398,7 @@ def materialize_party_entity_link_candidates(
                     "short_name": party["short_name"],
                     "jurisdiction_code": party["jurisdiction_code"],
                     "jurisdiction_level": party["jurisdiction_level"],
+                    "current_representative_count": party["current_representative_count"],
                 },
                 "entity_snapshot": {
                     "id": candidate["entity_id"],
@@ -420,6 +460,7 @@ def materialize_party_entity_link_candidates(
         "parser_name": PARSER_NAME,
         "parser_version": PARSER_VERSION,
         "parties_seen": len(parties),
+        "include_without_current_representatives": include_without_current_representatives,
         "candidates_seen": candidates_seen,
         "candidates_inserted_or_refreshed": inserted_or_refreshed,
         "candidates_skipped_existing_review_state": skipped_existing,
