@@ -58,8 +58,10 @@ MP, or councillor. Loading remains explicit through
 `load-qld-ecq-eds-money-flows`. The runner passes the exact fetched page,
 export, and lookup metadata paths into downstream normalizers so the normalized
 artifacts can be traced to the same run instead of an unrelated "latest" file.
-The manifest loader reads the referenced normalizer summaries and loads those
-exact JSONL artifacts into Postgres.
+The manifest loader reads the referenced normalizer summaries, checks that the
+manifest still matches the summary files, verifies the JSONL artifact hashes and
+expected QLD source scopes, and then loads those exact JSONL artifacts into
+Postgres.
 
 The export fetcher does not depend on a manual browser download. It reads the
 latest archived ECQ EDS public map and expenditure pages, extracts their current

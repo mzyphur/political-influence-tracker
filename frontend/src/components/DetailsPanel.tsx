@@ -274,6 +274,7 @@ export function DetailsPanel({
         </button>
         <AlertCircle size={20} />
         <p>No electorate selected.</p>
+        {caveat && <p className="caveat compact">{caveat}</p>}
       </aside>
     );
   }

@@ -113,6 +113,7 @@ class StepResult:
     finished_at: str
     duration_seconds: float
     output: Any = None
+    output_sha256: str = ""
     error: str = ""
 
 
@@ -161,10 +162,12 @@ def _run_step(name: str, func: Callable[[], Any]) -> StepResult:
     started = utc_now()
     try:
         output = func()
+        output_sha256 = _file_sha256(output) if isinstance(output, Path) else ""
         status = "succeeded"
         error = ""
     except Exception as exc:  # noqa: BLE001 - pipeline manifest must record failures.
         output = None
+        output_sha256 = ""
         status = "failed"
         error = repr(exc)
     finished = utc_now()
@@ -175,11 +178,20 @@ def _run_step(name: str, func: Callable[[], Any]) -> StepResult:
         finished_at=finished.isoformat(),
         duration_seconds=(finished - started).total_seconds(),
         output=str(output) if isinstance(output, Path) else output,
+        output_sha256=output_sha256,
         error=error,
     )
     if status == "failed":
         raise PipelineStepError(result)
     return result
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 class PipelineStepError(RuntimeError):

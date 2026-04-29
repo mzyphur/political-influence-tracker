@@ -501,6 +501,17 @@ a:focus-visible {
   font-size: 14px;
 }
 
+.state-local-inline-caveat {
+  margin: 0;
+  border-left: 3px solid rgba(30, 109, 121, 0.52);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.68);
+  color: #4a5c64;
+  padding: 7px 9px;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .state-summary-id-row {
   flex-wrap: wrap;
   border: 1px solid rgba(30, 109, 121, 0.14);
@@ -1670,6 +1681,11 @@ a:focus-visible {
   stroke-dasharray: 6 5;
 }
 
+.graph-edge[data-edge-kind="campaign-support"] {
+  stroke: #c0521f;
+  stroke-dasharray: 10 4;
+}
+
 .graph-edge[data-edge-kind="benefit"] {
   stroke: #8b5cf6;
 }
@@ -1769,6 +1785,10 @@ a:focus-visible {
 
 .graph-legend i[data-kind="candidate"] {
   background: repeating-linear-gradient(90deg, #d8781f 0 6px, transparent 6px 10px);
+}
+
+.graph-legend i[data-kind="campaign-support"] {
+  background: repeating-linear-gradient(90deg, #c0521f 0 10px, transparent 10px 14px);
 }
 
 .graph-legend i[data-kind="context"] {
@@ -1929,18 +1949,18 @@ a:focus-visible {
   }
 
   .control-panel {
-    grid-row: 2;
+    grid-column: 1;
     margin-top: 14px;
   }
 
   .details-panel {
-    grid-row: 2;
+    grid-column: 1;
     max-height: none;
     margin-top: 0;
   }
 
   .influence-graph-panel {
-    grid-row: 2;
+    grid-column: 1;
     max-height: none;
   }
 

@@ -16,8 +16,12 @@ Completed:
   processed JSONL artifacts referenced by that manifest.
 - Added QLD state/local freshness metadata to `/api/state-local/summary` and
   the frontend State/Council panel. The public UI now shows the newest ECQ
-  source fetch time and source-snapshot count next to the partial-data caveat,
-  making update recency visible without treating source coverage as complete.
+  money-flow export fetch time and export-snapshot count next to the
+  partial-data caveat, making update recency visible without treating source
+  coverage as complete.
+- Hardened QLD manifest replay so state/local loads validate manifest summary
+  hashes, processed JSONL hashes, expected export/lookup source scopes, and
+  summary row counts before mutating Postgres.
 - Added a reproducible AEC Electorate Finder postcode crosswalk pipeline:
   archived AEC postcode search pages, normalized source-backed postcode to
   electorate-candidate rows with ambiguity/confidence/locality metadata, added

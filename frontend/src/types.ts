@@ -86,6 +86,7 @@ export type CoverageLayer = {
   label: string;
   level: string;
   status: string;
+  jurisdiction?: string | null;
   attribution: string;
   counts: Record<string, number | string | null>;
 };

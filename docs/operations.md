@@ -84,7 +84,10 @@ exact metadata paths produced by earlier steps rather than re-reading an
 ambient "latest" snapshot; this keeps a manifest tied to the artifacts it
 actually normalized. `load-state-local-pipeline-manifest` then reads that same
 manifest, opens the normalizer summaries it references, and loads those exact
-processed JSONL files.
+processed JSONL files after validating summary hashes, JSONL hashes, expected
+QLD source scopes, and row counts. If an older manifest was produced before
+artifact hashes were recorded, rerun `run-state-local-pipeline --jurisdiction
+qld` before loading.
 
 The fetcher archives raw CSV bodies and metadata under
 `data/raw/qld_ecq_eds_map_export_csv/` and

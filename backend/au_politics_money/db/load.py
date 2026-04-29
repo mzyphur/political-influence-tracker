@@ -51,7 +51,9 @@ from au_politics_money.ingest.official_identifiers import (
 )
 from au_politics_money.ingest.qld_ecq_eds import (
     CONTEXT_PARSER_NAME as QLD_ECQ_CONTEXT_PARSER_NAME,
+    PARSER_NAME as QLD_ECQ_MONEY_PARSER_NAME,
     QLD_ECQ_EDS_CONTEXT_LOOKUPS,
+    QLD_ECQ_EDS_EXPORTS,
     PARTICIPANT_PARSER_NAME as QLD_ECQ_PARTICIPANT_PARSER_NAME,
     QLD_ECQ_EDS_PARTICIPANT_LOOKUPS,
 )
@@ -1673,7 +1675,24 @@ def load_qld_ecq_eds_money_flows(conn, jsonl_path: Path | None = None) -> dict[s
     return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="qld_ecq_eds")
 
 
-def _pipeline_step_output(manifest: dict[str, Any], step_name: str) -> Path:
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _jsonl_line_count(path: Path) -> int:
+    count = 0
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            if line.strip():
+                count += 1
+    return count
+
+
+def _pipeline_step_output(manifest: dict[str, Any], step_name: str) -> tuple[Path, str]:
     steps = manifest.get("steps")
     if not isinstance(steps, list):
         raise ValueError("Pipeline manifest is missing a steps array")
@@ -1686,11 +1705,27 @@ def _pipeline_step_output(manifest: dict[str, Any], step_name: str) -> Path:
             output = step.get("output")
             if not output:
                 raise ValueError(f"Pipeline step {step_name} has no output path")
-            return Path(str(output))
+            output_sha256 = str(step.get("output_sha256") or "")
+            if not output_sha256:
+                raise ValueError(f"Pipeline step {step_name} is missing output_sha256")
+            return Path(str(output)), output_sha256
     raise ValueError(f"Pipeline manifest is missing step {step_name}")
 
 
-def _jsonl_path_from_summary(summary_path: Path, expected_normalizer: str) -> Path:
+def _jsonl_path_from_summary(
+    summary_path: Path,
+    expected_normalizer: str,
+    *,
+    expected_summary_sha256: str,
+    expected_source_keys: set[str],
+    source_count_field: str,
+) -> Path:
+    actual_summary_sha256 = _sha256_path(summary_path)
+    if actual_summary_sha256 != expected_summary_sha256:
+        raise ValueError(
+            f"Summary hash mismatch for {summary_path}: "
+            f"manifest={expected_summary_sha256} actual={actual_summary_sha256}"
+        )
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     if summary.get("normalizer_name") != expected_normalizer:
         raise ValueError(
@@ -1699,7 +1734,41 @@ def _jsonl_path_from_summary(summary_path: Path, expected_normalizer: str) -> Pa
     jsonl_path = summary.get("jsonl_path")
     if not jsonl_path:
         raise ValueError(f"Summary is missing jsonl_path: {summary_path}")
-    return Path(str(jsonl_path))
+    path = Path(str(jsonl_path))
+    expected_jsonl_sha256 = str(summary.get("jsonl_sha256") or "")
+    if not expected_jsonl_sha256:
+        raise ValueError(f"Summary is missing jsonl_sha256: {summary_path}")
+    actual_jsonl_sha256 = _sha256_path(path)
+    if actual_jsonl_sha256 != expected_jsonl_sha256:
+        raise ValueError(
+            f"JSONL hash mismatch for {path}: "
+            f"summary={expected_jsonl_sha256} actual={actual_jsonl_sha256}"
+        )
+    counts = summary.get(source_count_field)
+    if not isinstance(counts, dict):
+        raise ValueError(f"Summary is missing {source_count_field}: {summary_path}")
+    actual_source_keys = set(str(key) for key in counts)
+    if actual_source_keys != expected_source_keys:
+        raise ValueError(
+            f"Summary source scope mismatch for {summary_path}: "
+            f"expected={sorted(expected_source_keys)} actual={sorted(actual_source_keys)}"
+        )
+    total_count = int(summary.get("total_count") or 0)
+    if total_count <= 0:
+        raise ValueError(f"Summary has no records: {summary_path}")
+    counted_records = _jsonl_line_count(path)
+    if counted_records != total_count:
+        raise ValueError(
+            f"Summary total_count does not match JSONL rows for {path}: "
+            f"summary={total_count} rows={counted_records}"
+        )
+    counted_by_source = sum(int(value or 0) for value in counts.values())
+    if counted_by_source != total_count:
+        raise ValueError(
+            f"Summary {source_count_field} does not sum to total_count for "
+            f"{summary_path}: counts={counted_by_source} total={total_count}"
+        )
+    return path
 
 
 def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, Path]:
@@ -1712,22 +1781,40 @@ def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, P
     if parameters.get("loads_database") is not False:
         raise ValueError("Expected a non-mutating acquisition/normalization manifest")
 
-    money_summary_path = _pipeline_step_output(manifest, "normalize_qld_ecq_eds_money_flows")
-    participants_summary_path = _pipeline_step_output(
+    money_summary_path, money_summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_qld_ecq_eds_money_flows",
+    )
+    participants_summary_path, participants_summary_sha256 = _pipeline_step_output(
         manifest,
         "normalize_qld_ecq_eds_participants",
     )
-    contexts_summary_path = _pipeline_step_output(manifest, "normalize_qld_ecq_eds_contexts")
+    contexts_summary_path, contexts_summary_sha256 = _pipeline_step_output(
+        manifest,
+        "normalize_qld_ecq_eds_contexts",
+    )
 
     return {
-        "money_flows": _jsonl_path_from_summary(money_summary_path, "qld_ecq_eds_money_flow_normalizer"),
+        "money_flows": _jsonl_path_from_summary(
+            money_summary_path,
+            QLD_ECQ_MONEY_PARSER_NAME,
+            expected_summary_sha256=money_summary_sha256,
+            expected_source_keys={spec.export_source_id for spec in QLD_ECQ_EDS_EXPORTS},
+            source_count_field="table_counts",
+        ),
         "participants": _jsonl_path_from_summary(
             participants_summary_path,
-            "qld_ecq_eds_participant_normalizer",
+            QLD_ECQ_PARTICIPANT_PARSER_NAME,
+            expected_summary_sha256=participants_summary_sha256,
+            expected_source_keys={spec.source_id for spec in QLD_ECQ_EDS_PARTICIPANT_LOOKUPS},
+            source_count_field="source_counts",
         ),
         "contexts": _jsonl_path_from_summary(
             contexts_summary_path,
-            "qld_ecq_eds_context_normalizer",
+            QLD_ECQ_CONTEXT_PARSER_NAME,
+            expected_summary_sha256=contexts_summary_sha256,
+            expected_source_keys={spec.source_id for spec in QLD_ECQ_EDS_CONTEXT_LOOKUPS},
+            source_count_field="source_counts",
         ),
     }
 

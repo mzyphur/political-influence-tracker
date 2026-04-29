@@ -1,4 +1,5 @@
 from datetime import date
+import hashlib
 import json
 from pathlib import Path
 
@@ -202,16 +203,43 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
     money_jsonl = tmp_path / "money.jsonl"
     participants_jsonl = tmp_path / "participants.jsonl"
     contexts_jsonl = tmp_path / "contexts.jsonl"
-    for path in (money_jsonl, participants_jsonl, contexts_jsonl):
-        path.write_text("", encoding="utf-8")
+    money_jsonl.write_text(
+        json.dumps({"source_id": "qld_ecq_eds_map_export_csv"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_expenditure_export_csv"}) + "\n",
+        encoding="utf-8",
+    )
+    participants_jsonl.write_text(
+        json.dumps({"source_id": "qld_ecq_eds_api_political_electors"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_api_political_parties"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_api_associated_entities"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_api_local_groups"}) + "\n",
+        encoding="utf-8",
+    )
+    contexts_jsonl.write_text(
+        json.dumps({"source_id": "qld_ecq_eds_api_political_events"}) + "\n"
+        + json.dumps({"source_id": "qld_ecq_eds_api_local_electorates"}) + "\n",
+        encoding="utf-8",
+    )
 
-    def write_summary(name: str, jsonl_path: Path) -> Path:
+    def sha256_path(path: Path) -> str:
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
+    def write_summary(
+        name: str,
+        jsonl_path: Path,
+        *,
+        count_field: str,
+        counts: dict[str, int],
+    ) -> Path:
         summary_path = tmp_path / f"{name}.summary.json"
         summary_path.write_text(
             json.dumps(
                 {
                     "normalizer_name": name,
                     "jsonl_path": str(jsonl_path),
+                    "jsonl_sha256": sha256_path(jsonl_path),
+                    "total_count": sum(counts.values()),
+                    count_field: counts,
                 },
                 sort_keys=True,
             )
@@ -220,12 +248,35 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
         )
         return summary_path
 
-    money_summary = write_summary("qld_ecq_eds_money_flow_normalizer", money_jsonl)
+    money_summary = write_summary(
+        "qld_ecq_eds_money_flow_normalizer",
+        money_jsonl,
+        count_field="table_counts",
+        counts={
+            "qld_ecq_eds_map_export_csv": 1,
+            "qld_ecq_eds_expenditure_export_csv": 1,
+        },
+    )
     participants_summary = write_summary(
         "qld_ecq_eds_participant_normalizer",
         participants_jsonl,
+        count_field="source_counts",
+        counts={
+            "qld_ecq_eds_api_political_electors": 1,
+            "qld_ecq_eds_api_political_parties": 1,
+            "qld_ecq_eds_api_associated_entities": 1,
+            "qld_ecq_eds_api_local_groups": 1,
+        },
     )
-    contexts_summary = write_summary("qld_ecq_eds_context_normalizer", contexts_jsonl)
+    contexts_summary = write_summary(
+        "qld_ecq_eds_context_normalizer",
+        contexts_jsonl,
+        count_field="source_counts",
+        counts={
+            "qld_ecq_eds_api_political_events": 1,
+            "qld_ecq_eds_api_local_electorates": 1,
+        },
+    )
     manifest_path = tmp_path / "state_local_qld_manifest.json"
     manifest_path.write_text(
         json.dumps(
@@ -240,16 +291,19 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
                         "name": "normalize_qld_ecq_eds_money_flows",
                         "status": "succeeded",
                         "output": str(money_summary),
+                        "output_sha256": sha256_path(money_summary),
                     },
                     {
                         "name": "normalize_qld_ecq_eds_participants",
                         "status": "succeeded",
                         "output": str(participants_summary),
+                        "output_sha256": sha256_path(participants_summary),
                     },
                     {
                         "name": "normalize_qld_ecq_eds_contexts",
                         "status": "succeeded",
                         "output": str(contexts_summary),
+                        "output_sha256": sha256_path(contexts_summary),
                     },
                 ],
             },
@@ -264,6 +318,68 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
         "participants": participants_jsonl,
         "contexts": contexts_jsonl,
     }
+
+
+def test_qld_pipeline_manifest_rejects_tampered_summary(tmp_path) -> None:
+    jsonl_path = tmp_path / "money.jsonl"
+    jsonl_path.write_text(json.dumps({"source_id": "qld_ecq_eds_map_export_csv"}) + "\n", encoding="utf-8")
+    summary_path = tmp_path / "money.summary.json"
+    summary_path.write_text(
+        json.dumps(
+            {
+                "normalizer_name": "qld_ecq_eds_money_flow_normalizer",
+                "jsonl_path": str(jsonl_path),
+                "jsonl_sha256": hashlib.sha256(jsonl_path.read_bytes()).hexdigest(),
+                "total_count": 1,
+                "table_counts": {
+                    "qld_ecq_eds_map_export_csv": 1,
+                    "qld_ecq_eds_expenditure_export_csv": 0,
+                },
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    manifest_path = tmp_path / "state_local_qld_manifest.json"
+    bad_summary_hash = "0" * 64
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "pipeline_name": "state_local",
+                "parameters": {
+                    "source_family": "qld_ecq_eds",
+                    "loads_database": False,
+                },
+                "steps": [
+                    {
+                        "name": "normalize_qld_ecq_eds_money_flows",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": bad_summary_hash,
+                    },
+                    {
+                        "name": "normalize_qld_ecq_eds_participants",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": bad_summary_hash,
+                    },
+                    {
+                        "name": "normalize_qld_ecq_eds_contexts",
+                        "status": "succeeded",
+                        "output": str(summary_path),
+                        "output_sha256": bad_summary_hash,
+                    },
+                ],
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Summary hash mismatch"):
+        qld_ecq_eds_paths_from_pipeline_manifest(manifest_path)
 
 
 def test_qld_pipeline_manifest_rejects_failed_steps(tmp_path) -> None:

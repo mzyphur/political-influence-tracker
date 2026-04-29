@@ -193,6 +193,7 @@ export function InfluenceGraphPanel({
               </svg>
               <div className="graph-legend" aria-label="Graph legend">
                 <span><i data-kind="money" /> Public disclosure flow</span>
+                <span><i data-kind="campaign-support" /> Campaign support, not personal receipt</span>
                 <span><i data-kind="access" /> Registered access context</span>
                 <span><i data-kind="reviewed" /> Reviewed party connection</span>
                 <span><i data-kind="context" /> Modelled/context pathway</span>
@@ -328,6 +329,7 @@ function edgeWidth(edge: InfluenceGraphEdge) {
 
 function edgeKind(edge: InfluenceGraphEdge) {
   if (isCandidateEdge(edge)) return "candidate";
+  if (isCampaignSupportEdge(edge)) return "campaign-support";
   if (isContextEdge(edge)) return "context";
   if (edge.event_family === "access") return "access";
   if (edge.type.includes("party_entity_link")) return "reviewed";
@@ -346,6 +348,10 @@ function isContextEdge(edge: InfluenceGraphEdge) {
 
 function isCandidateEdge(edge: InfluenceGraphEdge) {
   return edge.type.includes("candidate") || edge.evidence_status === "candidate_requires_review";
+}
+
+function isCampaignSupportEdge(edge: InfluenceGraphEdge) {
+  return edge.event_family === "campaign_support";
 }
 
 function isNonAmountEdge(edge: InfluenceGraphEdge) {
@@ -395,7 +401,10 @@ function edgeTooltip(edge: InfluenceGraphEdge) {
     eventCountLabel(edge),
     isNonAmountEdge(edge)
       ? "Direct personal reported total: not applicable to this edge"
-      : `Reported total: ${formatMoney(edge.reported_amount_total)}`,
+      : `${edgeAmountTitle(edge)}: ${formatMoney(edge.reported_amount_total)}`,
+    isCampaignSupportEdge(edge)
+      ? "Campaign-support records are context, not evidence of personal receipt."
+      : null,
     edge.modelled_amount_total !== null && edge.modelled_amount_total !== undefined
       ? `Estimated indirect exposure: ${formatMoney(edge.modelled_amount_total)} (not received)`
       : null,
@@ -415,7 +424,17 @@ function edgeAmountLabel(edge: InfluenceGraphEdge) {
   if (edge.modelled_amount_total !== null && edge.modelled_amount_total !== undefined) {
     return `estimated indirect exposure ${formatMoney(edge.modelled_amount_total)} (not received)`;
   }
+  if (isCampaignSupportEdge(edge)) {
+    return `campaign support ${formatMoney(edge.reported_amount_total)} (not personal receipt)`;
+  }
   return formatMoney(edge.reported_amount_total);
+}
+
+function edgeAmountTitle(edge: InfluenceGraphEdge) {
+  if (isCampaignSupportEdge(edge)) {
+    return "Campaign-support reported total, not personal receipt";
+  }
+  return "Reported total";
 }
 
 function allocationLabel(edge: InfluenceGraphEdge) {
@@ -437,15 +456,18 @@ function edgeLabel(edge: InfluenceGraphEdge, nodes: InfluenceGraphNode[]) {
 function GraphEdgeCard({ edge }: { edge: InfluenceGraphEdge }) {
   return (
     <div className="graph-edge-card">
-      <strong>{edge.type.replaceAll("_", " ")}</strong>
+      <strong>{isCampaignSupportEdge(edge) ? "Campaign support context" : edge.type.replaceAll("_", " ")}</strong>
       <span>{[edge.event_family, edge.event_type, edge.link_type].filter(Boolean).join(" · ")}</span>
+      {isCampaignSupportEdge(edge) && (
+        <p>These records describe campaign support or expenditure context, not money personally received by the representative.</p>
+      )}
       <dl>
         <div>
           <dt>Records</dt>
           <dd>{edge.event_count?.toLocaleString("en-AU") ?? "Not applicable"}</dd>
         </div>
         <div>
-          <dt>{isNonAmountEdge(edge) ? "Direct personal reported total" : "Reported total"}</dt>
+          <dt>{isNonAmountEdge(edge) ? "Direct personal reported total" : edgeAmountTitle(edge)}</dt>
           <dd>
             {isNonAmountEdge(edge)
               ? "Not applicable to this edge"

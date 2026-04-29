@@ -115,6 +115,7 @@ def test_normalize_qld_ecq_eds_money_flows(tmp_path: Path) -> None:
     )
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["jsonl_sha256"]
     records = [
         json.loads(line)
         for line in Path(summary["jsonl_path"]).read_text(encoding="utf-8").splitlines()
@@ -164,6 +165,7 @@ def test_normalize_qld_ecq_eds_participants(tmp_path: Path) -> None:
     )
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["jsonl_sha256"]
     records = [
         json.loads(line)
         for line in Path(summary["jsonl_path"]).read_text(encoding="utf-8").splitlines()
@@ -214,6 +216,7 @@ def test_normalize_qld_ecq_eds_contexts(tmp_path: Path) -> None:
     )
 
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    assert summary["jsonl_sha256"]
     records = [
         json.loads(line)
         for line in Path(summary["jsonl_path"]).read_text(encoding="utf-8").splitlines()

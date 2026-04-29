@@ -1018,7 +1018,7 @@ function StateLocalSummaryPanel({
         />
         <Metric
           icon={<Banknote size={16} />}
-          label="Spend"
+          label="Expenditure"
           value={totals.electoralExpenditureCount.toLocaleString("en-AU")}
         />
         <Metric
@@ -1040,11 +1040,15 @@ function StateLocalSummaryPanel({
       <div className="state-summary-money-row">
         <span>Gift/donation total</span>
         <strong>{formatMoney(totals.giftOrDonationReportedAmountTotal)}</strong>
-        <span>Campaign spend total</span>
+        <span>Campaign expenditure incurred</span>
         <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
-        <span>Source snapshots</span>
+        <span>Money-flow export snapshots</span>
         <strong>{summary.source_document_count.toLocaleString("en-AU")}</strong>
       </div>
+      <p className="state-local-inline-caveat">
+        ECQ gift/donation rows are money records. Expenditure rows are campaign activity
+        incurred by an actor, not money personally received by an MP, councillor, or candidate.
+      </p>
       <StateLocalRecentRecords
         rows={mergedRecentRows}
         totalCount={recordPage.totalCount}
@@ -1066,7 +1070,7 @@ function StateLocalSummaryPanel({
         onOpenEntityProfile={onOpenEntityProfile}
       />
       <StateLocalRankList
-        title="Top campaign spend actors"
+        title="Top campaign expenditure actors"
         rows={summary.top_expenditure_actors}
         onOpenEntityProfile={onOpenEntityProfile}
       />
@@ -1337,7 +1341,7 @@ function StateLocalContextList({
           const moneyParts = [
             `${row.money_flow_count.toLocaleString("en-AU")} records`,
             `${row.gift_or_donation_count.toLocaleString("en-AU")} gifts`,
-            `${row.electoral_expenditure_count.toLocaleString("en-AU")} spend rows`
+            `${row.electoral_expenditure_count.toLocaleString("en-AU")} expenditure rows`
           ];
           return (
             <div className="state-summary-row" key={`${title}:${row.external_id ?? row.name}`}>
@@ -1345,8 +1349,8 @@ function StateLocalContextList({
               <span>{moneyParts.join(" · ")}</span>
               <span>
                 {formatMoney(row.gift_or_donation_reported_amount_total)} gifts ·{" "}
-                {formatMoney(row.electoral_expenditure_reported_amount_total)} spend
-                {dateLabel ? ` · event date ${dateLabel}` : ""}
+                {formatMoney(row.electoral_expenditure_reported_amount_total)} expenditure incurred
+                {dateLabel ? ` · ECQ election event date, not transaction date ${dateLabel}` : ""}
               </span>
             </div>
           );
@@ -1499,7 +1503,8 @@ function coverageLayerSummary(layer: CoverageResponse["coverage_layers"][number]
   if (!layer) return "planned";
   const rows = numberValue(layer.counts.money_flow_rows);
   const base = layer.status || "planned";
-  return rows ? `${base} · ${rows.toLocaleString("en-AU")} rows` : base;
+  const jurisdiction = layer.jurisdiction ? `${layer.jurisdiction} ` : "";
+  return rows ? `${jurisdiction}${base} · ${rows.toLocaleString("en-AU")} rows` : `${jurisdiction}${base}`;
 }
 
 function numberValue(value: number | string | null | undefined): number {

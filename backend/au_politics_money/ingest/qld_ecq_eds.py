@@ -139,6 +139,14 @@ def _timestamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
+def _sha256_path(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _latest_metadata(source_id: str, raw_dir: Path = RAW_DIR) -> Path | None:
     candidates = sorted((raw_dir / source_id).glob("*/metadata.json"), reverse=True)
     return candidates[0] if candidates else None
@@ -530,6 +538,7 @@ def normalize_qld_ecq_eds_money_flows(
     summary = {
         "generated_at": timestamp,
         "jsonl_path": str(jsonl_path),
+        "jsonl_sha256": _sha256_path(jsonl_path),
         "source_metadata_paths": source_metadata_paths,
         "total_count": total_count,
         "missing_amount_count": missing_amount_count,
@@ -663,6 +672,7 @@ def normalize_qld_ecq_eds_participants(
     summary = {
         "generated_at": timestamp,
         "jsonl_path": str(jsonl_path),
+        "jsonl_sha256": _sha256_path(jsonl_path),
         "source_metadata_paths": source_metadata_paths,
         "total_count": total_count,
         "skipped_count": skipped_count,
@@ -786,6 +796,7 @@ def normalize_qld_ecq_eds_contexts(
     summary = {
         "generated_at": timestamp,
         "jsonl_path": str(jsonl_path),
+        "jsonl_sha256": _sha256_path(jsonl_path),
         "source_metadata_paths": source_metadata_paths,
         "total_count": total_count,
         "skipped_count": skipped_count,
