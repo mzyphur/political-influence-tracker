@@ -42,30 +42,33 @@ const selectionLayerIds = [
   selectedDetailLayerId
 ];
 const fillLayerIds = [fillLayerId, detailFillLayerId];
+const jurisdictionFillColor = [
+  "match",
+  ["get", "state_or_territory"],
+  "ACT",
+  "#7c3aed",
+  "NSW",
+  "#00a3e0",
+  "NT",
+  "#f97316",
+  "QLD",
+  "#ef4444",
+  "SA",
+  "#8b5cf6",
+  "TAS",
+  "#10b981",
+  "VIC",
+  "#2563eb",
+  "WA",
+  "#f59e0b",
+  "#64748b"
+];
 const electorateFillColor: FillPaint["fill-color"] = [
   "case",
   ["==", ["get", "chamber"], "senate"],
-  [
-    "match",
-    ["get", "state_or_territory"],
-    "ACT",
-    "#7c3aed",
-    "NSW",
-    "#00a3e0",
-    "NT",
-    "#f97316",
-    "QLD",
-    "#ef4444",
-    "SA",
-    "#8b5cf6",
-    "TAS",
-    "#10b981",
-    "VIC",
-    "#2563eb",
-    "WA",
-    "#f59e0b",
-    "#64748b"
-  ],
+  jurisdictionFillColor,
+  ["==", ["get", "chamber"], "council"],
+  jurisdictionFillColor,
   [
     "match",
     ["get", "party_short_name"],

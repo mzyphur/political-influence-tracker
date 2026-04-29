@@ -13,6 +13,7 @@ from au_politics_money.db.load import (
     connect,
     load_electorate_boundary_display_geometries,
     load_qld_current_members,
+    load_qld_council_boundaries,
     load_qld_state_electorate_boundaries,
     load_influence_events,
     load_processed_artifacts,
@@ -102,6 +103,10 @@ from au_politics_money.ingest.qld_ecq_eds import (
 from au_politics_money.ingest.qld_boundaries import (
     extract_qld_state_electorate_boundaries,
     fetch_qld_state_electorate_boundaries,
+)
+from au_politics_money.ingest.qld_council_boundaries import (
+    extract_qld_council_boundaries,
+    fetch_qld_council_boundaries,
 )
 from au_politics_money.ingest.qld_parliament_members import (
     extract_qld_current_members,
@@ -406,6 +411,30 @@ def extract_qld_state_boundaries_command(metadata_path: str | None) -> int:
 def load_qld_state_boundaries_command(geojson_path: str | None) -> int:
     with connect() as conn:
         summary = load_qld_state_electorate_boundaries(
+            conn,
+            Path(geojson_path) if geojson_path else None,
+        )
+    print(json.dumps(summary, indent=2, sort_keys=True))
+    return 0
+
+
+def fetch_qld_council_boundaries_command(refetch: bool) -> int:
+    metadata_path = fetch_qld_council_boundaries(refetch=refetch)
+    print(str(Path(metadata_path).resolve()))
+    return 0
+
+
+def extract_qld_council_boundaries_command(metadata_path: str | None) -> int:
+    summary_path = extract_qld_council_boundaries(
+        metadata_path=Path(metadata_path) if metadata_path else None,
+    )
+    print(str(Path(summary_path).resolve()))
+    return 0
+
+
+def load_qld_council_boundaries_command(geojson_path: str | None) -> int:
+    with connect() as conn:
+        summary = load_qld_council_boundaries(
             conn,
             Path(geojson_path) if geojson_path else None,
         )
@@ -1007,6 +1036,17 @@ def build_parser() -> argparse.ArgumentParser:
     qld_boundary_load_parser = subparsers.add_parser("load-qld-state-boundaries")
     qld_boundary_load_parser.add_argument("--geojson-path")
 
+    qld_council_boundary_fetch_parser = subparsers.add_parser("fetch-qld-council-boundaries")
+    qld_council_boundary_fetch_parser.add_argument("--refetch", action="store_true")
+
+    qld_council_boundary_extract_parser = subparsers.add_parser(
+        "extract-qld-council-boundaries"
+    )
+    qld_council_boundary_extract_parser.add_argument("--metadata-path")
+
+    qld_council_boundary_load_parser = subparsers.add_parser("load-qld-council-boundaries")
+    qld_council_boundary_load_parser.add_argument("--geojson-path")
+
     qld_members_fetch_parser = subparsers.add_parser("fetch-qld-current-members")
     qld_members_fetch_parser.add_argument("--refetch", action="store_true")
 
@@ -1421,6 +1461,12 @@ def main() -> int:
         return extract_qld_state_boundaries_command(args.metadata_path)
     if args.command == "load-qld-state-boundaries":
         return load_qld_state_boundaries_command(args.geojson_path)
+    if args.command == "fetch-qld-council-boundaries":
+        return fetch_qld_council_boundaries_command(args.refetch)
+    if args.command == "extract-qld-council-boundaries":
+        return extract_qld_council_boundaries_command(args.metadata_path)
+    if args.command == "load-qld-council-boundaries":
+        return load_qld_council_boundaries_command(args.geojson_path)
     if args.command == "fetch-qld-current-members":
         return fetch_qld_current_members_command(args.refetch)
     if args.command == "extract-qld-current-members":

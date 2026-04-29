@@ -75,15 +75,20 @@ MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --
 `run-state-local-pipeline` performs acquisition and normalization only. It does
 not mutate the serving database. Its manifest records `loads_database: false`
 and the claim boundary that ECQ gift/donation rows, electoral expenditure rows,
-participants, disclosure contexts, ACT gifts, NT annual-return/annual-gift
-rows, and SA return-level summaries are source-backed state/local disclosure
-records. SA rows are return-level portal index summaries rather than detailed
-transactions or personal receipt. VEC funding rows are public-funding/admin/
-policy context, not private donations, gifts, personal income, or automatic
-claims about personal receipt by an MP, senator, state MP, or councillor. WAEC
-political contribution rows are donor-to-political-entity disclosure rows; the
-parsed date is WAEC's disclosure-received date, and non-original versions are
-preserved but excluded from reported totals pending amendment deduplication.
+participants, disclosure contexts, QLD state electorate boundaries, QLD
+local-government boundaries, the QLD current-member roster, ACT gifts, NT
+annual-return/annual-gift rows, and SA return-level summaries are source-backed
+state/local records. QLD state and council boundary layers are geography and
+roster/context surfaces only; they do not attribute ECQ disclosure rows to
+state MPs, councillors, candidates, councils, or federal representatives
+without a source-backed or reviewed join. SA rows are return-level portal index
+summaries rather than detailed transactions or personal receipt. VEC funding
+rows are public-funding/admin/policy context, not private donations, gifts,
+personal income, or automatic claims about personal receipt by an MP, senator,
+state MP, or councillor. WAEC political contribution rows are
+donor-to-political-entity disclosure rows; the parsed date is WAEC's
+disclosure-received date, and non-original versions are preserved but excluded
+from reported totals pending amendment deduplication.
 TAS TEC rows are reportable political donation or reportable-loan observations
 from the current Tasmanian disclosure regime; the scheme commenced on
 2025-07-01, so pre-regime gaps are not evidence of zero influence.
@@ -97,11 +102,15 @@ manifest still matches the summary files, verifies the JSONL artifact hashes and
 expected jurisdiction source scopes, and then loads those exact JSONL artifacts into
 Postgres.
 Manifests and summaries produced from 2026-04-29 onward include SHA-256 hashes
-for the referenced output files. Older QLD manifests remain replayable when the
-referenced local artifacts still exist; in that legacy case the loader computes
-current file hashes and still validates normalizer names, expected source
-scopes, non-zero record counts, JSONL row counts, and source-count totals before
-loading.
+for the referenced output files. QLD boundary and roster summaries also carry
+the raw metadata and raw body hashes; manifest replay verifies those chains
+before loading. QLD council boundaries receive the same hash-chain validation
+but are not forced into the state boundary/current-member pair rule because
+local-government geometry is not a councillor roster. Older QLD manifests
+remain replayable when the referenced local artifacts still exist; in that
+legacy case the loader computes current file hashes and still validates
+normalizer names, expected source scopes, non-zero record counts, JSONL row
+counts, and source-count totals before loading.
 
 The export fetcher does not depend on a manual browser download. It reads the
 latest archived ECQ EDS public map and expenditure pages, extracts their current
@@ -252,6 +261,13 @@ name matches. These are source-backed context labels, not personal attribution:
 the ECQ event date is the election event date rather than a transaction date,
 and a local-electorate name is not sufficient evidence that a specific candidate,
 councillor, or MP received money.
+
+The QLD council boundary adapter separately archives the official Queensland
+local-government ArcGIS/QSpatial layer, normalizes 78 current local-government
+areas, and loads them as `electorate.chamber = 'council'` under `QLD-LOCAL`.
+These features make Council mode navigable, but any link from a disclosure row
+to a council, councillor, candidate, state MP, or federal MP must come from a
+separate source-backed or reviewed attribution rule.
 
 The targeted serving-database loader refreshes just the QLD ECQ EDS
 `money_flow` rows, applies the latest participant identifier artifact when

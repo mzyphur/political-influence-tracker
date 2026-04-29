@@ -525,6 +525,27 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="qld_local_government_boundaries_arcgis",
+        name="Queensland current local government boundaries ArcGIS GeoJSON",
+        jurisdiction="Queensland",
+        level="council",
+        source_type="local_government_boundary_geojson",
+        url=(
+            "https://spatial-gis.information.qld.gov.au/arcgis/rest/services/"
+            "Boundaries/AdministrativeBoundaries/MapServer/1/query"
+            "?where=1%3D1&outFields=*&returnGeometry=true&f=geojson&outSR=4326"
+        ),
+        expected_format="arcgis_rest_geojson",
+        update_frequency="administrative_boundary_update",
+        priority="high",
+        notes=(
+            "Official Queensland government spatial service layer for current "
+            "local-government area polygons. These boundaries support council "
+            "map drilldown only; they do not by themselves link ECQ disclosure "
+            "rows to councillors, candidates, councils, state MPs, or federal MPs."
+        ),
+    ),
+    SourceRecord(
         source_id="qld_parliament_members_mail_merge_xlsx",
         name="Queensland Parliament Members Mail Merge List Excel",
         jurisdiction="Queensland",

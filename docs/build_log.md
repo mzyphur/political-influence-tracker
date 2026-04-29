@@ -4,6 +4,24 @@
 
 Completed:
 
+- Added the first source-backed council map layer. The new QLD
+  local-government boundary adapter fetches the official Queensland government
+  ArcGIS/QSpatial local-government layer, normalizes 78 current council areas
+  into `data/processed/qld_council_boundaries/`, loads them as `council`
+  chamber boundaries under the separate `QLD-LOCAL` jurisdiction, and creates
+  78 land-clipped display geometries. `/api/map/electorates?chamber=council`
+  now serves QLD council map features with a caveat that ECQ disclosure rows
+  remain state/local source records unless a source-backed or reviewed link
+  supports a narrower council/candidate/councillor/MP attribution. A live
+  manifest replay from
+  `data/audit/pipeline_runs/state_local_qld_20260429T185533Z.json` loaded
+  49,840 QLD ECQ rows, 6,360 participant lookup rows, 912 context rows, 93
+  state boundaries, 92 current state MPs, one vacant electorate, and 78 council
+  boundaries.
+- Optimized display land-mask loading. Boundary loaders now reuse an existing
+  loaded AIMS Australian Coastline 50K display mask when no explicit replacement
+  GeoJSON is supplied, avoiding a costly PostGIS re-union during routine
+  manifest replay while still preserving explicit refresh paths for a new mask.
 - Added the first source-backed state electorate map layer. The new QLD
   boundary adapter fetches the official Queensland government ArcGIS/QSpatial
   state electorate layer, normalizes 93 current electorates into

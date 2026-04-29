@@ -79,8 +79,10 @@ The state/local pipeline writes a reproducibility manifest under
 snapshots, fetches both current ECQ CSV exports, normalizes money-flow,
 participant, and event/local-electorate context artifacts, then fetches and
 normalizes the current QLD state boundary layer and Queensland Parliament
-current-member roster. The loader is kept separate so database mutation remains
-an explicit step after source acquisition and normalization have succeeded.
+current-member roster, and normalizes the current QLD local-government boundary
+layer for Council-mode map drilldown. The loader is kept separate so database
+mutation remains an explicit step after source acquisition and normalization
+have succeeded.
 Within the runner, later steps receive the exact metadata paths produced by
 earlier steps rather than re-reading an ambient "latest" snapshot; this keeps a
 manifest tied to the artifacts it actually normalized.
@@ -90,7 +92,11 @@ GeoJSON files after validating summary hashes, JSONL hashes, expected QLD source
 scopes, and row counts. QLD boundary and current-member artifacts are also
 validated against their parser names, manifest summary hashes, artifact hashes,
 raw metadata/body hashes, source IDs, artifact-derived electorate names, and
-matching boundary/member electorate-name sets before loading.
+matching boundary/member electorate-name sets before loading. QLD council
+boundary artifacts receive the same parser, source ID, boundary-set, summary,
+artifact, raw metadata/body hash, and artifact-name validation, but they are not
+forced into the state boundary/current-member pair rule because local-government
+boundaries do not imply a councillor roster or disclosure attribution.
 If an older QLD manifest was produced before artifact hashes or map/roster steps
 were recorded, the loader computes current file hashes from the referenced
 local ECQ artifacts and still validates normalizer names, source scopes,
@@ -108,9 +114,11 @@ ECQ political-event and local-electorate lookup APIs, then writes
 can fetch a missing lookup snapshot, but reproducible runs should fetch the
 lookup source IDs explicitly first so raw acquisition remains visible in the
 audit log.
-The same manifest now also records the exact QLD boundary GeoJSON artifact under
-`data/processed/qld_state_electorate_boundaries/` and the exact current-member
-JSONL artifact under `data/processed/qld_parliament_current_members/`.
+The same manifest now also records the exact QLD state-boundary GeoJSON artifact
+under `data/processed/qld_state_electorate_boundaries/`, the exact QLD
+local-government GeoJSON artifact under `data/processed/qld_council_boundaries/`,
+and the exact current-member JSONL artifact under
+`data/processed/qld_parliament_current_members/`.
 `load-qld-ecq-eds-money-flows` refreshes just this source family and rebuilds
 the derived `influence_event` surface. It also applies the latest participant
 identifier and event/local-electorate context artifacts when present. To refresh
@@ -129,9 +137,12 @@ accept explicit processed artifact paths: `--money-flows-path`,
 `--participants-path`, `--contexts-path`, `--geojson-path`, and `--jsonl-path`
 on the individual participant/context/boundary/member loaders. Omit those flags
 only when loading the most recent processed artifacts is intentional. Prefer
-`load-state-local-pipeline-manifest` for normal scheduled QLD refreshes because
-it performs that exact-artifact selection from the pipeline manifest across
-disclosures, lookup enrichments, state boundaries, and current-member roster.
+`load-state-local-pipeline-manifest` for all scheduled or publishable QLD
+refreshes because it performs exact-artifact selection from the pipeline
+manifest and validates the summary, processed artifact, raw metadata, and raw
+body hash chain across disclosures, lookup enrichments, state boundaries,
+council boundaries, and the current-member roster. Direct loaders are for
+development, partial local repairs, or clearly documented operator actions.
 
 ## Queensland State Electorate Boundaries
 
@@ -179,6 +190,31 @@ longer has the same current member. The live 2026-04-29 UTC run loaded 92 curren
 Queensland MPs and one vacant/unjoined electorate. This roster join makes the
 State map easier to navigate; it still does not attribute ECQ disclosure rows to
 an MP without a source-backed or reviewed attribution step.
+
+## Queensland Local Government Boundaries
+
+Queensland is also the first active council map layer. The normal scheduled and
+publishable path is the QLD state/local manifest runner above, which includes
+the official Queensland government ArcGIS/QSpatial local-government source and
+validates the exact summary/artifact/raw-source hash chain. For a partial
+development refresh:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+.venv/bin/python -m au_politics_money.cli fetch-qld-council-boundaries
+.venv/bin/python -m au_politics_money.cli extract-qld-council-boundaries
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-qld-council-boundaries
+```
+
+The loader expects 78 current QLD local-government polygons and stores them as
+`electorate.chamber = 'council'` under the separate `Queensland local
+governments` jurisdiction (`QLD-LOCAL`). The official source geometry remains
+in `electorate_boundary.geom`; land-clipped display geometries are derived for
+the interactive map. These features make Council mode navigable, but they do
+not by themselves attribute ECQ rows to a councillor, candidate, council, state
+MP, or federal MP. Any future council/person/candidate attribution must be
+loaded through a separate source-backed or reviewed join.
 
 Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command

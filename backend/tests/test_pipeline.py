@@ -217,6 +217,14 @@ def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_pa
         calls["boundary_metadata_path"] = str(metadata_path)
         return "qld-state-boundaries-summary"
 
+    def fake_fetch_qld_council_boundaries(*, refetch):
+        calls["council_boundary_refetch"] = refetch
+        return "qld-council-boundaries-metadata"
+
+    def fake_normalize_qld_council_boundaries(*, metadata_path):
+        calls["council_boundary_metadata_path"] = str(metadata_path)
+        return "qld-council-boundaries-summary"
+
     def fake_fetch_qld_members(*, refetch):
         calls["member_refetch"] = refetch
         return "qld-current-members-metadata"
@@ -250,6 +258,14 @@ def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_pa
         fake_normalize_qld_state_boundaries,
     )
     monkeypatch.setattr(
+        "au_politics_money.pipeline.fetch_qld_council_boundaries",
+        fake_fetch_qld_council_boundaries,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.extract_qld_council_boundaries",
+        fake_normalize_qld_council_boundaries,
+    )
+    monkeypatch.setattr(
         "au_politics_money.pipeline.fetch_qld_current_members",
         fake_fetch_qld_members,
     )
@@ -276,6 +292,8 @@ def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_pa
         "normalize_qld_ecq_eds_contexts",
         "fetch_qld_state_boundaries",
         "normalize_qld_state_boundaries",
+        "fetch_qld_council_boundaries",
+        "normalize_qld_council_boundaries",
         "fetch_qld_current_members",
         "normalize_qld_current_members",
     ]
@@ -296,6 +314,8 @@ def test_state_local_qld_pipeline_records_reproducible_steps(monkeypatch, tmp_pa
     assert "qld_ecq_eds_api_local_electorates" in calls["context_lookup_metadata_paths"]
     assert calls["boundary_refetch"] is True
     assert calls["boundary_metadata_path"] == "qld-state-boundaries-metadata"
+    assert calls["council_boundary_refetch"] is True
+    assert calls["council_boundary_metadata_path"] == "qld-council-boundaries-metadata"
     assert calls["member_refetch"] is True
     assert calls["member_metadata_path"] == "qld-current-members-metadata"
 

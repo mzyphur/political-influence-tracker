@@ -78,7 +78,7 @@ def search(
 
 @app.get("/api/map/electorates")
 def electorate_map(
-    chamber: Annotated[str, Query(pattern="^(house|senate|state)$")] = "house",
+    chamber: Annotated[str, Query(pattern="^(house|senate|state|council)$")] = "house",
     state: Annotated[str | None, Query(min_length=2, max_length=3)] = None,
     boundary_set: Annotated[
         str | None,

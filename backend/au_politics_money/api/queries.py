@@ -154,6 +154,12 @@ STATE_MAP_CAVEAT = (
     "not yet attributed to current state MPs or state electorates unless a source "
     "or reviewed model supports that narrower link."
 )
+COUNCIL_MAP_CAVEAT = (
+    "Council map features are source-backed local-government boundary records. "
+    "Council disclosure rows are shown in the state/local summary panel; they are "
+    "not attributed to councillors, candidates, councils, state MPs, or federal MPs "
+    "unless a source-backed or reviewed link supports that narrower claim."
+)
 
 CONTACT_CAVEAT = (
     "Contact details are public APH roster/contact-list records. Email is returned only "
@@ -1113,8 +1119,8 @@ def get_electorate_map(
     database_url: str | None = None,
 ) -> dict[str, Any]:
     chamber = chamber.strip().lower()
-    if chamber not in {"house", "senate", "state"}:
-        raise ValueError("chamber must be 'house', 'senate', or 'state'.")
+    if chamber not in {"house", "senate", "state", "council"}:
+        raise ValueError("chamber must be 'house', 'senate', 'state', or 'council'.")
     geometry_role = geometry_role.strip().lower()
     if geometry_role not in {"display", "source"}:
         raise ValueError("geometry_role must be 'display' or 'source'.")
@@ -1163,7 +1169,11 @@ def get_electorate_map(
     if state:
         state_filter = f"AND {state_expr} = %s"
         params.append(state)
-    boundary_required_filter = "AND boundary.id IS NOT NULL" if boundary_set else ""
+    boundary_required_filter = (
+        "AND boundary.id IS NOT NULL"
+        if boundary_set or chamber in {"state", "council"}
+        else ""
+    )
 
     with connect(database_url) as conn:
         rows = _fetch_dicts(
@@ -1395,7 +1405,13 @@ def get_electorate_map(
             "simplify_tolerance": simplify_tolerance,
             "geometry_role": geometry_role,
         },
-        "caveat": STATE_MAP_CAVEAT if chamber == "state" else MAP_CAVEAT,
+        "caveat": (
+            STATE_MAP_CAVEAT
+            if chamber == "state"
+            else COUNCIL_MAP_CAVEAT
+            if chamber == "council"
+            else MAP_CAVEAT
+        ),
     }
 
 
@@ -1679,6 +1695,21 @@ def get_data_coverage(*, database_url: str | None = None) -> dict[str, Any]:
                 "electorates": boundary_count_for_chamber("state", "electorate_count"),
                 "boundaries": boundary_count_for_chamber("state", "boundary_count"),
                 "boundary_sets": boundary_count_for_chamber("state", "boundary_set_count"),
+            },
+        },
+        {
+            "id": "council_boundaries",
+            "label": "Local government area boundaries",
+            "level": "council",
+            "status": "partial" if boundary_count_for_chamber("council", "boundary_count") else "planned",
+            "attribution": (
+                "Source-backed council geometry. Disclosure rows remain separate "
+                "until council, candidate, councillor, or representative joins are supported."
+            ),
+            "counts": {
+                "electorates": boundary_count_for_chamber("council", "electorate_count"),
+                "boundaries": boundary_count_for_chamber("council", "boundary_count"),
+                "boundary_sets": boundary_count_for_chamber("council", "boundary_set_count"),
             },
         },
         {

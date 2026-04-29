@@ -23,11 +23,18 @@ from au_politics_money.db.load import (
     link_aec_direct_representative_money_flows,
     _load_aec_money_flow_jsonl,
     load_aec_candidate_contests,
+    load_display_land_mask,
     load_influence_events,
     load_postcode_electorate_crosswalk,
+    load_qld_council_boundaries,
     load_qld_current_members,
     load_qld_ecq_eds_contexts,
     load_qld_ecq_eds_participants,
+)
+from au_politics_money.ingest.land_mask import (
+    AIMS_COASTLINE_PARSER_NAME,
+    AIMS_COASTLINE_PARSER_VERSION,
+    AIMS_COASTLINE_SOURCE_ID,
 )
 from au_politics_money.db.party_entity_suggestions import (
     materialize_party_entity_link_candidates,
@@ -1107,6 +1114,252 @@ def test_qld_current_member_loader_joins_state_map_representatives(
         "1 Test Street",
         "BRISBANE QLD 4000",
     ]
+
+
+def test_qld_council_boundary_loader_exposes_council_map(
+    integration_db: IntegrationDatabase,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source_body = tmp_path / "qld-council-boundaries.json"
+    source_body.write_text('{"fixture": true}\n', encoding="utf-8")
+    metadata_path = tmp_path / "qld-council-metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "body_path": str(source_body),
+                "content_type": "application/geo+json",
+                "fetched_at": "20260429T000000Z",
+                "final_url": (
+                    "https://spatial-gis.information.qld.gov.au/arcgis/rest/services/"
+                    "Boundaries/AdministrativeBoundaries/MapServer/1/query"
+                ),
+                "http_status": 200,
+                "sha256": hashlib.sha256(source_body.read_bytes()).hexdigest(),
+                "source": {
+                    "source_id": "qld_local_government_boundaries_arcgis",
+                    "name": "Queensland current local government boundaries ArcGIS GeoJSON",
+                    "source_type": "local_government_boundary_geojson",
+                    "jurisdiction": "Queensland",
+                    "url": (
+                        "https://spatial-gis.information.qld.gov.au/arcgis/rest/services/"
+                        "Boundaries/AdministrativeBoundaries/MapServer/1/query"
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    features = []
+    for index in range(78):
+        name = "Brisbane City" if index == 0 else f"Fixture Council {index}"
+        x = 152.0 + (index % 10) * 0.02
+        y = -27.0 - (index // 10) * 0.02
+        features.append(
+            {
+                "type": "Feature",
+                "properties": {
+                    "boundary_set": "qld_council_pytest_boundary_set",
+                    "chamber": "council",
+                    "division_name": name,
+                    "official_name": name,
+                    "state_or_territory": "QLD",
+                    "lga_code": str(100 + index),
+                    "source_metadata_path": str(metadata_path),
+                    "parser_name": "qld_local_government_boundaries_arcgis_geojson_v1",
+                    "parser_version": "1",
+                },
+                "geometry": {
+                    "type": "Polygon",
+                    "coordinates": [
+                        [
+                            [x, y],
+                            [x + 0.01, y],
+                            [x + 0.01, y - 0.01],
+                            [x, y - 0.01],
+                            [x, y],
+                        ]
+                    ],
+                },
+            }
+        )
+    geojson_path = tmp_path / "qld-council-boundaries.geojson"
+    geojson_path.write_text(
+        json.dumps({"type": "FeatureCollection", "features": features}),
+        encoding="utf-8",
+    )
+
+    def fake_display_geometries(conn, *, boundary_set: str, **kwargs):
+        return {
+            "boundary_set": boundary_set,
+            "source_boundary_count": 78,
+            "display_geometries_upserted": 0,
+            "stale_display_geometries_deleted": 0,
+            "land_mask": {"source_key": "pytest"},
+        }
+
+    monkeypatch.setattr(
+        "au_politics_money.db.load.load_electorate_boundary_display_geometries",
+        fake_display_geometries,
+    )
+
+    with connect(integration_db.url) as conn:
+        summary = load_qld_council_boundaries(conn, geojson_path)
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM jurisdiction WHERE code = 'QLD-LOCAL'")
+            qld_local_jurisdiction_id = cur.fetchone()[0]
+            cur.execute("SELECT min(id) FROM source_document")
+            source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO electorate (
+                    name, jurisdiction_id, chamber, state_or_territory, source_document_id
+                )
+                VALUES ('Stale Council Without Boundary', %s, 'council', 'QLD', %s)
+                """,
+                (qld_local_jurisdiction_id, source_document_id),
+            )
+            cur.execute(
+                """
+                SELECT jurisdiction.level, jurisdiction.code, count(electorate_boundary.id)
+                FROM electorate
+                JOIN jurisdiction ON jurisdiction.id = electorate.jurisdiction_id
+                LEFT JOIN electorate_boundary
+                  ON electorate_boundary.electorate_id = electorate.id
+                WHERE electorate.chamber = 'council'
+                GROUP BY jurisdiction.level, jurisdiction.code
+                """
+            )
+            jurisdiction_row = cur.fetchone()
+
+    assert summary["division_count"] == 78
+    assert summary["boundaries_inserted"] == 78
+    assert jurisdiction_row == ("local", "QLD-LOCAL", 78)
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/map/electorates",
+        params={
+            "chamber": "council",
+            "state": "QLD",
+            "boundary_set": "qld_council_pytest_boundary_set",
+            "geometry_role": "source",
+        },
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["feature_count"] == 78
+    first = payload["features"][0]["properties"]
+    assert first["chamber"] == "council"
+    assert first["electorate_name"] == "Brisbane City"
+    assert first["current_representative_count"] == 0
+    assert "not attributed to councillors" in payload["caveat"]
+
+    default_response = client.get(
+        "/api/map/electorates",
+        params={"chamber": "council", "state": "QLD", "geometry_role": "source"},
+    )
+    assert default_response.status_code == 200
+    default_payload = default_response.json()
+    assert default_payload["feature_count"] == 78
+    assert all(
+        feature["properties"]["electorate_name"] != "Stale Council Without Boundary"
+        for feature in default_payload["features"]
+    )
+
+
+def test_load_display_land_mask_reuses_only_valid_aims_cache(
+    integration_db: IntegrationDatabase,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact_path = tmp_path / "aims-mask.geojson"
+    artifact_path.write_text('{"type":"FeatureCollection","features":[]}\n', encoding="utf-8")
+    monkeypatch.setattr(
+        "au_politics_money.db.load.latest_aims_australian_coastline_land_mask_geojson",
+        lambda **kwargs: artifact_path,
+    )
+    source_key = f"{AIMS_COASTLINE_SOURCE_ID}:australia"
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO source_document (
+                    source_id, source_name, source_type, jurisdiction, url, fetched_at,
+                    http_status, content_type, sha256, storage_path, parser_name,
+                    parser_version, metadata
+                )
+                VALUES (
+                    %s, 'AIMS fixture', 'display_land_mask', 'Australia',
+                    'https://example.test/aims', now(), 200, 'application/geo+json',
+                    %s, %s, %s, %s, '{}'::jsonb
+                )
+                RETURNING id
+                """,
+                (
+                    AIMS_COASTLINE_SOURCE_ID,
+                    f"pytest-aims-{uuid.uuid4()}",
+                    str(artifact_path),
+                    AIMS_COASTLINE_PARSER_NAME,
+                    AIMS_COASTLINE_PARSER_VERSION,
+                ),
+            )
+            source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO display_land_mask (
+                    source_key, country_name, geometry_role, geom, source_document_id, metadata
+                )
+                VALUES (
+                    %s, 'Australia', 'country_high_resolution_land_display_mask',
+                    ST_Multi(ST_GeomFromText(
+                        'POLYGON((140 -40,155 -40,155 -10,140 -10,140 -40))',
+                        4326
+                    )),
+                    %s,
+                    %s
+                )
+                """,
+                (
+                    source_key,
+                    source_document_id,
+                    Jsonb(
+                        {
+                            "geojson_path": str(artifact_path),
+                            "parser_name": AIMS_COASTLINE_PARSER_NAME,
+                            "parser_version": AIMS_COASTLINE_PARSER_VERSION,
+                        }
+                    ),
+                ),
+            )
+        conn.commit()
+
+        cached = load_display_land_mask(conn)
+        assert cached["cache_status"] == "existing_display_land_mask_reused"
+        assert cached["source_document_id"] == source_document_id
+
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE display_land_mask
+                SET metadata = metadata || %s
+                WHERE source_key = %s
+                """,
+                (Jsonb({"parser_version": "stale"}), source_key),
+            )
+        conn.commit()
+
+        monkeypatch.setattr(
+            "au_politics_money.db.load.load_aims_display_land_mask",
+            lambda conn, *, country_name, geojson_path=None: {
+                "country_name": country_name,
+                "source_key": source_key,
+                "cache_status": "fallback_reloaded",
+            },
+        )
+
+        reloaded = load_display_land_mask(conn)
+        assert reloaded["cache_status"] == "fallback_reloaded"
 
 
 def test_vote_summary_excludes_non_current_official_rows(

@@ -93,6 +93,10 @@ from au_politics_money.ingest.qld_boundaries import (
     extract_qld_state_electorate_boundaries,
     fetch_qld_state_electorate_boundaries,
 )
+from au_politics_money.ingest.qld_council_boundaries import (
+    extract_qld_council_boundaries,
+    fetch_qld_council_boundaries,
+)
 from au_politics_money.ingest.qld_parliament_members import (
     extract_qld_current_members,
     fetch_qld_current_members,
@@ -641,6 +645,11 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
         qld_artifacts["boundary_metadata_paths"]["state_boundaries"] = Path(metadata_path)
         return metadata_path
 
+    def fetch_qld_local_government_boundaries() -> Path:
+        metadata_path = fetch_qld_council_boundaries(refetch=True)
+        qld_artifacts["boundary_metadata_paths"]["council_boundaries"] = Path(metadata_path)
+        return metadata_path
+
     def fetch_qld_members() -> Path:
         metadata_path = fetch_qld_current_members(refetch=True)
         qld_artifacts["member_metadata_paths"]["current_members"] = Path(metadata_path)
@@ -660,8 +669,9 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
             "loads_database": False,
             "claim_boundary": (
                 "Fetch and normalize Queensland ECQ disclosure rows, participants, "
-                "and disclosure contexts. Loading, review, and public claims remain "
-                "separate downstream steps."
+                "disclosure contexts, state electorate boundaries, current state "
+                "member roster records, and local-government boundaries. Loading, "
+                "review, and public claims remain separate downstream steps."
             ),
         },
     )
@@ -695,6 +705,13 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
             "normalize_qld_state_boundaries",
             lambda: extract_qld_state_electorate_boundaries(
                 metadata_path=qld_artifacts["boundary_metadata_paths"]["state_boundaries"],
+            ),
+        ),
+        ("fetch_qld_council_boundaries", fetch_qld_local_government_boundaries),
+        (
+            "normalize_qld_council_boundaries",
+            lambda: extract_qld_council_boundaries(
+                metadata_path=qld_artifacts["boundary_metadata_paths"]["council_boundaries"],
             ),
         ),
         ("fetch_qld_current_members", fetch_qld_members),

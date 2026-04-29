@@ -86,6 +86,14 @@ from au_politics_money.ingest.qld_boundaries import (
     SOURCE_ID as QLD_STATE_BOUNDARY_SOURCE_ID,
     latest_qld_state_boundaries_geojson,
 )
+from au_politics_money.ingest.qld_council_boundaries import (
+    BOUNDARY_SET as QLD_COUNCIL_BOUNDARY_SET,
+    EXPECTED_LOCAL_GOVERNMENT_COUNT as QLD_COUNCIL_BOUNDARY_EXPECTED_COUNT,
+    PARSER_NAME as QLD_COUNCIL_BOUNDARY_PARSER_NAME,
+    PARSER_VERSION as QLD_COUNCIL_BOUNDARY_PARSER_VERSION,
+    SOURCE_ID as QLD_COUNCIL_BOUNDARY_SOURCE_ID,
+    latest_qld_council_boundaries_geojson,
+)
 from au_politics_money.ingest.qld_parliament_members import (
     PARSER_NAME as QLD_CURRENT_MEMBERS_PARSER_NAME,
     PARSER_VERSION as QLD_CURRENT_MEMBERS_PARSER_VERSION,
@@ -2934,6 +2942,8 @@ def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, P
     state_boundaries_summary: dict[str, Any] | None = None
     current_members_path: Path | None = None
     current_members_summary: dict[str, Any] | None = None
+    council_boundaries_path: Path | None = None
+    council_boundaries_summary: dict[str, Any] | None = None
     state_boundaries_output = _optional_pipeline_step_output(
         manifest,
         "normalize_qld_state_boundaries",
@@ -2942,10 +2952,21 @@ def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, P
         manifest,
         "normalize_qld_current_members",
     )
+    council_boundaries_output = _optional_pipeline_step_output(
+        manifest,
+        "normalize_qld_council_boundaries",
+    )
     if state_boundaries_output is None and _pipeline_has_step(manifest, "fetch_qld_state_boundaries"):
         raise ValueError("Pipeline manifest has QLD boundary fetch without boundary normalization")
     if current_members_output is None and _pipeline_has_step(manifest, "fetch_qld_current_members"):
         raise ValueError("Pipeline manifest has QLD member fetch without member normalization")
+    if council_boundaries_output is None and _pipeline_has_step(
+        manifest,
+        "fetch_qld_council_boundaries",
+    ):
+        raise ValueError(
+            "Pipeline manifest has QLD council boundary fetch without council boundary normalization"
+        )
     if (state_boundaries_output is None) != (current_members_output is None):
         raise ValueError("QLD map/roster manifest must include both boundaries and current members")
     if state_boundaries_output is not None:
@@ -2979,6 +3000,39 @@ def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, P
         _validate_raw_metadata_chain(
             current_members_summary,
             summary_label="QLD current-member",
+        )
+    if council_boundaries_output is not None:
+        council_boundaries_summary_path, council_boundaries_summary_sha256 = (
+            council_boundaries_output
+        )
+        council_boundaries_path, council_boundaries_summary = _artifact_path_from_summary(
+            council_boundaries_summary_path,
+            expected_parser=QLD_COUNCIL_BOUNDARY_PARSER_NAME,
+            expected_summary_sha256=council_boundaries_summary_sha256,
+            path_field="geojson_path",
+            sha256_field="geojson_sha256",
+        )
+        if council_boundaries_summary.get("source_id") != QLD_COUNCIL_BOUNDARY_SOURCE_ID:
+            raise ValueError("QLD council boundary summary has unexpected source_id")
+        if council_boundaries_summary.get("boundary_set") != QLD_COUNCIL_BOUNDARY_SET:
+            raise ValueError("QLD council boundary summary has unexpected boundary_set")
+        _validate_raw_metadata_chain(
+            council_boundaries_summary,
+            summary_label="QLD council boundary",
+        )
+        council_boundary_names = _summary_name_set(
+            council_boundaries_summary,
+            summary_label="QLD council boundary",
+            names_field="division_names",
+            count_field="feature_count",
+        )
+        council_boundary_artifact_names = _qld_boundary_artifact_name_set(
+            council_boundaries_path
+        )
+        _validate_artifact_names_match_summary(
+            summary_names=council_boundary_names,
+            artifact_names=council_boundary_artifact_names,
+            label="QLD council boundary",
         )
     if state_boundaries_summary is not None and current_members_summary is not None:
         boundary_electorates = _summary_name_set(
@@ -3039,6 +3093,8 @@ def qld_ecq_eds_paths_from_pipeline_manifest(manifest_path: Path) -> dict[str, P
         paths["state_boundaries"] = state_boundaries_path
     if current_members_path is not None:
         paths["current_members"] = current_members_path
+    if council_boundaries_path is not None:
+        paths["council_boundaries"] = council_boundaries_path
     return paths
 
 
@@ -3606,6 +3662,11 @@ def load_qld_ecq_eds_from_pipeline_manifest(
         summary["qld_current_members"] = load_qld_current_members(
             conn,
             jsonl_path=paths["current_members"],
+        )
+    if "council_boundaries" in paths:
+        summary["qld_council_boundaries"] = load_qld_council_boundaries(
+            conn,
+            geojson_path=paths["council_boundaries"],
         )
     if include_influence_events:
         summary["influence_events"] = load_influence_events(conn)
@@ -6907,6 +6968,48 @@ def load_display_land_mask(
     geojson_path: Path | None = None,
 ) -> dict[str, Any]:
     if country_name.casefold() == "australia":
+        source_key = f"{AIMS_COASTLINE_SOURCE_ID}:{normalize_name('Australia')}"
+        if geojson_path is None:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        display_land_mask.id,
+                        display_land_mask.source_key,
+                        display_land_mask.country_name,
+                        display_land_mask.source_document_id,
+                        display_land_mask.metadata->>'geojson_path' AS geojson_path,
+                        source_document.source_id,
+                        display_land_mask.metadata->>'parser_name' AS parser_name,
+                        display_land_mask.metadata->>'parser_version' AS parser_version,
+                        display_land_mask.metadata->>'geojson_path' = %s AS artifact_path_matches,
+                        ST_IsValid(display_land_mask.geom) AS geometry_is_valid,
+                        NOT ST_IsEmpty(display_land_mask.geom) AS geometry_is_non_empty
+                    FROM display_land_mask
+                    LEFT JOIN source_document
+                      ON source_document.id = display_land_mask.source_document_id
+                    WHERE source_key = %s
+                    """,
+                    (str(latest_aims_australian_coastline_land_mask_geojson() or ""), source_key),
+                )
+                existing = cur.fetchone()
+            if (
+                existing
+                and existing[5] == AIMS_COASTLINE_SOURCE_ID
+                and existing[6] == AIMS_COASTLINE_PARSER_NAME
+                and existing[7] == AIMS_COASTLINE_PARSER_VERSION
+                and existing[8]
+                and existing[9]
+                and existing[10]
+            ):
+                return {
+                    "land_mask_id": existing[0],
+                    "source_key": existing[1],
+                    "country_name": existing[2],
+                    "geojson_path": existing[4] or "",
+                    "source_document_id": existing[3],
+                    "cache_status": "existing_display_land_mask_reused",
+                }
         return load_aims_display_land_mask(
             conn,
             country_name="Australia",
@@ -7467,6 +7570,149 @@ def load_qld_state_electorate_boundaries(
                     electorate_id,
                     boundary_set,
                     str(properties.get("date_effective") or ""),
+                    geometry_json,
+                    source_document_id,
+                    as_jsonb(metadata),
+                ),
+            )
+            inserted += cur.rowcount
+        division_names.append(division_name)
+
+    display_geometry_summary = load_electorate_boundary_display_geometries(
+        conn,
+        boundary_set=boundary_set,
+    )
+    conn.commit()
+    return {
+        "boundary_set": boundary_set,
+        "boundaries_inserted": inserted,
+        "division_count": len(division_names),
+        "geojson_path": str(geojson_path.resolve()),
+        "source_document_id": source_document_id,
+        "display_geometry": display_geometry_summary,
+    }
+
+
+def load_qld_council_boundaries(
+    conn,
+    geojson_path: Path | None = None,
+) -> dict[str, Any]:
+    geojson_path = geojson_path or latest_qld_council_boundaries_geojson()
+    if geojson_path is None:
+        raise FileNotFoundError(
+            "No processed QLD council boundary GeoJSON found. Run "
+            "`au-politics-money extract-qld-council-boundaries` first."
+        )
+    geojson_path = _resolve_project_path(geojson_path)
+    geojson = json.loads(geojson_path.read_text(encoding="utf-8"))
+    features = geojson.get("features", [])
+    if len(features) != QLD_COUNCIL_BOUNDARY_EXPECTED_COUNT:
+        raise RuntimeError(
+            "Expected "
+            f"{QLD_COUNCIL_BOUNDARY_EXPECTED_COUNT} current QLD local-government "
+            f"boundary features; found {len(features)}."
+        )
+
+    source_metadata_path = _source_metadata_path_from_boundary_geojson(geojson)
+    source_document_id = upsert_source_document(conn, source_metadata_path)
+    jurisdiction_id = get_or_create_jurisdiction(
+        conn,
+        "Queensland local governments",
+        "local",
+        "QLD-LOCAL",
+    )
+    boundary_set = str(features[0]["properties"].get("boundary_set") or QLD_COUNCIL_BOUNDARY_SET)
+    feature_boundary_sets = {
+        str((feature.get("properties") or {}).get("boundary_set") or "")
+        for feature in features
+        if isinstance(feature, dict)
+    }
+    if feature_boundary_sets != {boundary_set}:
+        raise RuntimeError(
+            "QLD council boundary GeoJSON must contain exactly one boundary_set; "
+            f"found {sorted(feature_boundary_sets)}."
+        )
+    feature_chambers = {
+        str((feature.get("properties") or {}).get("chamber") or "")
+        for feature in features
+        if isinstance(feature, dict)
+    }
+    if feature_chambers != {"council"}:
+        raise RuntimeError(
+            "QLD council boundary GeoJSON must contain only council chamber features; "
+            f"found {sorted(feature_chambers)}."
+        )
+
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE source_document
+            SET parser_name = %s,
+                parser_version = %s,
+                parsed_at = now(),
+                metadata = metadata || %s
+            WHERE id = %s
+            """,
+            (
+                QLD_COUNCIL_BOUNDARY_PARSER_NAME,
+                QLD_COUNCIL_BOUNDARY_PARSER_VERSION,
+                as_jsonb({"processed_geojson_path": str(geojson_path.resolve())}),
+                source_document_id,
+            ),
+        )
+        cur.execute("DELETE FROM electorate_boundary WHERE boundary_set = %s", (boundary_set,))
+
+    inserted = 0
+    division_names: list[str] = []
+    for feature in features:
+        properties = feature["properties"]
+        division_name = str(properties["division_name"]).strip()
+        if not division_name:
+            raise RuntimeError(f"QLD council boundary feature is missing division_name: {properties}")
+        electorate_id = get_or_create_boundary_electorate(
+            conn,
+            name=division_name,
+            jurisdiction_id=jurisdiction_id,
+            source_document_id=source_document_id,
+            chamber="council",
+            state_or_territory="QLD",
+            boundary_source=boundary_set,
+            boundary_loader="qld_local_government_boundaries_postgis_v1",
+        )
+        geometry_json = json.dumps(feature["geometry"], separators=(",", ":"), sort_keys=True)
+        metadata = {
+            **properties,
+            "source_geojson_path": str(geojson_path.resolve()),
+            "source_boundary_policy": (
+                "official_qld_local_government_geometry_preserved_in_electorate_boundary.geom"
+            ),
+            "attribution_caveat": (
+                "Council boundary geometry only. Disclosure rows are not attributed "
+                "to this council, councillors, candidates, state MPs, or federal MPs "
+                "without a source-backed or reviewed link."
+            ),
+        }
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO electorate_boundary (
+                    electorate_id, boundary_set, valid_from, valid_to,
+                    geom, source_document_id, metadata
+                )
+                VALUES (
+                    %s, %s, NULL, NULL,
+                    ST_Multi(
+                        ST_CollectionExtract(
+                            ST_MakeValid(ST_SetSRID(ST_GeomFromGeoJSON(%s), 4326)),
+                            3
+                        )
+                    ),
+                    %s, %s
+                )
+                """,
+                (
+                    electorate_id,
+                    boundary_set,
                     geometry_json,
                     source_document_id,
                     as_jsonb(metadata),

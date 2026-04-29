@@ -220,6 +220,7 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
     participants_jsonl = tmp_path / "participants.jsonl"
     contexts_jsonl = tmp_path / "contexts.jsonl"
     qld_boundaries_geojson = tmp_path / "qld-state-boundaries.geojson"
+    qld_council_boundaries_geojson = tmp_path / "qld-council-boundaries.geojson"
     qld_members_jsonl = tmp_path / "qld-current-members.jsonl"
     money_jsonl.write_text(
         json.dumps({"source_id": "qld_ecq_eds_map_export_csv"}) + "\n"
@@ -254,6 +255,22 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
         + "\n",
         encoding="utf-8",
     )
+    qld_council_boundaries_geojson.write_text(
+        json.dumps(
+            {
+                "type": "FeatureCollection",
+                "features": [
+                    {
+                        "type": "Feature",
+                        "properties": {"division_name": "Brisbane City"},
+                        "geometry": None,
+                    }
+                ],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     qld_members_jsonl.write_text(
         json.dumps({"electorate": "Algester", "display_name": "Hon Leeanne Enoch"}) + "\n",
         encoding="utf-8",
@@ -280,6 +297,10 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
         return metadata_path
 
     qld_boundary_metadata = write_raw_metadata("qld-boundary", '{"source": "boundary"}\n')
+    qld_council_boundary_metadata = write_raw_metadata(
+        "qld-council-boundary",
+        '{"source": "council-boundary"}\n',
+    )
     qld_members_metadata = write_raw_metadata("qld-members", "member source\n")
 
     def write_summary(
@@ -387,6 +408,20 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
         raw_metadata_path=qld_boundary_metadata,
         extra={"boundary_set": "qld_state_2017_current"},
     )
+    qld_council_boundaries_summary = write_artifact_summary(
+        "qld_council_boundaries",
+        parser_name="qld_local_government_boundaries_arcgis_geojson_v1",
+        path_field="geojson_path",
+        sha256_field="geojson_sha256",
+        artifact_path=qld_council_boundaries_geojson,
+        source_id="qld_local_government_boundaries_arcgis",
+        count_field="feature_count",
+        count=1,
+        names_field="division_names",
+        names=["Brisbane City"],
+        raw_metadata_path=qld_council_boundary_metadata,
+        extra={"boundary_set": "qld_local_government_current"},
+    )
     qld_members_summary = write_artifact_summary(
         "qld_parliament_current_members",
         parser_name="qld_parliament_current_members_mail_merge_xlsx_v1",
@@ -435,6 +470,12 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
                         "output_sha256": sha256_path(qld_boundaries_summary),
                     },
                     {
+                        "name": "normalize_qld_council_boundaries",
+                        "status": "succeeded",
+                        "output": str(qld_council_boundaries_summary),
+                        "output_sha256": sha256_path(qld_council_boundaries_summary),
+                    },
+                    {
                         "name": "normalize_qld_current_members",
                         "status": "succeeded",
                         "output": str(qld_members_summary),
@@ -453,6 +494,7 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
         "participants": participants_jsonl,
         "contexts": contexts_jsonl,
         "state_boundaries": qld_boundaries_geojson,
+        "council_boundaries": qld_council_boundaries_geojson,
         "current_members": qld_members_jsonl,
     }
 
@@ -486,6 +528,32 @@ def test_qld_pipeline_manifest_selects_exact_processed_artifacts(tmp_path) -> No
     )
     with pytest.raises(ValueError, match="boundary fetch without boundary normalization"):
         qld_ecq_eds_paths_from_pipeline_manifest(missing_normalize_manifest_path)
+
+    missing_council_normalize_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    missing_council_normalize_manifest["steps"] = [
+        step
+        for step in missing_council_normalize_manifest["steps"]
+        if step["name"] != "normalize_qld_council_boundaries"
+    ]
+    missing_council_normalize_manifest["steps"].append(
+        {
+            "name": "fetch_qld_council_boundaries",
+            "status": "succeeded",
+            "output": "/tmp/qld-council-boundary-metadata.json",
+        }
+    )
+    missing_council_normalize_manifest_path = (
+        tmp_path / "state_local_qld_missing_council_normalize.json"
+    )
+    missing_council_normalize_manifest_path.write_text(
+        json.dumps(missing_council_normalize_manifest, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(
+        ValueError,
+        match="council boundary fetch without council boundary normalization",
+    ):
+        qld_ecq_eds_paths_from_pipeline_manifest(missing_council_normalize_manifest_path)
 
     partial_map_roster_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     partial_map_roster_manifest["steps"] = [

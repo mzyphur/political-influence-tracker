@@ -43,6 +43,7 @@ import {
 } from "./map";
 import type {
   CoverageResponse,
+  Chamber,
   ElectorateFeature,
   EntityProfile,
   InfluenceGraph,
@@ -61,6 +62,7 @@ import type {
 
 const states = ["All", "ACT", "NSW", "NT", "QLD", "SA", "TAS", "VIC", "WA"];
 type DataLevel = "federal" | "state" | "council";
+type FederalChamber = Extract<Chamber, "house" | "senate">;
 type StateLocalFlowFilter =
   | "all"
   | "act_annual_free_facilities_use"
@@ -186,13 +188,19 @@ const levelLabels: Record<DataLevel, string> = {
   council: "Council"
 };
 
+function mapChamberForLevel(level: DataLevel, federalChamber: FederalChamber): Chamber {
+  if (level === "state") return "state";
+  if (level === "council") return "council";
+  return federalChamber;
+}
+
 function App() {
   const [features, setFeatures] = useState<ElectorateFeature[]>([]);
   const [selectedFeature, setSelectedFeature] = useState<ElectorateFeature | null>(null);
   const [mapCaveat, setMapCaveat] = useState("");
   const [dataLevel, setDataLevel] = useState<DataLevel>("federal");
   const [stateFilter, setStateFilter] = useState("All");
-  const [chamber, setChamber] = useState<"house" | "senate">("house");
+  const [chamber, setChamber] = useState<FederalChamber>("house");
   const [mapStatus, setMapStatus] = useState<LoadState>("idle");
   const [mapError, setMapError] = useState("");
   const [query, setQuery] = useState("");
@@ -236,6 +244,20 @@ function App() {
   const previousDetailsCollapsedRef = useRef(detailsCollapsed);
   const selectedCoverageLayers =
     coverage?.coverage_layers.filter((item) => item.level === dataLevel) ?? [];
+  const selectedDisclosureLayer = coverage?.coverage_layers.find((layer) =>
+    dataLevel === "state"
+      ? layer.id === "state_territory_disclosures"
+      : dataLevel === "council"
+        ? layer.id === "local_council_disclosures"
+        : false
+  );
+  const selectedBoundaryLayer = coverage?.coverage_layers.find((layer) =>
+    dataLevel === "state"
+      ? layer.id === "state_electorate_boundaries"
+      : dataLevel === "council"
+        ? layer.id === "council_boundaries"
+        : false
+  );
   const selectedCoverageRows = selectedCoverageLayers.reduce(
     (sum, layer) => sum + numberValue(layer.counts.money_flow_rows),
     0
@@ -251,28 +273,11 @@ function App() {
   );
 
   useEffect(() => {
-    if (dataLevel === "council") {
-      const levelLayers =
-        coverage?.coverage_layers.filter((item) => item.level === dataLevel) ?? [];
-      const rowCount = levelLayers.reduce(
-        (sum, layer) => sum + numberValue(layer.counts.money_flow_rows),
-        0
-      );
-      const activeText = rowCount
-        ? `${levelLabels[dataLevel]} source data is partially active (${rowCount.toLocaleString("en-AU")} state/local disclosure rows loaded). Map drilldown for this level is still being built.`
-        : `${levelLabels[dataLevel]} data is part of the planned expansion. The current map is Commonwealth/federal.`;
-      setFeatures([]);
-      setSelectedFeature(null);
-      setMapStatus("ready");
-      setMapError("");
-      setMapCaveat(activeText);
-      return;
-    }
     const controller = new AbortController();
     setMapStatus("loading");
     setMapError("");
     fetchElectorateMap({
-      chamber: dataLevel === "state" ? "state" : chamber,
+      chamber: mapChamberForLevel(dataLevel, chamber),
       state: stateFilter === "All" ? undefined : stateFilter,
       includeGeometry: true,
       signal: controller.signal
@@ -291,9 +296,9 @@ function App() {
         if (controller.signal.aborted) return;
         setMapStatus("error");
         setMapError(error.message);
-      });
+    });
     return () => controller.abort();
-  }, [chamber, coverage, dataLevel, stateFilter]);
+  }, [chamber, dataLevel, stateFilter]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -349,6 +354,15 @@ function App() {
   }, [dataLevel, features, pendingSearchResult]);
 
   useEffect(() => {
+    if (
+      selectedFeature?.properties.chamber !== "house" &&
+      selectedFeature?.properties.chamber !== "senate" &&
+      selectedFeature?.properties.chamber !== "state"
+    ) {
+      setSelectedPersonId(null);
+      setContactPersonId(null);
+      return;
+    }
     const firstRepresentative = selectedFeature?.properties.current_representatives[0];
     setSelectedPersonId(firstRepresentative?.person_id ?? null);
     setContactPersonId(null);
@@ -623,6 +637,8 @@ function App() {
               <p className="eyebrow">
                 {dataLevel === "federal"
                   ? `${chamber === "senate" ? "Federal Senate" : "Federal House"} beta`
+                  : features.length > 0
+                    ? `${levelLabels[dataLevel]} map beta`
                   : selectedLevelHasPartialData
                     ? `${levelLabels[dataLevel]} source summary beta`
                     : `${levelLabels[dataLevel]} pipeline planned`}
@@ -646,7 +662,7 @@ function App() {
             <span>
               {mapStatus === "loading"
                 ? "Loading records"
-                : dataLevel === "federal"
+                : dataLevel === "federal" || features.length > 0
                   ? `${features.length} map features`
                   : "Expansion scope"}
             </span>
@@ -706,6 +722,8 @@ function App() {
               placeholder={
                 dataLevel === "federal"
                   ? "Search representatives, electorates, parties, entities, sectors"
+                  : features.length > 0
+                    ? `${levelLabels[dataLevel]} map search is pending`
                   : selectedLevelHasPartialData
                     ? `${levelLabels[dataLevel]} map/search drilldown is pending`
                     : `${levelLabels[dataLevel]} search will activate after ingestion`
@@ -769,6 +787,8 @@ function App() {
               status={stateLocalSummaryStatus}
               error={stateLocalSummaryError}
               jurisdictionCode={stateFilter}
+              disclosureLayer={selectedDisclosureLayer}
+              boundaryLayer={selectedBoundaryLayer}
               onOpenEntityProfile={openEntityProfile}
             />
           )}
@@ -887,7 +907,8 @@ function App() {
             feature={selectedFeature}
             caveat={mapCaveat}
             partyColor={
-              selectedFeature?.properties.chamber === "senate"
+              selectedFeature?.properties.chamber === "senate" ||
+              selectedFeature?.properties.chamber === "council"
                 ? senateRegionColor(selectedFeature.properties.state_or_territory)
                 : electorateColor(selectedFeature?.properties.party_name)
             }
@@ -940,6 +961,8 @@ function StateLocalSummaryPanel({
   status,
   error,
   jurisdictionCode,
+  disclosureLayer,
+  boundaryLayer,
   onOpenEntityProfile
 }: {
   level: DataLevel;
@@ -947,6 +970,8 @@ function StateLocalSummaryPanel({
   status: LoadState;
   error: string;
   jurisdictionCode: string;
+  disclosureLayer?: CoverageResponse["coverage_layers"][number];
+  boundaryLayer?: CoverageResponse["coverage_layers"][number];
   onOpenEntityProfile: (entityId: number, label: string) => void;
 }) {
   const levelName = level === "council" ? "local/council" : level;
@@ -1120,11 +1145,19 @@ function StateLocalSummaryPanel({
   );
 
   if (!summary || (!hasStateLocalRows && !hasAggregateContext)) {
+    const boundaryCount = numberValue(boundaryLayer?.counts.boundaries);
+    const hasMapLayer = boundaryCount > 0;
     return (
       <div className="scope-notice">
-        <strong>{levelLabels[level]} map drilldown is being built.</strong>
+        <strong>
+          {hasMapLayer
+            ? `${levelLabels[level]} boundary map active`
+            : `${levelLabels[level]} map drilldown is being built.`}
+        </strong>
         <span>
-          State/local disclosure ingestion is wired, but no rows were returned for this level.
+          {hasMapLayer
+            ? `${boundaryCount.toLocaleString("en-AU")} source-backed boundary features are loaded. Disclosure rows remain separate source context until a reviewed attribution link supports a narrower claim.`
+            : "State/local disclosure ingestion is wired, but no rows were returned for this level."}
         </span>
       </div>
     );
@@ -1281,13 +1314,19 @@ function StateLocalSummaryPanel({
             <summary>State/local caveat</summary>
             <p>{summary.caveat}</p>
             <p>
-              Map drilldown is pending. These rows are source-family disclosure coverage,
-              not claims that a current MP personally received the money.
+              {boundaryLayer && numberValue(boundaryLayer.counts.boundaries) > 0
+                ? `${levelLabels[level]} boundary map drilldown is active for ${numberValue(boundaryLayer.counts.boundaries).toLocaleString("en-AU")} source-backed map features. These rows are source-family disclosure coverage, not claims that a current MP, councillor, candidate, or council personally received the money.`
+                : "Map drilldown is pending. These rows are source-family disclosure coverage, not claims that a current MP personally received the money."}
             </p>
             <p>
               Local electorate labels are ECQ disclosure context only. They do not attribute
               a gift, donation, or campaign expenditure row to a candidate, councillor, or MP.
             </p>
+            {disclosureLayer && (
+              <p>
+                Disclosure layer: {coverageLayerSummary(disclosureLayer)}.
+              </p>
+            )}
           </details>
         </>
       ) : null}
@@ -1907,8 +1946,18 @@ function CoveragePanel({
       ?.event_count
   );
   const reportedTotal = numberValue(coverage.influence_event_totals.reported_amount_total);
-  const stateLayer = coverage.coverage_layers.find((layer) => layer.level === "state");
-  const councilLayer = coverage.coverage_layers.find((layer) => layer.level === "council");
+  const stateDisclosureLayer = coverage.coverage_layers.find(
+    (layer) => layer.id === "state_territory_disclosures"
+  );
+  const councilDisclosureLayer = coverage.coverage_layers.find(
+    (layer) => layer.id === "local_council_disclosures"
+  );
+  const stateBoundaryLayer = coverage.coverage_layers.find(
+    (layer) => layer.id === "state_electorate_boundaries"
+  );
+  const councilBoundaryLayer = coverage.coverage_layers.find(
+    (layer) => layer.id === "council_boundaries"
+  );
   const displayLandMask = coverage.display_land_masks?.[0];
   const displayLandMaskLabel = displayLandMask
     ? displayLandMask.source_name || displayLandMask.source_key
@@ -1945,8 +1994,12 @@ function CoveragePanel({
         </span>
       </div>
       <div className="coverage-status-row">
-        <span>State: {coverageLayerSummary(stateLayer)}</span>
-        <span>Council: {coverageLayerSummary(councilLayer)}</span>
+        <span>State data: {coverageLayerSummary(stateDisclosureLayer)}</span>
+        <span>Council data: {coverageLayerSummary(councilDisclosureLayer)}</span>
+      </div>
+      <div className="coverage-status-row">
+        <span>State map: {boundaryLayerSummary(stateBoundaryLayer)}</span>
+        <span>Council map: {boundaryLayerSummary(councilBoundaryLayer)}</span>
       </div>
       <div className="coverage-status-row">
         <span title={displayLandMaskTooltip(displayLandMask)}>
@@ -1967,6 +2020,13 @@ function coverageLayerSummary(layer: CoverageResponse["coverage_layers"][number]
   const base = layer.status || "planned";
   const jurisdiction = layer.jurisdiction ? `${layer.jurisdiction} ` : "";
   return rows ? `${jurisdiction}${base} · ${rows.toLocaleString("en-AU")} rows` : `${jurisdiction}${base}`;
+}
+
+function boundaryLayerSummary(layer: CoverageResponse["coverage_layers"][number] | undefined): string {
+  if (!layer) return "planned";
+  const boundaries = numberValue(layer.counts.boundaries);
+  const base = layer.status || "planned";
+  return boundaries ? `${base} · ${boundaries.toLocaleString("en-AU")} features` : base;
 }
 
 function numberValue(value: number | string | null | undefined): number {

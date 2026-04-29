@@ -1,5 +1,6 @@
 import type {
   CoverageResponse,
+  Chamber,
   ElectorateFeatureCollection,
   EntityProfile,
   InfluenceGraph,
@@ -38,7 +39,7 @@ async function fetchJson<T>(url: string, signal?: AbortSignal): Promise<T> {
 }
 
 export async function fetchElectorateMap(options: {
-  chamber: "house" | "senate" | "state";
+  chamber: Chamber;
   state?: string;
   boundarySet?: string;
   includeGeometry?: boolean;

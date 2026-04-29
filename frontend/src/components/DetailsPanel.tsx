@@ -3,6 +3,7 @@ import {
   AlertCircle,
   ArrowRight,
   Banknote,
+  Building2,
   CheckCircle2,
   Gift,
   Globe2,
@@ -280,6 +281,84 @@ export function DetailsPanel({
   }
 
   const properties = feature.properties;
+  if (properties.chamber.toLowerCase() === "council") {
+    const councilRepresentatives = properties.current_representatives ?? [];
+    return (
+      <aside className="details-panel" id="selection-details-panel" aria-label="Selection details">
+        <button
+          ref={collapseButtonRef}
+          type="button"
+          className="panel-collapse-button details-collapse-button"
+          aria-label="Collapse selection details"
+          aria-controls="selection-details-panel"
+          aria-expanded={true}
+          title="Collapse selection details"
+          onClick={onCollapse}
+        >
+          <PanelRightClose size={16} aria-hidden="true" />
+        </button>
+        <div className="panel-header" style={{ borderColor: partyColor }}>
+          <div>
+            <p className="eyebrow">{properties.state_or_territory || "QLD"} · Council area</p>
+            <h2>{properties.electorate_name}</h2>
+          </div>
+          <span className="party-dot" style={{ background: partyColor }} />
+        </div>
+        <section className="panel-section">
+          <h3>Council Map Layer</h3>
+          <p className="scope-caption">
+            This selection is a council geography boundary. Disclosure rows in the
+            state/local panel are source-backed context; they are not treated as
+            personal receipts or representative-linked claims from this map click.
+          </p>
+          <div className="fact-grid">
+            <Fact
+              icon={<MapPin size={17} />}
+              label="Boundary source"
+              value={humanize(properties.boundary_set || "Loaded")}
+              tooltip="Council boundary geometry returned by the map electorates endpoint for chamber=council."
+            />
+            <Fact
+              icon={<CheckCircle2 size={17} />}
+              label="Geometry"
+              value={properties.map_geometry_role === "display" ? "Display" : "Source"}
+              tooltip="Display geometry may be simplified or clipped for map performance while source geometry remains separate."
+            />
+            <Fact
+              icon={<Building2 size={17} />}
+              label="Roster link"
+              value={
+                councilRepresentatives.length
+                  ? `${councilRepresentatives.length.toLocaleString("en-AU")} loaded`
+                  : "Not linked"
+              }
+              tooltip="Council roster/person joins are separate from the boundary layer and may not be loaded."
+            />
+            <Fact
+              icon={<Globe2 size={17} />}
+              label="Feature ID"
+              value={String(properties.electorate_id)}
+              tooltip="Internal map feature identifier from the electorate boundary response."
+            />
+          </div>
+        </section>
+        <section className="panel-section">
+          <h3>Disclosure Context</h3>
+          <p className="scope-caption">
+            Use the Council summary in the Explore panel for gifts, expenditure, and source
+            rows filtered by jurisdiction. Local labels are attribution context from
+            source documents, not allegations about councillors or candidates.
+          </p>
+          {properties.map_geometry_scope && (
+            <p className="scope-caption">
+              Map geometry: {properties.map_geometry_scope.replaceAll("_", " ")}
+            </p>
+          )}
+        </section>
+        <p className="caveat">{caveat}</p>
+      </aside>
+    );
+  }
   if (properties.chamber.toLowerCase() === "state") {
     const stateRepresentatives = properties.current_representatives ?? [];
     return (

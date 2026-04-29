@@ -3,10 +3,12 @@ export type MapGeometry = {
   coordinates: unknown;
 };
 
+export type Chamber = "house" | "senate" | "state" | "council";
+
 export type MapProperties = {
   electorate_id: number;
   electorate_name: string;
-  chamber: string;
+  chamber: Chamber;
   state_or_territory: string | null;
   boundary_set: string | null;
   has_boundary: boolean;

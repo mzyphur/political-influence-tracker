@@ -136,6 +136,13 @@ Notes:
   addresses preserved as roster facts. This makes the state map navigable by
   representative while preserving the distinction between current
   representation and ECQ financial-disclosure attribution.
+- Queensland is now also the first council map layer. The
+  `qld_local_government_boundaries_arcgis` source archives the Queensland
+  government ArcGIS/QSpatial local-government layer, normalizes 78 current
+  local-government areas, and stores them as `council` chamber boundaries under
+  `QLD-LOCAL`. These polygons support Council-mode map drilldown only; they do
+  not turn local disclosure rows into councillor, candidate, council, state MP,
+  or federal MP attributions without a separate source-backed or reviewed join.
 
 ### South Australia
 
@@ -448,7 +455,9 @@ Current implementation status:
   expose QLD ECQ disclosure totals, identifier-backed counts, top gift
   donors/recipients, and top electoral-expenditure actors. The QLD state map
   also has current official electorate geometry and a current-member roster, but
-  those roster facts remain separate from disclosure attribution.
+  those roster facts remain separate from disclosure attribution. Council mode
+  now displays 78 source-backed local-government boundaries and uses a separate
+  council caveat rather than representative-linked disclosure claims.
 - The QLD adapter also normalizes archived ECQ political-event and
   local-electorate lookup APIs. These exact unique name matches are displayed as
   disclosure context only. They improve event/local summaries but do not by
@@ -457,9 +466,9 @@ Current implementation status:
 - The QLD adapter is now orchestrated by
   `run-state-local-pipeline --jurisdiction qld`, which fetches source pages and
   lookup APIs, fetches current ECQ CSV exports, normalizes money-flow rows,
-  participants, disclosure contexts, the state boundary layer, and the current
-  member roster, and writes a pipeline manifest without mutating the serving
-  database. This is the adapter template for the next state and council
+  participants, disclosure contexts, the state boundary layer, the council
+  boundary layer, and the current member roster, and writes a pipeline manifest
+  without mutating the serving database. This is the adapter template for the next state and council
   jurisdictions: acquisition, normalization, loading, and public attribution
   remain separate auditable stages. The QLD runner passes exact fetched metadata
   paths into later export and normalization steps, which is the reproducibility
@@ -468,16 +477,19 @@ Current implementation status:
   `load-state-local-pipeline-manifest` command loads the exact JSONL/GeoJSON
   artifacts named by the manifest, rejects failed or partial map/roster runs,
   validates artifact and raw source hashes, and reconciles artifact-derived QLD
-  boundary/member electorate-name sets before mutating the database. This closes
-  the acquisition-to-load reproducibility loop.
+  boundary/member electorate-name sets before mutating the database. Council
+  boundaries use the same source/artifact hash validation but are not forced
+  into the state roster-pair rule because local-government geometry is a
+  geography layer, not a councillor roster. This closes the
+  acquisition-to-load reproducibility loop.
 - The historical disclosure-return archive currently returned HTTP 401 during
   reproducible fetch. Treat it as a blocked/pending source until an official
   public access path is confirmed.
 
 Next QLD task: map candidate/group/electorate records into state and local
 electoral districts without reclassifying campaign expenditure as personal
-receipt, then build stronger candidate, party-branch, and electorate drilldowns
-on top of the state map and roster.
+receipt, then build stronger candidate, party-branch, council, and electorate
+drilldowns on top of the state/council maps and roster.
 
 ## Data Model Requirements
 
