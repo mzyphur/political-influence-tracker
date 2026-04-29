@@ -61,6 +61,18 @@ export function DetailsPanel({
   const recentEvents = representativeProfile?.recent_events ?? [];
   const campaignSupportSummary = representativeProfile?.campaign_support_summary ?? [];
   const campaignSupportEvents = representativeProfile?.campaign_support_recent_events ?? [];
+  const topSectors = useMemo(
+    () => (representativeProfile?.influence_by_sector ?? []).slice(0, 4),
+    [representativeProfile]
+  );
+  const topVoteTopics = useMemo(
+    () => (representativeProfile?.vote_topics ?? []).slice(0, 4),
+    [representativeProfile]
+  );
+  const reviewedPolicyContexts = useMemo(
+    () => (representativeProfile?.source_effect_context ?? []).slice(0, 3),
+    [representativeProfile]
+  );
   const totalRepresentativeEvents = useMemo(() => {
     return representativeProfile?.event_summary.reduce(
       (total, summary) => total + summary.event_count,
@@ -291,6 +303,75 @@ export function DetailsPanel({
           </>
         )}
       </section>
+
+      {representativeProfileStatus === "ready" &&
+        representativeProfile &&
+        (topSectors.length > 0 ||
+          topVoteTopics.length > 0 ||
+          reviewedPolicyContexts.length > 0) && (
+          <section className="panel-section evidence-signals-panel">
+            <h3>Evidence Signals</h3>
+            <p className="scope-caption">
+              These are descriptive links in the database. They show disclosed sectors,
+              voting-topic records, and reviewed sector-topic overlap; they do not claim
+              causation or improper conduct.
+            </p>
+            {topSectors.length > 0 && (
+              <SignalBlock title="Disclosed sectors">
+                {topSectors.map((sector) => (
+                  <SignalRow
+                    key={sector.public_sector}
+                    label={sector.public_sector.replaceAll("_", " ")}
+                    value={`${sector.influence_event_count.toLocaleString("en-AU")} records`}
+                    detail={[
+                      sector.money_event_count
+                        ? `${sector.money_event_count.toLocaleString("en-AU")} money`
+                        : "",
+                      sector.benefit_event_count
+                        ? `${sector.benefit_event_count.toLocaleString("en-AU")} benefits`
+                        : "",
+                      formatMoney(sector.reported_amount_total)
+                    ]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  />
+                ))}
+              </SignalBlock>
+            )}
+            {topVoteTopics.length > 0 && (
+              <SignalBlock title="Vote topics">
+                {topVoteTopics.map((topic) => (
+                  <SignalRow
+                    key={`${topic.chamber}:${topic.topic_slug}`}
+                    label={topic.topic_label}
+                    value={`${topic.division_vote_count.toLocaleString("en-AU")} divisions`}
+                    detail={[
+                      `${topic.aye_count.toLocaleString("en-AU")} aye`,
+                      `${topic.no_count.toLocaleString("en-AU")} no`,
+                      voteDateSpan(topic.first_division_date, topic.last_division_date)
+                    ].join(" · ")}
+                  />
+                ))}
+              </SignalBlock>
+            )}
+            {reviewedPolicyContexts.length > 0 && (
+              <SignalBlock title="Reviewed source-policy overlap">
+                {reviewedPolicyContexts.map((context) => (
+                  <SignalRow
+                    key={`${context.topic_label}:${context.public_sector}:${context.relationship}`}
+                    label={`${context.public_sector.replaceAll("_", " ")} -> ${context.topic_label}`}
+                    value={`${context.lifetime_influence_event_count.toLocaleString("en-AU")} context records`}
+                    detail={[
+                      context.relationship.replaceAll("_", " "),
+                      `vote window: ${context.division_vote_count.toLocaleString("en-AU")} divisions`,
+                      formatMoney(context.lifetime_reported_amount_total)
+                    ].join(" · ")}
+                  />
+                ))}
+              </SignalBlock>
+            )}
+          </section>
+        )}
 
       <section className="panel-section">
         <h3>Direct Disclosed Person Records</h3>
@@ -551,6 +632,47 @@ function DetailLine({
       <span>{children}</span>
     </div>
   );
+}
+
+function SignalBlock({
+  title,
+  children
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="signal-block">
+      <h4>{title}</h4>
+      <div className="signal-list">{children}</div>
+    </div>
+  );
+}
+
+function SignalRow({
+  label,
+  value,
+  detail
+}: {
+  label: string;
+  value: string;
+  detail: string;
+}) {
+  return (
+    <div className="signal-row">
+      <div>
+        <strong>{label}</strong>
+        <span>{detail}</span>
+      </div>
+      <small>{value}</small>
+    </div>
+  );
+}
+
+function voteDateSpan(first: string | null, last: string | null) {
+  if (!first && !last) return "dates not disclosed";
+  if (first && last && first !== last) return `${first} to ${last}`;
+  return first || last || "dates not disclosed";
 }
 
 function formatMissingFlags(flags: unknown[]) {

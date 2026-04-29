@@ -193,6 +193,50 @@ export type RepresentativeCampaignSupportSummary = {
   last_event_date: string | null;
 };
 
+export type RepresentativeInfluenceSectorSummary = {
+  public_sector: string;
+  influence_event_count: number;
+  money_event_count: number;
+  benefit_event_count: number;
+  reported_amount_event_count: number;
+  reported_amount_total: number | null;
+  needs_review_event_count: number;
+  source_document_count: number;
+  official_sector_event_count: number;
+  manual_sector_event_count: number;
+  inferred_or_unknown_sector_event_count: number;
+  first_event_date: string | null;
+  last_event_date: string | null;
+};
+
+export type RepresentativeVoteTopicSummary = {
+  topic_label: string;
+  topic_slug: string;
+  chamber: string;
+  division_vote_count: number;
+  aye_count: number;
+  no_count: number;
+  absent_count: number;
+  other_vote_count: number;
+  rebel_count: number;
+  first_division_date: string | null;
+  last_division_date: string | null;
+};
+
+export type RepresentativeSourceEffectContext = {
+  topic_label: string;
+  public_sector: string;
+  relationship: string;
+  division_vote_count: number;
+  lifetime_influence_event_count: number;
+  lifetime_reported_amount_total: number | null;
+  influence_events_before_first_vote: number;
+  influence_events_during_vote_span: number;
+  influence_events_after_last_vote: number;
+  influence_events_unknown_timing: number;
+  sector_topic_link_confidence: string;
+};
+
 export type RepresentativeEvent = {
   id: number;
   event_family: string;
@@ -233,6 +277,9 @@ export type RepresentativeProfile = {
   campaign_support_summary: RepresentativeCampaignSupportSummary[];
   campaign_support_recent_events: RepresentativeEvent[];
   campaign_support_caveat: string;
+  influence_by_sector: RepresentativeInfluenceSectorSummary[];
+  vote_topics: RepresentativeVoteTopicSummary[];
+  source_effect_context: RepresentativeSourceEffectContext[];
   caveat: string;
 };
 

@@ -90,6 +90,10 @@ Completed:
   events pointing at non-current base rows, known House form/OCR boilerplate,
   official APH vote-count mismatches, and unmatched official APH roster votes
   above a configurable tolerance.
+- Improved the representative panel's public evidence surface. The left map
+  metrics now use a 2-by-2 grid so labels such as "Electorates" do not collide,
+  and representative profiles now expose compact sector, vote-topic, and
+  reviewed source-policy overlap signals with an explicit non-causation caveat.
 - Added `docs/theory_of_influence.md` as the standing theory/methodology layer
   connecting engineering decisions to mechanisms of influence, democratic
   transparency, operating hypotheses, allowed claims, non-claims, and the
