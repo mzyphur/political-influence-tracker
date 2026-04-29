@@ -142,6 +142,8 @@ def _assert_expected_indexes(conn) -> None:
             "person_vote_current_division_idx",
             "influence_event_person_direct_feed_idx",
             "influence_event_person_campaign_feed_idx",
+            "money_flow_qld_ecq_current_record_feed_idx",
+            "money_flow_qld_ecq_current_kind_record_feed_idx",
         ):
             cur.execute("SELECT to_regclass(%s)", (index_name,))
             assert cur.fetchone()[0] is not None, index_name
@@ -1404,6 +1406,98 @@ def test_coverage_reports_partial_qld_state_and_local_levels(
         council_summary["top_local_electorates"][0]["gift_or_donation_reported_amount_total"]
         == 0
     )
+
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO money_flow (
+                    external_key, source_entity_id, source_raw_name,
+                    recipient_entity_id, recipient_raw_name, amount,
+                    date_received, receipt_type, disclosure_category,
+                    jurisdiction_id, source_document_id, source_row_ref,
+                    original_text, confidence, is_current, metadata
+                )
+                VALUES (
+                    'pytest-qld-state-gift-second', %s, 'QLD Donor',
+                    %s, 'QLD Recipient', 300, DATE '2026-04-20',
+                    'Gift', 'qld_gift', %s, %s, 'pytest-qld-state-gift-second',
+                    '{"Gift value":"$300"}', 'resolved', TRUE, %s
+                )
+                """,
+                (
+                    donor_id,
+                    recipient_id,
+                    qld_state_id,
+                    source_document_id,
+                    Jsonb(
+                        {
+                            "event_name": "2026 Stafford State By-election",
+                            "flow_kind": "qld_gift",
+                            "public_amount_counting_role": "single_observation",
+                            "source_dataset": "qld_ecq_eds",
+                            "transaction_kind": "gift",
+                        }
+                    ),
+                ),
+            )
+        conn.commit()
+
+    first_page_response = client.get(
+        "/api/state-local/records",
+        params={"level": "state", "limit": "1"},
+    )
+    assert first_page_response.status_code == 200
+    first_page = first_page_response.json()
+    assert first_page["total_count"] == 2
+    assert first_page["record_count"] == 1
+    assert first_page["has_more"] is True
+    assert first_page["next_cursor"]
+    assert first_page["records"][0]["amount"] == 300
+    assert first_page["records"][0]["source_document_id"] == source_document_id
+    assert first_page["records"][0]["source_document_sha256"] == "pytest-qld-sha256"
+    assert first_page["records"][0]["public_amount_counting_role"] == "single_observation"
+
+    second_page_response = client.get(
+        "/api/state-local/records",
+        params={
+            "level": "state",
+            "cursor": first_page["next_cursor"],
+            "limit": "5",
+        },
+    )
+    assert second_page_response.status_code == 200
+    second_page = second_page_response.json()
+    assert second_page["record_count"] == 1
+    assert second_page["has_more"] is False
+    assert second_page["records"][0]["id"] != first_page["records"][0]["id"]
+    assert second_page["records"][0]["flow_kind"] == "qld_gift"
+
+    reused_cursor_response = client.get(
+        "/api/state-local/records",
+        params={"level": "council", "cursor": first_page["next_cursor"]},
+    )
+    assert reused_cursor_response.status_code == 400
+
+    council_records_response = client.get(
+        "/api/state-local/records",
+        params={
+            "level": "council",
+            "flow_kind": "qld_electoral_expenditure",
+            "limit": "5",
+        },
+    )
+    assert council_records_response.status_code == 200
+    council_records = council_records_response.json()
+    assert council_records["total_count"] == 1
+    assert council_records["records"][0]["flow_kind"] == "qld_electoral_expenditure"
+    assert council_records["records"][0]["local_electorate_name"] == "Whitsunday Regional"
+
+    invalid_cursor_response = client.get(
+        "/api/state-local/records",
+        params={"level": "state", "cursor": "not-a-valid-cursor"},
+    )
+    assert invalid_cursor_response.status_code == 400
 
 
 def test_withdrawn_source_rows_do_not_remain_public_events(

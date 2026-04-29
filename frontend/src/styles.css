@@ -564,6 +564,45 @@ a:focus-visible {
   line-height: 1.3;
 }
 
+.state-summary-feed-footer {
+  display: grid;
+  gap: 6px;
+  color: var(--ink-muted);
+  font-size: 11px;
+  line-height: 1.3;
+}
+
+.state-summary-error {
+  color: #8c2d24;
+  font-weight: 800;
+}
+
+.secondary-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid rgba(30, 109, 121, 0.22);
+  border-radius: 8px;
+  background: rgba(232, 247, 245, 0.88);
+  color: #174f58;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.secondary-action-button:hover,
+.secondary-action-button:focus-visible {
+  border-color: rgba(30, 109, 121, 0.46);
+  background: #dff3f1;
+}
+
+.secondary-action-button:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .state-summary-context-list {
   border-top: 1px solid rgba(30, 109, 121, 0.12);
   padding-top: 4px;

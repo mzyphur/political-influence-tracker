@@ -7,6 +7,7 @@ import type {
   RepresentativeEvidenceResponse,
   RepresentativeProfile,
   SearchResponse,
+  StateLocalRecordsResponse,
   StateLocalSummaryResponse
 } from "./types";
 
@@ -72,6 +73,25 @@ export async function fetchStateLocalSummary(options: {
   if (options.level) params.set("level", options.level);
   return fetchJson<StateLocalSummaryResponse>(
     apiUrl("/api/state-local/summary", params),
+    options.signal
+  );
+}
+
+export async function fetchStateLocalRecords(options: {
+  level?: "state" | "council" | "local";
+  flowKind?: "qld_gift" | "qld_electoral_expenditure";
+  cursor?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<StateLocalRecordsResponse> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 25)
+  });
+  if (options.level) params.set("level", options.level);
+  if (options.flowKind) params.set("flow_kind", options.flowKind);
+  if (options.cursor) params.set("cursor", options.cursor);
+  return fetchJson<StateLocalRecordsResponse>(
+    apiUrl("/api/state-local/records", params),
     options.signal
   );
 }

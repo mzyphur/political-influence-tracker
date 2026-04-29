@@ -348,6 +348,21 @@ CREATE INDEX money_flow_recipient_entity_idx ON money_flow (recipient_entity_id)
 CREATE INDEX money_flow_recipient_person_idx ON money_flow (recipient_person_id);
 CREATE INDEX money_flow_year_idx ON money_flow (financial_year);
 CREATE INDEX money_flow_amount_idx ON money_flow (amount);
+CREATE INDEX money_flow_qld_ecq_current_record_feed_idx
+    ON money_flow (
+        (COALESCE(date_received, date_reported, DATE '0001-01-01')) DESC,
+        id DESC
+    )
+    WHERE is_current IS TRUE
+      AND metadata->>'source_dataset' = 'qld_ecq_eds';
+CREATE INDEX money_flow_qld_ecq_current_kind_record_feed_idx
+    ON money_flow (
+        (metadata->>'flow_kind'),
+        (COALESCE(date_received, date_reported, DATE '0001-01-01')) DESC,
+        id DESC
+    )
+    WHERE is_current IS TRUE
+      AND metadata->>'source_dataset' = 'qld_ecq_eds';
 
 CREATE TABLE gift_interest (
     id BIGSERIAL PRIMARY KEY,

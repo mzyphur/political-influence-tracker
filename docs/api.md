@@ -62,6 +62,11 @@ http://127.0.0.1:8008/docs
   ECQ EDS disclosures. It returns source-family totals, ECQ identifier-backed
   counts, top gift donors/recipients, and top campaign-spend actors while
   state/council maps and representative joins remain under construction.
+- `GET /api/state-local/records` - paginated QLD ECQ source-row feed for the
+  state/local summary panel. It accepts `level=state|council|local`,
+  `flow_kind=qld_gift|qld_electoral_expenditure`, `limit`, and an opaque
+  `cursor`; cursors are bound to the current level and flow-kind filters so
+  rows are not skipped if a UI changes slices.
 
 ## Search Behaviour
 
@@ -231,6 +236,16 @@ The response includes:
 - `recent_records`: a compact current-row feed with source/recipient names,
   reported amount, ECQ event/local-electorate context where matched, source-row
   reference, source-document URL, and row-side ECQ identifier signals.
+
+`/api/state-local/records` returns the concrete current ECQ rows behind that
+summary with cursor pagination. Each row includes the normalized source and
+recipient names, amount, date fields, ECQ identifier-backed flags,
+event/local-electorate context, source row reference, source URL, source
+document id, source fetch timestamp, SHA-256 snapshot hash, and selected row
+metadata such as expenditure purpose and goods or services where ECQ provides
+them. Gift/donation rows are donor-recipient records. Electoral expenditure rows
+are expenditure incurred by a named actor; they are campaign-support context,
+not evidence that another person or office-holder received money.
 
 ECQ identifiers are attached only when the archived public lookup APIs provide
 an evidence-backed participant ID and the loader can make an exact unique match

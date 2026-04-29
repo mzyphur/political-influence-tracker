@@ -25,6 +25,7 @@ import {
   fetchInfluenceGraph,
   fetchPartyProfile,
   fetchRepresentativeProfile,
+  fetchStateLocalRecords,
   fetchStateLocalSummary,
   searchDatabase
 } from "./api";
@@ -64,7 +65,24 @@ type GraphRoot = {
   label: string;
   includeCandidates: boolean;
 };
+type StateLocalRecordPage = {
+  records: StateLocalSummaryRecord[];
+  status: LoadState;
+  error: string;
+  hasMore: boolean | null;
+  nextCursor: string | null;
+  totalCount: number | null;
+};
 type DisplayLandMask = NonNullable<CoverageResponse["display_land_masks"]>[number];
+
+const emptyStateLocalRecordPage = (): StateLocalRecordPage => ({
+  records: [],
+  status: "idle",
+  error: "",
+  hasMore: null,
+  nextCursor: null,
+  totalCount: null
+});
 
 const levelLabels: Record<DataLevel, string> = {
   federal: "Federal",
@@ -821,6 +839,66 @@ function StateLocalSummaryPanel({
   onOpenEntityProfile: (entityId: number, label: string) => void;
 }) {
   const levelName = level === "council" ? "local/council" : level;
+  const [recordPage, setRecordPage] = useState<StateLocalRecordPage>(
+    emptyStateLocalRecordPage
+  );
+  const recordFetchRef = useRef<AbortController | null>(null);
+  const summaryRecentRows = summary?.recent_records ?? [];
+  const mergedRecentRows = useMemo(
+    () => mergeStateLocalRecords(summaryRecentRows, recordPage.records),
+    [recordPage.records, summaryRecentRows]
+  );
+  const nextRecordCursor =
+    recordPage.nextCursor ?? mergedRecentRows[mergedRecentRows.length - 1]?.pagination_cursor ?? null;
+  const canLoadMoreRecords =
+    status === "ready" &&
+    Boolean(summary) &&
+    mergedRecentRows.length > 0 &&
+    recordPage.hasMore !== false &&
+    Boolean(nextRecordCursor);
+
+  useEffect(() => {
+    recordFetchRef.current?.abort();
+    setRecordPage(emptyStateLocalRecordPage());
+    return () => recordFetchRef.current?.abort();
+  }, [level, summary?.db_level, summary?.requested_level]);
+
+  const loadMoreRecords = () => {
+    if (!summary || !nextRecordCursor || recordPage.status === "loading") return;
+    recordFetchRef.current?.abort();
+    const controller = new AbortController();
+    recordFetchRef.current = controller;
+    setRecordPage((current) => ({
+      ...current,
+      status: "loading",
+      error: ""
+    }));
+    fetchStateLocalRecords({
+      level: level === "council" ? "council" : "state",
+      cursor: nextRecordCursor,
+      limit: 25,
+      signal: controller.signal
+    })
+      .then((payload) => {
+        setRecordPage((current) => ({
+          records: mergeStateLocalRecords(current.records, payload.records),
+          status: "ready",
+          error: "",
+          hasMore: payload.has_more,
+          nextCursor: payload.next_cursor,
+          totalCount: payload.total_count
+        }));
+      })
+      .catch((loadError: Error) => {
+        if (controller.signal.aborted) return;
+        setRecordPage((current) => ({
+          ...current,
+          status: "error",
+          error: loadError.message
+        }));
+      });
+  };
+
   if (status === "idle" || status === "loading") {
     return (
       <div className="state-local-summary" aria-label="State and local disclosure summary">
@@ -901,7 +979,14 @@ function StateLocalSummaryPanel({
         <span>Campaign spend total</span>
         <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
       </div>
-      <StateLocalRecentRecords rows={summary.recent_records} />
+      <StateLocalRecentRecords
+        rows={mergedRecentRows}
+        totalCount={recordPage.totalCount}
+        status={recordPage.status}
+        error={recordPage.error}
+        canLoadMore={canLoadMoreRecords}
+        onLoadMore={loadMoreRecords}
+      />
       <StateLocalRankList
         title="Top gift donors"
         rows={summary.top_gift_donors}
@@ -938,36 +1023,44 @@ function StateLocalSummaryPanel({
   );
 }
 
-function StateLocalRecentRecords({ rows }: { rows: StateLocalSummaryRecord[] }) {
+function StateLocalRecentRecords({
+  rows,
+  totalCount,
+  status,
+  error,
+  canLoadMore,
+  onLoadMore
+}: {
+  rows: StateLocalSummaryRecord[];
+  totalCount: number | null;
+  status: LoadState;
+  error: string;
+  canLoadMore: boolean;
+  onLoadMore: () => void;
+}) {
   return (
     <div className="state-summary-list state-summary-recent-list">
       <h3>Recent source rows</h3>
       {rows.length === 0 ? (
         <p className="muted">No current QLD ECQ rows returned for this slice.</p>
       ) : (
-        rows.slice(0, 5).map((row) => {
+        rows.map((row) => {
           const sourceHref = safeSourceHref(row.source_final_url || row.source_url);
-          const kind =
-            row.flow_kind === "qld_electoral_expenditure"
-              ? "Campaign spend row"
-              : "Gift/donation row";
-          const context = [
-            row.event_name,
-            row.local_electorate_name,
-            row.date_received || row.date_reported || row.financial_year
-          ].filter(Boolean);
+          const context = stateLocalRecordContext(row);
           const idSignals = [
             row.source_identifier_backed ? "source ECQ ID" : "",
             row.recipient_identifier_backed ? "recipient ECQ ID" : ""
           ].filter(Boolean);
           return (
-            <div className="state-summary-row state-summary-record-row" key={row.id}>
-              <strong>
-                {row.source_name || "Source not identified"} to{" "}
-                {row.recipient_name || "recipient not identified"}
-              </strong>
+            <div
+              className="state-summary-row state-summary-record-row"
+              key={row.id}
+              title={stateLocalRecordTooltip(row)}
+            >
+              <strong>{stateLocalRecordHeadline(row)}</strong>
               <span>
-                {kind} · {formatMoney(row.amount)} · {row.jurisdiction_level}
+                {stateLocalRecordKind(row)} · {formatMoney(row.amount)} ·{" "}
+                {row.jurisdiction_level}
               </span>
               {context.length > 0 && <span>{context.join(" · ")}</span>}
               <span>
@@ -986,8 +1079,91 @@ function StateLocalRecentRecords({ rows }: { rows: StateLocalSummaryRecord[] }) 
           );
         })
       )}
+      {rows.length > 0 && (
+        <div className="state-summary-feed-footer">
+          <span>
+            Showing {rows.length.toLocaleString("en-AU")}
+            {totalCount !== null ? ` of ${totalCount.toLocaleString("en-AU")}` : ""} loaded
+            QLD rows.
+          </span>
+          {error && <span className="state-summary-error">Load failed: {error}</span>}
+          {canLoadMore && (
+            <button
+              type="button"
+              className="secondary-action-button"
+              onClick={onLoadMore}
+              disabled={status === "loading"}
+            >
+              {status === "loading" ? (
+                <>
+                  <Loader2 size={13} className="spin" aria-hidden="true" />
+                  Loading
+                </>
+              ) : (
+                "Load more rows"
+              )}
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+function mergeStateLocalRecords(
+  baseRows: StateLocalSummaryRecord[],
+  extraRows: StateLocalSummaryRecord[]
+): StateLocalSummaryRecord[] {
+  const seen = new Set<number>();
+  const merged: StateLocalSummaryRecord[] = [];
+  for (const row of [...baseRows, ...extraRows]) {
+    if (seen.has(row.id)) continue;
+    seen.add(row.id);
+    merged.push(row);
+  }
+  return merged;
+}
+
+function stateLocalRecordKind(row: StateLocalSummaryRecord): string {
+  if (row.flow_kind === "qld_electoral_expenditure") return "Campaign spend incurred";
+  return row.receipt_type || "Gift/donation row";
+}
+
+function stateLocalRecordHeadline(row: StateLocalSummaryRecord): string {
+  const source = row.source_name || "Source not identified";
+  if (row.flow_kind === "qld_electoral_expenditure") {
+    return `${source} incurred electoral expenditure`;
+  }
+  return `${source} to ${row.recipient_name || "recipient not identified"}`;
+}
+
+function stateLocalRecordContext(row: StateLocalSummaryRecord): string[] {
+  return [
+    row.event_name,
+    row.local_electorate_name,
+    row.purpose_of_expenditure,
+    row.description_of_goods_or_services,
+    row.date_received || row.date_reported || row.financial_year
+  ].filter((value): value is string => Boolean(value));
+}
+
+function stateLocalRecordTooltip(row: StateLocalSummaryRecord): string {
+  return [
+    `Source document ID: ${row.source_document_id}`,
+    `Source: ${row.source_document_name}`,
+    `Fetched: ${row.source_document_fetched_at}`,
+    `SHA-256: ${row.source_document_sha256}`,
+    row.source_row_ref ? `Source row: ${row.source_row_ref}` : null,
+    row.transaction_kind ? `Transaction kind: ${row.transaction_kind}` : null,
+    row.public_amount_counting_role
+      ? `Amount counting role: ${row.public_amount_counting_role}`
+      : null,
+    row.flow_kind === "qld_electoral_expenditure"
+      ? "Interpretation: expenditure incurred, not money received by the named actor."
+      : null
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function StateLocalRankList({

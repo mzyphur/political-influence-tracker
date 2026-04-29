@@ -152,6 +152,58 @@ def test_state_local_summary_endpoint_delegates_to_query_layer(monkeypatch) -> N
     assert captured == {"level": "council", "limit": 5}
 
 
+def test_state_local_records_endpoint_delegates_to_query_layer(monkeypatch) -> None:
+    captured = {}
+
+    def fake_records(level=None, flow_kind=None, cursor=None, limit=25, database_url=None):
+        captured.update(
+            {
+                "level": level,
+                "flow_kind": flow_kind,
+                "cursor": cursor,
+                "limit": limit,
+                "database_url": database_url,
+            }
+        )
+        return {
+            "status": "ok",
+            "source_family": "qld_ecq_eds",
+            "requested_level": level,
+            "db_level": "local",
+            "flow_kind": flow_kind,
+            "records": [],
+            "record_count": 0,
+            "total_count": 0,
+            "limit": limit,
+            "has_more": False,
+            "next_cursor": None,
+            "caveat": "fixture",
+        }
+
+    monkeypatch.setattr(queries, "get_state_local_records", fake_records)
+    client = TestClient(app)
+
+    response = client.get(
+        "/api/state-local/records",
+        params={
+            "level": "council",
+            "flow_kind": "qld_electoral_expenditure",
+            "cursor": "abc123",
+            "limit": "9",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["flow_kind"] == "qld_electoral_expenditure"
+    assert captured == {
+        "level": "council",
+        "flow_kind": "qld_electoral_expenditure",
+        "cursor": "abc123",
+        "limit": 9,
+        "database_url": None,
+    }
+
+
 def test_influence_graph_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     def fake_get_influence_graph(
         *,

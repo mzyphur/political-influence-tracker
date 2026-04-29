@@ -265,6 +265,66 @@ def _with_representative_evidence_cursors(rows: list[dict[str, Any]]) -> list[di
     return rows
 
 
+def _state_local_record_cursor(
+    row: dict[str, Any],
+    *,
+    db_level: str | None,
+    flow_kind: str | None,
+) -> str:
+    record_date = row.get("date_received") or row.get("date_reported")
+    payload = {
+        "db_level": db_level or "all",
+        "flow_kind": flow_kind or "all",
+        "record_date": record_date.isoformat() if record_date else None,
+        "id": int(row["id"]),
+    }
+    body = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    return base64.urlsafe_b64encode(body).decode("ascii").rstrip("=")
+
+
+def _decode_state_local_record_cursor(
+    cursor: str,
+    *,
+    db_level: str | None,
+    flow_kind: str | None,
+) -> tuple[date, int]:
+    try:
+        padded = cursor + ("=" * (-len(cursor) % 4))
+        payload = json.loads(base64.urlsafe_b64decode(padded.encode("ascii")))
+    except (
+        binascii.Error,
+        UnicodeDecodeError,
+        UnicodeEncodeError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise ValueError("Invalid state/local record cursor.") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("Invalid state/local record cursor.")
+    record_id = payload.get("id")
+    if not isinstance(record_id, int) or record_id <= 0:
+        raise ValueError("Invalid state/local record cursor.")
+    if payload.get("db_level") != (db_level or "all") or payload.get("flow_kind") != (
+        flow_kind or "all"
+    ):
+        raise ValueError("State/local record cursor does not match the requested filters.")
+    return (_cursor_date(payload.get("record_date")), record_id)
+
+
+def _with_state_local_record_cursors(
+    rows: list[dict[str, Any]],
+    *,
+    db_level: str | None,
+    flow_kind: str | None,
+) -> list[dict[str, Any]]:
+    for row in rows:
+        row["pagination_cursor"] = _state_local_record_cursor(
+            row,
+            db_level=db_level,
+            flow_kind=flow_kind,
+        )
+    return rows
+
+
 def _table_exists(conn, table_name: str) -> bool:
     with conn.cursor() as cur:
         cur.execute("SELECT to_regclass(%s)", (table_name,))
@@ -1657,7 +1717,7 @@ def _qld_recent_money_flow_rows(
 ) -> list[dict[str, Any]]:
     level_filter = "AND jurisdiction.level = %s" if db_level else ""
     params: tuple[Any, ...] = (db_level, limit) if db_level else (limit,)
-    return _fetch_dicts(
+    rows = _fetch_dicts(
         conn,
         f"""
         SELECT
@@ -1680,7 +1740,14 @@ def _qld_recent_money_flow_rows(
             money_flow.date_received,
             money_flow.date_reported,
             money_flow.source_row_ref,
+            money_flow.original_text,
             money_flow.confidence,
+            money_flow.metadata->>'transaction_kind' AS transaction_kind,
+            money_flow.metadata->>'description_of_goods_or_services'
+                AS description_of_goods_or_services,
+            money_flow.metadata->>'purpose_of_expenditure' AS purpose_of_expenditure,
+            money_flow.metadata->>'public_amount_counting_role' AS public_amount_counting_role,
+            money_flow.metadata->'campaign_support_attribution' AS campaign_support_attribution,
             EXISTS (
                 SELECT 1
                 FROM entity_identifier
@@ -1703,10 +1770,13 @@ def _qld_recent_money_flow_rows(
                 AS local_electorate_external_id,
             money_flow.metadata->'qld_ecq_context'->'local_electorate'->>'name'
                 AS local_electorate_name,
+            money_flow.source_document_id,
             source_document.source_id,
             source_document.source_name AS source_document_name,
             source_document.url AS source_url,
-            source_document.final_url AS source_final_url
+            source_document.final_url AS source_final_url,
+            source_document.sha256 AS source_document_sha256,
+            source_document.fetched_at AS source_document_fetched_at
         FROM money_flow
         JOIN jurisdiction
           ON jurisdiction.id = money_flow.jurisdiction_id
@@ -1725,6 +1795,176 @@ def _qld_recent_money_flow_rows(
         LIMIT %s
         """,
         params,
+    )
+    return _with_state_local_record_cursors(rows, db_level=db_level, flow_kind=None)
+
+
+def get_state_local_records(
+    *,
+    level: str | None = None,
+    flow_kind: str | None = None,
+    cursor: str | None = None,
+    limit: int = 25,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    level_map = {"state": "state", "council": "local", "local": "local"}
+    db_level = level_map.get(level or "") if level else None
+    if level and db_level is None:
+        raise ValueError("level must be state, council, local, or omitted")
+    if flow_kind is not None and flow_kind not in {
+        "qld_gift",
+        "qld_electoral_expenditure",
+    }:
+        raise ValueError("flow_kind must be qld_gift, qld_electoral_expenditure, or omitted")
+    if limit < 1 or limit > 100:
+        raise ValueError("State/local record page limit must be between 1 and 100.")
+
+    cursor_values = (
+        _decode_state_local_record_cursor(cursor, db_level=db_level, flow_kind=flow_kind)
+        if cursor
+        else None
+    )
+    with connect(database_url) as conn:
+        where_clauses = [
+            "money_flow.metadata->>'source_dataset' = 'qld_ecq_eds'",
+            "money_flow.is_current IS TRUE",
+        ]
+        params: list[Any] = []
+        if db_level:
+            where_clauses.append("jurisdiction.level = %s")
+            params.append(db_level)
+        if flow_kind:
+            where_clauses.append("money_flow.metadata->>'flow_kind' = %s")
+            params.append(flow_kind)
+        where_sql = "\n          AND ".join(where_clauses)
+        count_rows = _fetch_dicts(
+            conn,
+            f"""
+            SELECT count(*) AS total_count
+            FROM money_flow
+            JOIN jurisdiction
+              ON jurisdiction.id = money_flow.jurisdiction_id
+            WHERE {where_sql}
+            """,
+            tuple(params),
+        )
+        page_params = list(params)
+        cursor_sql = ""
+        if cursor_values is not None:
+            cursor_sql = """
+          AND (
+              COALESCE(money_flow.date_received, money_flow.date_reported, DATE '0001-01-01'),
+              money_flow.id
+          ) < (%s, %s)
+            """
+            page_params.extend(cursor_values)
+        page_params.append(limit + 1)
+        rows = _fetch_dicts(
+            conn,
+            f"""
+            SELECT
+                money_flow.id,
+                jurisdiction.name AS jurisdiction_name,
+                jurisdiction.level AS jurisdiction_level,
+                jurisdiction.code AS jurisdiction_code,
+                money_flow.metadata->>'flow_kind' AS flow_kind,
+                money_flow.receipt_type,
+                money_flow.disclosure_category,
+                money_flow.source_entity_id,
+                COALESCE(source_entity.canonical_name, money_flow.source_raw_name)
+                    AS source_name,
+                money_flow.recipient_entity_id,
+                COALESCE(recipient_entity.canonical_name, money_flow.recipient_raw_name)
+                    AS recipient_name,
+                money_flow.amount,
+                money_flow.currency,
+                money_flow.financial_year,
+                money_flow.date_received,
+                money_flow.date_reported,
+                money_flow.source_row_ref,
+                money_flow.original_text,
+                money_flow.confidence,
+                money_flow.metadata->>'transaction_kind' AS transaction_kind,
+                money_flow.metadata->>'description_of_goods_or_services'
+                    AS description_of_goods_or_services,
+                money_flow.metadata->>'purpose_of_expenditure' AS purpose_of_expenditure,
+                money_flow.metadata->>'public_amount_counting_role'
+                    AS public_amount_counting_role,
+                money_flow.metadata->'campaign_support_attribution'
+                    AS campaign_support_attribution,
+                EXISTS (
+                    SELECT 1
+                    FROM entity_identifier
+                    WHERE entity_identifier.entity_id = money_flow.source_entity_id
+                      AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
+                ) AS source_identifier_backed,
+                EXISTS (
+                    SELECT 1
+                    FROM entity_identifier
+                    WHERE entity_identifier.entity_id = money_flow.recipient_entity_id
+                      AND entity_identifier.identifier_type LIKE 'qld_ecq_%%'
+                ) AS recipient_identifier_backed,
+                money_flow.metadata->'qld_ecq_context'->'event'->>'external_id'
+                    AS event_external_id,
+                money_flow.metadata->'qld_ecq_context'->'event'->>'name'
+                    AS event_name,
+                money_flow.metadata->'qld_ecq_context'->'event'->>'polling_date'
+                    AS event_polling_date,
+                money_flow.metadata->'qld_ecq_context'->'local_electorate'->>'external_id'
+                    AS local_electorate_external_id,
+                money_flow.metadata->'qld_ecq_context'->'local_electorate'->>'name'
+                    AS local_electorate_name,
+                money_flow.source_document_id,
+                source_document.source_id,
+                source_document.source_name AS source_document_name,
+                source_document.url AS source_url,
+                source_document.final_url AS source_final_url,
+                source_document.sha256 AS source_document_sha256,
+                source_document.fetched_at AS source_document_fetched_at
+            FROM money_flow
+            JOIN jurisdiction
+              ON jurisdiction.id = money_flow.jurisdiction_id
+            JOIN source_document
+              ON source_document.id = money_flow.source_document_id
+            LEFT JOIN entity source_entity
+              ON source_entity.id = money_flow.source_entity_id
+            LEFT JOIN entity recipient_entity
+              ON recipient_entity.id = money_flow.recipient_entity_id
+            WHERE {where_sql}
+            {cursor_sql}
+            ORDER BY
+                COALESCE(money_flow.date_received, money_flow.date_reported, DATE '0001-01-01') DESC,
+                money_flow.id DESC
+            LIMIT %s
+            """,
+            tuple(page_params),
+        )
+    rows = _with_state_local_record_cursors(rows, db_level=db_level, flow_kind=flow_kind)
+    has_more = len(rows) > limit
+    records = rows[:limit]
+    return _jsonable(
+        {
+            "status": "ok",
+            "source_family": "qld_ecq_eds",
+            "jurisdiction": "Queensland",
+            "requested_level": level or "all",
+            "db_level": db_level or "all",
+            "flow_kind": flow_kind,
+            "records": records,
+            "record_count": len(records),
+            "total_count": count_rows[0]["total_count"] if count_rows else 0,
+            "limit": limit,
+            "has_more": has_more,
+            "next_cursor": records[-1]["pagination_cursor"] if has_more and records else None,
+            "caveat": (
+                "Queensland ECQ EDS record pages expose current source rows only. "
+                "Gift/donation rows and electoral expenditure rows are different "
+                "evidence families; expenditure is campaign-support context, not "
+                "personal receipt. Local electorate and event labels are disclosure "
+                "context labels, not candidate/councillor attribution. Records are "
+                "not claims of wrongdoing, causation, quid pro quo, or improper influence."
+            ),
+        }
     )
 
 

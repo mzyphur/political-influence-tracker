@@ -177,7 +177,13 @@ export type StateLocalSummaryRecord = {
   date_received: string | null;
   date_reported: string | null;
   source_row_ref: string | null;
+  original_text: string | null;
   confidence: string | null;
+  transaction_kind: string | null;
+  description_of_goods_or_services: string | null;
+  purpose_of_expenditure: string | null;
+  public_amount_counting_role: string | null;
+  campaign_support_attribution: Record<string, unknown> | null;
   source_identifier_backed: boolean | null;
   recipient_identifier_backed: boolean | null;
   event_external_id: string | null;
@@ -185,10 +191,30 @@ export type StateLocalSummaryRecord = {
   event_polling_date: string | null;
   local_electorate_external_id: string | null;
   local_electorate_name: string | null;
+  source_document_id: number;
   source_id: string;
   source_document_name: string;
   source_url: string | null;
   source_final_url: string | null;
+  source_document_sha256: string;
+  source_document_fetched_at: string;
+  pagination_cursor?: string;
+};
+
+export type StateLocalRecordsResponse = {
+  status: string;
+  source_family: string;
+  jurisdiction: string;
+  requested_level: string;
+  db_level: string;
+  flow_kind: string | null;
+  records: StateLocalSummaryRecord[];
+  record_count: number;
+  total_count: number;
+  limit: number;
+  has_more: boolean;
+  next_cursor: string | null;
+  caveat: string;
 };
 
 export type StateLocalSummaryResponse = {

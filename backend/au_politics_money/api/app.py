@@ -114,6 +114,27 @@ def state_local_summary(
     return queries.get_state_local_summary(level=level, limit=limit)
 
 
+@app.get("/api/state-local/records")
+def state_local_records(
+    level: Annotated[str | None, Query(pattern="^(state|council|local)$")] = None,
+    flow_kind: Annotated[
+        str | None,
+        Query(pattern="^(qld_gift|qld_electoral_expenditure)$"),
+    ] = None,
+    cursor: Annotated[str | None, Query(min_length=1, max_length=600)] = None,
+    limit: Annotated[int, Query(ge=1, le=100)] = 25,
+) -> dict:
+    try:
+        return queries.get_state_local_records(
+            level=level,
+            flow_kind=flow_kind,
+            cursor=cursor,
+            limit=limit,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/representatives/{person_id}")
 def representative_profile(person_id: int) -> dict:
     profile = queries.get_representative_profile(person_id)
