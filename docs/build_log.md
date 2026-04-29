@@ -12,6 +12,14 @@ Completed:
   Australian coastline display mask. `/api/map/electorates?chamber=state`
   now serves QLD state map features with a caveat that disclosure rows remain
   separate until a source or reviewed model supports electorate/MP attribution.
+- Added the first state current-representation join. The QLD Parliament
+  current-member mail-merge XLSX is now fetched, normalized, and loaded into
+  `person` and `office_term` as a current state roster snapshot. The live run
+  joined 92 current MPs to QLD state electorates, preserved one vacant/unjoined
+  electorate, and exposed public electorate-office email/address details in the
+  state map payload. The State details panel now shows these roster facts while
+  explicitly avoiding claims that ECQ disclosure rows are personal receipts or
+  electorate-level attributions.
 - Added jurisdiction filtering to the state/local API and frontend summary
   panel. `/api/state-local/summary` and `/api/state-local/records` now accept
   `jurisdiction_code` (`ACT`, `NSW`, `NT`, `QLD`, `SA`, `TAS`, `VIC`, `WA`);

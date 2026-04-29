@@ -39,6 +39,13 @@ export type RepresentativeSummary = {
   chamber: string;
   state_or_territory?: string | null;
   term_start: string | null;
+  portfolio?: string | null;
+  public_email?: string | null;
+  electorate_offices?: Array<{
+    address_lines?: string[];
+    email?: string;
+    source_row_number?: number;
+  }>;
 };
 
 export type PartyBreakdown = {

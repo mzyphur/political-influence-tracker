@@ -525,6 +525,25 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="qld_parliament_members_mail_merge_xlsx",
+        name="Queensland Parliament Members Mail Merge List Excel",
+        jurisdiction="Queensland",
+        level="state",
+        source_type="state_current_member_contact_xlsx",
+        url="https://documents.parliament.qld.gov.au/Members/mailingLists/MEMMERGEEXCEL.xlsx",
+        expected_format="xlsx",
+        update_frequency="parliamentary_roster",
+        priority="high",
+        notes=(
+            "Official Queensland Parliament current-member mail-merge XLSX. "
+            "Contains electorate names, member names, party abbreviations, "
+            "portfolio text, electorate office addresses, and public electorate "
+            "office email addresses. Used to join current state representation "
+            "to source-backed state electorates; it does not attribute ECQ "
+            "disclosure rows to those MPs."
+        ),
+    ),
+    SourceRecord(
         source_id="qld_ecq_eds_public_map",
         name="ECQ Electronic Disclosure System Gift Map",
         jurisdiction="Queensland",

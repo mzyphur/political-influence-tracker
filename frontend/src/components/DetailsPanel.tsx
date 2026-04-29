@@ -281,6 +281,7 @@ export function DetailsPanel({
 
   const properties = feature.properties;
   if (properties.chamber.toLowerCase() === "state") {
+    const stateRepresentatives = properties.current_representatives ?? [];
     return (
       <aside className="details-panel" id="selection-details-panel" aria-label="Selection details">
         <button
@@ -325,11 +326,35 @@ export function DetailsPanel({
           </div>
         </section>
         <section className="panel-section">
-          <h3>Representative Join Status</h3>
+          <h3>Current Representation</h3>
+          {stateRepresentatives.length ? (
+            <div className="rep-list">
+              {stateRepresentatives.map((rep) => {
+                const office = rep.electorate_offices?.[0];
+                return (
+                  <article className="rep-row state-rep-card" key={rep.person_id}>
+                    <div>
+                      <strong>{rep.display_name}</strong>
+                      <span>{rep.party_short_name || rep.party_name || "Party not disclosed"}</span>
+                      {rep.portfolio && <small>{rep.portfolio}</small>}
+                      {rep.public_email && <small>{rep.public_email}</small>}
+                      {office?.address_lines?.length ? (
+                        <small>{office.address_lines.join(", ")}</small>
+                      ) : null}
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="scope-caption">
+              No current state MP is joined to this electorate in the loaded Queensland
+              Parliament roster. This can indicate a vacancy or a pending roster refresh.
+            </p>
+          )}
           <p className="scope-caption">
-            State MP office-term joins are the next state-layer step. Until then, this
-            panel avoids showing direct person-linked money, gifts, or campaign support
-            for a state electorate.
+            These are current-representation roster facts only. They do not make ECQ
+            disclosure rows personal receipts or electorate-level claims.
           </p>
         </section>
         <p className="caveat">{caveat}</p>

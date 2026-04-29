@@ -148,6 +148,26 @@ That is intentional: state disclosure rows remain source-level records unless a
 source-backed or reviewed attribution step links them to a state electorate,
 candidate, party branch, or current state MP.
 
+Join current Queensland MPs to those electorates from the official Queensland
+Parliament mail-merge XLSX:
+
+```bash
+cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
+.venv/bin/python -m au_politics_money.cli fetch-qld-current-members
+.venv/bin/python -m au_politics_money.cli extract-qld-current-members
+.venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli load-qld-current-members
+```
+
+The current-member loader is a current roster snapshot, not a historical
+parliamentary-term archive. It upserts one current state-lower office term per
+non-vacant electorate, preserves public electorate-office contact fields in
+metadata, and closes prior current-roster terms when a loaded electorate no
+longer has the same current member. The live 2026-04-29 UTC run loaded 92 current
+Queensland MPs and one vacant/unjoined electorate. This roster join makes the
+State map easier to navigate; it still does not attribute ECQ disclosure rows to
+an MP without a source-backed or reviewed attribution step.
+
 Use `--skip-influence-events` only for a fast money-flow-table inspection where
 the public API does not need to be current yet. The full `load-postgres` command
 also loads QLD ECQ EDS rows and participant identifiers by default, but

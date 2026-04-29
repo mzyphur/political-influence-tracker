@@ -130,6 +130,12 @@ Notes:
   boundaries support State-mode map drilldown only. ECQ disclosure rows remain
   state/local source records until a public source or reviewed model supports a
   narrower link to a state electorate, candidate, party branch, or current MP.
+- The first state representation join is the Queensland Parliament current
+  members mail-merge XLSX. It joins 92 current MPs and one vacant/unjoined
+  electorate to the QLD state map, with public electorate-office emails and
+  addresses preserved as roster facts. This makes the state map navigable by
+  representative while preserving the distinction between current
+  representation and ECQ financial-disclosure attribution.
 
 ### South Australia
 

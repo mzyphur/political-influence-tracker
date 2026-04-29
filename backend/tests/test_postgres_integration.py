@@ -25,6 +25,7 @@ from au_politics_money.db.load import (
     load_aec_candidate_contests,
     load_influence_events,
     load_postcode_electorate_crosswalk,
+    load_qld_current_members,
     load_qld_ecq_eds_contexts,
     load_qld_ecq_eds_participants,
 )
@@ -1003,6 +1004,109 @@ def test_postgres_schema_migrations_and_api_queries(integration_db: IntegrationD
     context_payload = context_response.json()
     assert context_payload["row_count"] == 1
     assert context_payload["rows"][0]["relationship"] == "direct_material_interest"
+
+
+def test_qld_current_member_loader_joins_state_map_representatives(
+    integration_db: IntegrationDatabase,
+    tmp_path: Path,
+) -> None:
+    source_body = tmp_path / "qld-members.xlsx"
+    source_body.write_bytes(b"fixture")
+    metadata_path = tmp_path / "metadata.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "body_path": str(source_body),
+                "content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                "fetched_at": "20260429T000000Z",
+                "final_url": (
+                    "https://documents.parliament.qld.gov.au/Members/mailingLists/"
+                    "MEMMERGEEXCEL.xlsx"
+                ),
+                "http_status": 200,
+                "sha256": "pytest-qld-members-sha",
+                "source": {
+                    "source_id": "qld_parliament_members_mail_merge_xlsx",
+                    "name": "Queensland Parliament Members Mail Merge List Excel",
+                    "source_type": "state_current_member_contact_xlsx",
+                    "jurisdiction": "Queensland",
+                    "url": (
+                        "https://documents.parliament.qld.gov.au/Members/mailingLists/"
+                        "MEMMERGEEXCEL.xlsx"
+                    ),
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    records = []
+    for index in range(93):
+        electorate = "McDowall" if index == 0 else f"Roster Test {index}"
+        is_vacant = index == 92
+        email = f"{electorate.lower().replace(' ', '.')}@parliament.qld.gov.au"
+        records.append(
+            {
+                "chamber": "state_lower",
+                "display_name": "" if is_vacant else f"Ms Example Member {index}",
+                "electorate": electorate,
+                "electorate_offices": [
+                    {
+                        "address_lines": ["1 Test Street", "BRISBANE QLD 4000"],
+                        "email": email,
+                        "source_row_number": index + 2,
+                    }
+                ],
+                "email": email,
+                "first_name": "" if is_vacant else "Example",
+                "is_vacant": is_vacant,
+                "last_name": "" if is_vacant else f"Member {index}",
+                "parser_name": "qld_parliament_current_members_mail_merge_xlsx_v1",
+                "parser_version": "1",
+                "party_short_name": "-" if is_vacant else "LNP",
+                "portfolio": "" if is_vacant else "Fixture portfolio",
+                "salutation": "Sir/Madam" if is_vacant else "Ms Member",
+                "source_dataset": "qld_parliament_current_members",
+                "source_metadata_path": str(metadata_path),
+                "source_rows": [],
+                "state_or_territory": "QLD",
+                "title": "" if is_vacant else "Ms",
+            }
+        )
+    jsonl_path = tmp_path / "qld-members.jsonl"
+    jsonl_path.write_text(
+        "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+        encoding="utf-8",
+    )
+
+    with connect(integration_db.url) as conn:
+        summary = load_qld_current_members(conn, jsonl_path)
+
+    assert summary["electorate_count"] == 93
+    assert summary["people_upserted"] == 92
+    assert summary["office_terms_upserted"] == 92
+    assert summary["vacant_electorates"] == 1
+
+    client = TestClient(app)
+    response = client.get(
+        "/api/map/electorates",
+        params={
+            "chamber": "state",
+            "state": "QLD",
+            "boundary_set": "qld_state_pytest_boundary_set",
+        },
+    )
+    assert response.status_code == 200
+    properties = response.json()["features"][0]["properties"]
+    assert properties["electorate_name"] == "McDowall"
+    assert properties["current_representative_count"] == 1
+    representative = properties["current_representatives"][0]
+    assert representative["display_name"] == "Ms Example Member 0"
+    assert representative["party_short_name"] == "LNP"
+    assert representative["public_email"] == "mcdowall@parliament.qld.gov.au"
+    assert representative["electorate_offices"][0]["address_lines"] == [
+        "1 Test Street",
+        "BRISBANE QLD 4000",
+    ]
 
 
 def test_vote_summary_excludes_non_current_official_rows(

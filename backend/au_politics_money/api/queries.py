@@ -1267,7 +1267,14 @@ def get_electorate_map(
                                 'chamber', office_term.chamber,
                                 'state_or_territory',
                                     {_state_code_sql("office_term.metadata->>'state'")},
-                                'term_start', office_term.term_start
+                                'term_start', office_term.term_start,
+                                'portfolio', NULLIF(office_term.metadata->>'portfolio', ''),
+                                'public_email', NULLIF(office_term.metadata->>'email', ''),
+                                'electorate_offices',
+                                    COALESCE(
+                                        office_term.metadata->'electorate_offices',
+                                        '[]'::jsonb
+                                    )
                             )
                             ORDER BY person.display_name
                         ) FILTER (WHERE person.id IS NOT NULL),

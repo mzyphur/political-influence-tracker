@@ -85,6 +85,11 @@ from au_politics_money.ingest.qld_boundaries import (
     PARSER_VERSION as QLD_STATE_BOUNDARY_PARSER_VERSION,
     latest_qld_state_boundaries_geojson,
 )
+from au_politics_money.ingest.qld_parliament_members import (
+    PARSER_NAME as QLD_CURRENT_MEMBERS_PARSER_NAME,
+    PARSER_VERSION as QLD_CURRENT_MEMBERS_PARSER_VERSION,
+    latest_qld_current_members_jsonl,
+)
 from au_politics_money.ingest.sa_ecsa import (
     PARSER_NAME as SA_ECSA_RETURN_INDEX_PARSER_NAME,
     SOURCE_DATASET as SA_ECSA_SOURCE_DATASET,
@@ -7202,6 +7207,305 @@ def load_qld_state_electorate_boundaries(
         "geojson_path": str(geojson_path.resolve()),
         "source_document_id": source_document_id,
         "display_geometry": display_geometry_summary,
+    }
+
+
+QLD_PARTY_LABELS = {
+    "ALP": "Australian Labor Party",
+    "GRN": "Queensland Greens",
+    "IND": "Independent",
+    "KAP": "Katter's Australian Party",
+    "LNP": "Liberal National Party",
+}
+
+
+def _qld_current_member_party_id(
+    conn,
+    *,
+    short_name: str,
+    jurisdiction_id: int,
+    source_document_id: int,
+) -> int | None:
+    short_name = short_name.strip().upper()
+    if not short_name or short_name == "-":
+        return None
+    name = QLD_PARTY_LABELS.get(short_name, short_name)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO party (
+                name, short_name, jurisdiction_id, source_document_id, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            ON CONFLICT (name, jurisdiction_id) DO UPDATE SET
+                short_name = EXCLUDED.short_name,
+                source_document_id = COALESCE(party.source_document_id, EXCLUDED.source_document_id),
+                metadata = party.metadata || EXCLUDED.metadata
+            RETURNING id
+            """,
+            (
+                name,
+                short_name,
+                jurisdiction_id,
+                source_document_id,
+                as_jsonb(
+                    {
+                        "source_loader": "qld_parliament_current_members_xlsx_v1",
+                        "source_short_name": short_name,
+                    }
+                ),
+            ),
+        )
+        row = cur.fetchone()
+    return int(row[0]) if row else None
+
+
+def _qld_person_external_key(record: dict[str, Any]) -> str:
+    return (
+        "qld_parliament_current_member:"
+        f"{normalize_electorate_name(record['electorate'])}:"
+        f"{normalize_name(record['display_name'])}"
+    )
+
+
+def _qld_current_member_metadata(record: dict[str, Any], jsonl_path: Path) -> dict[str, Any]:
+    return {
+        "source_loader": "qld_parliament_current_members_xlsx_v1",
+        "source_dataset": record.get("source_dataset"),
+        "source_metadata_path": record.get("source_metadata_path"),
+        "source_jsonl_path": str(jsonl_path.resolve()),
+        "electorate": record.get("electorate"),
+        "state": "QLD",
+        "party_short_name": record.get("party_short_name"),
+        "portfolio": record.get("portfolio"),
+        "salutation": record.get("salutation"),
+        "email": record.get("email"),
+        "electorate_offices": record.get("electorate_offices") or [],
+    }
+
+
+def _upsert_qld_current_member_person(
+    conn,
+    *,
+    record: dict[str, Any],
+    source_document_id: int,
+    jsonl_path: Path,
+) -> int:
+    metadata = _qld_current_member_metadata(record, jsonl_path)
+    external_key = _qld_person_external_key(record)
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            INSERT INTO person (
+                external_key, display_name, canonical_name, first_name, last_name,
+                honorific, source_document_id, metadata
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (external_key) DO UPDATE SET
+                display_name = EXCLUDED.display_name,
+                canonical_name = EXCLUDED.canonical_name,
+                first_name = EXCLUDED.first_name,
+                last_name = EXCLUDED.last_name,
+                honorific = EXCLUDED.honorific,
+                source_document_id = EXCLUDED.source_document_id,
+                metadata = EXCLUDED.metadata
+            RETURNING id
+            """,
+            (
+                external_key,
+                record["display_name"],
+                record["display_name"],
+                record.get("first_name") or "",
+                record.get("last_name") or "",
+                record.get("title") or "",
+                source_document_id,
+                as_jsonb(metadata),
+            ),
+        )
+        row = cur.fetchone()
+    return int(row[0])
+
+
+def load_qld_current_members(
+    conn,
+    jsonl_path: Path | None = None,
+) -> dict[str, Any]:
+    jsonl_path = jsonl_path or latest_qld_current_members_jsonl()
+    if jsonl_path is None:
+        raise FileNotFoundError(
+            "No processed QLD current-member JSONL found. Run "
+            "`au-politics-money extract-qld-current-members` first."
+        )
+    jsonl_path = _resolve_project_path(jsonl_path)
+    records = [
+        json.loads(line)
+        for line in jsonl_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    if len({record.get("electorate") for record in records}) != 93:
+        raise RuntimeError(
+            "Expected 93 QLD current-member electorate records; "
+            f"found {len({record.get('electorate') for record in records})}."
+        )
+
+    source_metadata_paths = {
+        str(record.get("source_metadata_path") or "") for record in records
+    } - {""}
+    if len(source_metadata_paths) != 1:
+        raise RuntimeError(
+            "QLD current-member JSONL must reference exactly one source metadata path; "
+            f"found {len(source_metadata_paths)}."
+        )
+    source_document_id = upsert_source_document(conn, _resolve_project_path(source_metadata_paths.pop()))
+    jurisdiction_id = get_or_create_jurisdiction(conn, "Queensland", "state", "QLD")
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            UPDATE source_document
+            SET parser_name = %s,
+                parser_version = %s,
+                parsed_at = now(),
+                metadata = metadata || %s
+            WHERE id = %s
+            """,
+            (
+                QLD_CURRENT_MEMBERS_PARSER_NAME,
+                QLD_CURRENT_MEMBERS_PARSER_VERSION,
+                as_jsonb({"processed_jsonl_path": str(jsonl_path.resolve())}),
+                source_document_id,
+            ),
+        )
+
+    people_upserted = 0
+    office_terms_upserted = 0
+    vacant_electorates = 0
+    current_office_keys: set[str] = set()
+    for record in records:
+        electorate_id = get_or_create_boundary_electorate(
+            conn,
+            name=record["electorate"],
+            jurisdiction_id=jurisdiction_id,
+            source_document_id=source_document_id,
+            chamber="state",
+            state_or_territory="QLD",
+            boundary_source="qld_parliament_current_members",
+            boundary_loader="qld_parliament_current_members_xlsx_v1",
+        )
+        electorate_metadata = {
+            "qld_current_member_source": "qld_parliament_current_members_xlsx_v1",
+            "qld_current_member_is_vacant": bool(record.get("is_vacant")),
+            "qld_current_member_name": record.get("display_name") or "",
+            "qld_current_member_party": record.get("party_short_name") or "",
+            "qld_current_member_email": record.get("email") or "",
+        }
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE electorate
+                SET metadata = metadata || %s
+                WHERE id = %s
+                """,
+                (as_jsonb(electorate_metadata), electorate_id),
+            )
+
+        if record.get("is_vacant"):
+            vacant_electorates += 1
+            continue
+
+        person_id = _upsert_qld_current_member_person(
+            conn,
+            record=record,
+            source_document_id=source_document_id,
+            jsonl_path=jsonl_path,
+        )
+        people_upserted += 1
+        party_id = _qld_current_member_party_id(
+            conn,
+            short_name=str(record.get("party_short_name") or ""),
+            jurisdiction_id=jurisdiction_id,
+            source_document_id=source_document_id,
+        )
+        office_external_key = (
+            "qld_parliament_current_office:"
+            f"state_lower:qld:{normalize_electorate_name(record['electorate'])}"
+        )
+        current_office_keys.add(office_external_key)
+        office_metadata = {
+            **_qld_current_member_metadata(record, jsonl_path),
+            "source_loader": "qld_parliament_current_members_xlsx_v1",
+            "office_external_key_policy": (
+                "current_snapshot_by_electorate_not_historical_term_identifier"
+            ),
+            "attribution_caveat": (
+                "Current-member roster link only; ECQ disclosure rows are not attributed "
+                "to this MP without source-backed or reviewed evidence."
+            ),
+        }
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO office_term (
+                    external_key, person_id, chamber, electorate_id, party_id,
+                    role_title, term_start, term_end, source_document_id, metadata
+                )
+                VALUES (%s, %s, 'state_lower', %s, %s, %s, NULL, NULL, %s, %s)
+                ON CONFLICT (external_key) DO UPDATE SET
+                    person_id = EXCLUDED.person_id,
+                    electorate_id = EXCLUDED.electorate_id,
+                    party_id = EXCLUDED.party_id,
+                    role_title = EXCLUDED.role_title,
+                    term_end = NULL,
+                    source_document_id = EXCLUDED.source_document_id,
+                    metadata = EXCLUDED.metadata
+                RETURNING id
+                """,
+                (
+                    office_external_key,
+                    person_id,
+                    electorate_id,
+                    party_id,
+                    f"Member for {record['electorate']}",
+                    source_document_id,
+                    as_jsonb(office_metadata),
+                ),
+            )
+            cur.fetchone()
+            office_terms_upserted += 1
+
+    stale_terms_closed = 0
+    if current_office_keys:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE office_term
+                SET term_end = CURRENT_DATE,
+                    metadata = metadata || %s
+                WHERE chamber = 'state_lower'
+                  AND term_end IS NULL
+                  AND metadata->>'source_loader' = 'qld_parliament_current_members_xlsx_v1'
+                  AND NOT (external_key = ANY(%s))
+                """,
+                (
+                    as_jsonb(
+                        {
+                            "closed_by_loader": "qld_parliament_current_members_xlsx_v1",
+                            "closed_reason": "not_present_in_current_member_snapshot",
+                        }
+                    ),
+                    sorted(current_office_keys),
+                ),
+            )
+            stale_terms_closed = cur.rowcount
+
+    conn.commit()
+    return {
+        "jsonl_path": str(jsonl_path.resolve()),
+        "source_document_id": source_document_id,
+        "electorate_count": len(records),
+        "people_upserted": people_upserted,
+        "office_terms_upserted": office_terms_upserted,
+        "vacant_electorates": vacant_electorates,
+        "stale_terms_closed": stale_terms_closed,
     }
 
 

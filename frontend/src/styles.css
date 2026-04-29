@@ -1132,6 +1132,16 @@ a:focus-visible {
   text-transform: uppercase;
 }
 
+.state-rep-card {
+  align-items: start;
+}
+
+.state-rep-card small {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: none;
+}
+
 .contact-popover {
   display: grid;
   gap: 10px;
