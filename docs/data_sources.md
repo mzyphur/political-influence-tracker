@@ -1,6 +1,6 @@
 # Data Sources
 
-Last updated: 2026-04-28
+Last updated: 2026-04-29
 
 ## Federal Sources
 
@@ -36,16 +36,20 @@ Last updated: 2026-04-28
 
 ## State and Territory Sources To Expand
 
-| Jurisdiction | Source | URL | Notes |
-| --- | --- | --- | --- |
-| NSW | NSW Electoral Commission disclosures | https://elections.nsw.gov.au/electoral-funding/disclosures/view-disclosures | Publishes donations and expenditure for at least six years. |
-| Queensland | ECQ Electronic Disclosure System | https://www.ecq.qld.gov.au/donations-and-expenditure-disclosure/disclosure-of-political-donations-and-electoral-expenditure/published-disclosure-returns | Search/export by name, party, donor, electorate, date, and gift value. |
-| Victoria | VEC annual returns | https://www.vec.vic.gov.au/candidates-and-parties/annual-returns | Legal/publication status needs current monitoring. |
-| Western Australia | WAEC returns and reports | https://www.elections.wa.gov.au/returns-and-reports | Online Disclosure System and annual Political Finance Report. |
-| South Australia | ECSA funding and disclosure | https://ecsa.sa.gov.au/parties-and-candidates/funding-and-disclosure-all-participants | Major reforms and donation ban from 2025-07-01. |
-| Tasmania | TEC disclosure and funding | https://www.tec.tas.gov.au/disclosure-and-funding/registers-and-reports/returns/election-campaign-returns-report.html | Newer disclosure regime from 2025-07-01. |
-| ACT | Elections ACT financial disclosure | https://www.elections.act.gov.au/ | Annual returns for parties, MLAs, and associated entities. |
-| Northern Territory | NTEC financial disclosure | https://ntec.nt.gov.au/financial-disclosure/financial-disclosure-returns | Annual and election returns, including donor threshold obligations. |
+These seed records are now in `backend/au_politics_money/ingest/sources.py`.
+The detailed sequencing and theory rationale are in
+`docs/state_council_expansion_plan.md`.
+
+| Source ID | Jurisdiction | Source | URL | Notes |
+| --- | --- | --- | --- | --- |
+| `nsw_electoral_disclosures` | NSW | NSW Electoral Commission disclosures | https://elections.nsw.gov.au/electoral-funding/disclosures/view-disclosures | State and local donations/expenditure by parties, elected members, candidates, groups, donors, third-party campaigners, and associated entities. Preserve redaction caveats. |
+| `vic_vec_disclosures` | Victoria | VEC Disclosures | https://www.vec.vic.gov.au/disclosures/ | State political donations and annual returns for candidates, elected members, parties, associated entities, nominated entities, and third-party campaigners. Council donations need a separate local-government adapter. |
+| `qld_ecq_disclosures` | Queensland | ECQ disclosure system | https://www.ecq.qld.gov.au/donations-and-expenditure-disclosure/disclosure-of-political-donations-and-electoral-expenditure | State and local government donations, gifts, loans, and expenditure through ECQ's Electronic Disclosure System. |
+| `sa_ecsa_funding_disclosure` | South Australia | ECSA funding and disclosure | https://www.ecsa.sa.gov.au/parties-and-candidates/funding-and-disclosure-all-participants/funding-and-disclosure-political-parties?catid=13%3Aparties-and-candidates&id=1116%3Areporting-obligations-political-parties&view=article | Party, candidate, associated-entity, and third-party return obligations. Discover concrete return downloads/forms before parsing. |
+| `waec_returns_reports` | Western Australia | WAEC returns and reports | https://www.elections.wa.gov.au/returns-and-reports | Annual and election returns for gifts, income, expenditure, and reimbursements. Council records may require local CEO/council handling. |
+| `tas_tec_disclosure_funding` | Tasmania | TEC disclosure and funding | https://www.tec.tas.gov.au/disclosure-and-funding/ | New disclosure and funding regime from 2025-07-01; preserve regime-start date in coverage caveats. |
+| `nt_ntec_annual_returns` | Northern Territory | NTEC annual returns | https://ntec.nt.gov.au/about-us/media-and-publications/media-releases/2025/20242025-annual-returns | Annual gift returns, annual returns, candidate returns, donor returns, and election expenditure context. |
+| `act_elections_funding_disclosure` | ACT | Elections ACT funding/disclosure obligations | https://www.elections.act.gov.au/funding-disclosures-and-registers/funding-and-disclosure-obligations | Gift returns, annual returns, election returns, expenditure caps, public funding, receipts, gifts, payments, and debts. Party-endorsed candidate expenditure may sit in party grouping returns. |
 
 ## Known Data Risks
 

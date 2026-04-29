@@ -389,6 +389,153 @@ SOURCES: tuple[SourceRecord, ...] = (
         notes="Official Australian and New Zealand industry classification.",
     ),
     SourceRecord(
+        source_id="nsw_electoral_disclosures",
+        name="NSW Electoral Commission Disclosures",
+        jurisdiction="New South Wales",
+        level="state_council",
+        source_type="state_local_financial_disclosure_portal",
+        url="https://elections.nsw.gov.au/electoral-funding/disclosures/view-disclosures",
+        expected_format="html_plus_search",
+        update_frequency="half_yearly_annual_pre_election_plus_amendments",
+        priority="high",
+        notes=(
+            "Official NSW publication surface for disclosed political donations and "
+            "electoral expenditure by parties, elected members, candidates, groups, "
+            "political donors, third-party campaigners, and associated entities. "
+            "Includes state and local-government disclosure coverage; preserve any "
+            "redaction caveats from source forms."
+        ),
+    ),
+    SourceRecord(
+        source_id="vic_vec_disclosures",
+        name="Victorian Electoral Commission Disclosures",
+        jurisdiction="Victoria",
+        level="state",
+        source_type="state_financial_disclosure_portal",
+        url="https://www.vec.vic.gov.au/disclosures/",
+        expected_format="html_plus_search",
+        update_frequency="near_real_time_plus_annual_returns",
+        priority="high",
+        notes=(
+            "Official Victorian political donation disclosure surface for state "
+            "parties, candidates, elected members, associated entities, nominated "
+            "entities, and third-party campaigners. Local council donations require "
+            "a separate local-government adapter."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_ecq_disclosures",
+        name="Electoral Commission of Queensland Disclosure System",
+        jurisdiction="Queensland",
+        level="state_council",
+        source_type="state_local_financial_disclosure_portal",
+        url=(
+            "https://www.ecq.qld.gov.au/donations-and-expenditure-disclosure/"
+            "disclosure-of-political-donations-and-electoral-expenditure"
+        ),
+        expected_format="html_plus_electronic_disclosure_system",
+        update_frequency="real_time_periodic_election",
+        priority="high",
+        notes=(
+            "Official ECQ disclosure entry point for political donations, gifts, loans, "
+            "and electoral expenditure. Covers state and local-government disclosure "
+            "obligations through the Electronic Disclosure System."
+        ),
+    ),
+    SourceRecord(
+        source_id="sa_ecsa_funding_disclosure",
+        name="Electoral Commission SA Funding and Disclosure",
+        jurisdiction="South Australia",
+        level="state",
+        source_type="state_financial_disclosure_reference",
+        url=(
+            "https://www.ecsa.sa.gov.au/parties-and-candidates/"
+            "funding-and-disclosure-all-participants/"
+            "funding-and-disclosure-political-parties"
+            "?catid=13%3Aparties-and-candidates"
+            "&id=1116%3Areporting-obligations-political-parties&view=article"
+        ),
+        expected_format="html_plus_forms_downloads",
+        update_frequency="periodic_election",
+        priority="medium",
+        notes=(
+            "Official ECSA funding and disclosure obligations for political parties, "
+            "candidates, associated entities, and third parties. Adapter should "
+            "discover concrete return downloads/forms before parsing."
+        ),
+    ),
+    SourceRecord(
+        source_id="waec_returns_reports",
+        name="Western Australian Electoral Commission Returns and Reports",
+        jurisdiction="Western Australia",
+        level="state_council",
+        source_type="state_local_financial_disclosure_portal",
+        url="https://www.elections.wa.gov.au/returns-and-reports",
+        expected_format="html_plus_search_pdf",
+        update_frequency="annual_election_plus_amendments",
+        priority="medium",
+        notes=(
+            "Official WAEC annual and election return surface for gifts, income, "
+            "expenditure, and reimbursements. Local-government disclosure duties are "
+            "not fully centralized and may require council-level handling."
+        ),
+    ),
+    SourceRecord(
+        source_id="tas_tec_disclosure_funding",
+        name="Tasmanian Electoral Commission Disclosure and Funding",
+        jurisdiction="Tasmania",
+        level="state",
+        source_type="state_financial_disclosure_portal",
+        url="https://www.tec.tas.gov.au/disclosure-and-funding/",
+        expected_format="html_plus_registers_returns",
+        update_frequency="new_regime_ongoing",
+        priority="medium",
+        notes=(
+            "Official TEC source for the disclosure and funding scheme commencing "
+            "2025-07-01. Preserve regime-start dates so pre-regime gaps are not "
+            "misread as zero influence."
+        ),
+    ),
+    SourceRecord(
+        source_id="nt_ntec_annual_returns",
+        name="Northern Territory Electoral Commission Annual Returns",
+        jurisdiction="Northern Territory",
+        level="state",
+        source_type="state_financial_disclosure_publication",
+        url=(
+            "https://ntec.nt.gov.au/about-us/media-and-publications/"
+            "media-releases/2025/20242025-annual-returns"
+        ),
+        expected_format="html_plus_return_downloads",
+        update_frequency="annual_election",
+        priority="medium",
+        notes=(
+            "Official NTEC publication point for annual gift returns, annual returns, "
+            "candidate returns, donor returns, and related election expenditure "
+            "disclosure context."
+        ),
+    ),
+    SourceRecord(
+        source_id="act_elections_funding_disclosure",
+        name="Elections ACT Funding and Disclosure Obligations",
+        jurisdiction="Australian Capital Territory",
+        level="state",
+        source_type="state_financial_disclosure_portal",
+        url=(
+            "https://www.elections.act.gov.au/"
+            "funding-disclosures-and-registers/funding-and-disclosure-obligations"
+        ),
+        expected_format="html_plus_xlsx_pdf",
+        update_frequency="regular_gifts_annual_election",
+        priority="medium",
+        notes=(
+            "Official ACT source for gift returns, annual financial disclosure returns, "
+            "election returns, expenditure caps, public funding, receipts, gifts, "
+            "payments, and debts. Party-endorsed candidate expenditure can sit in "
+            "party grouping returns and must be labelled as campaign context."
+        ),
+    ),
+    SourceRecord(
         source_id="nacc_corrupt_conduct",
         name="NACC What is Corrupt Conduct",
         jurisdiction="Commonwealth",

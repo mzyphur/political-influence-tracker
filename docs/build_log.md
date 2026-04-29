@@ -63,6 +63,10 @@ Completed:
 - Added `docs/state_council_expansion_plan.md`, grounded in current official
   state/territory disclosure pages, to define the first subnational source
   surfaces, sequencing, theory rationale, and claim limits before implementation.
+- Added state/territory seed source records to the backend source registry for
+  NSW, Victoria, Queensland, South Australia, Western Australia, Tasmania,
+  Northern Territory, and the ACT so subnational fetching can start from named
+  reproducible source IDs rather than prose-only targets.
 
 Verification:
 

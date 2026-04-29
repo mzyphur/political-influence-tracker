@@ -28,6 +28,25 @@ def test_core_federal_sources_exist() -> None:
     assert required <= known
 
 
+def test_subnational_seed_sources_exist() -> None:
+    required = {
+        "nsw_electoral_disclosures",
+        "vic_vec_disclosures",
+        "qld_ecq_disclosures",
+        "sa_ecsa_funding_disclosure",
+        "waec_returns_reports",
+        "tas_tec_disclosure_funding",
+        "nt_ntec_annual_returns",
+        "act_elections_funding_disclosure",
+    }
+    sources = {source.source_id: source for source in all_sources()}
+
+    assert required <= set(sources)
+    assert sources["nsw_electoral_disclosures"].level == "state_council"
+    assert sources["qld_ecq_disclosures"].level == "state_council"
+    assert "campaign context" in sources["act_elections_funding_disclosure"].notes
+
+
 def test_get_source_returns_record() -> None:
     source = get_source("aec_transparency_downloads")
     assert source.name == "AEC Download All Disclosure Data"
