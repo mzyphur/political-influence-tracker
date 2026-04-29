@@ -1680,6 +1680,42 @@ def load_qld_ecq_eds_money_flows(conn, jsonl_path: Path | None = None) -> dict[s
     return _load_aec_money_flow_jsonl(conn, path, default_source_dataset="qld_ecq_eds")
 
 
+def _validate_nsw_aggregate_source_hashes(record: dict[str, Any]) -> None:
+    metadata_path_value = str(record.get("source_metadata_path") or "")
+    body_path_value = str(record.get("source_body_path") or "")
+    if not metadata_path_value:
+        raise ValueError("NSW aggregate record is missing source_metadata_path")
+    if not body_path_value:
+        raise ValueError("NSW aggregate record is missing source_body_path")
+    metadata_path = Path(metadata_path_value)
+    body_path = Path(body_path_value)
+    expected_metadata_sha256 = str(record.get("source_metadata_sha256") or "")
+    expected_body_sha256 = str(record.get("source_body_sha256") or "")
+    if not expected_metadata_sha256:
+        raise ValueError("NSW aggregate record is missing source_metadata_sha256")
+    if not expected_body_sha256:
+        raise ValueError("NSW aggregate record is missing source_body_sha256")
+    actual_metadata_sha256 = _sha256_path(metadata_path)
+    if actual_metadata_sha256 != expected_metadata_sha256:
+        raise ValueError(
+            f"NSW aggregate source metadata hash mismatch for {metadata_path}: "
+            f"record={expected_metadata_sha256} actual={actual_metadata_sha256}"
+        )
+    actual_body_sha256 = _sha256_path(body_path)
+    if actual_body_sha256 != expected_body_sha256:
+        raise ValueError(
+            f"NSW aggregate source body hash mismatch for {body_path}: "
+            f"record={expected_body_sha256} actual={actual_body_sha256}"
+        )
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata_body_sha256 = str(metadata.get("sha256") or "")
+    if metadata_body_sha256 and metadata_body_sha256 != expected_body_sha256:
+        raise ValueError(
+            f"NSW aggregate metadata/body hash mismatch for {metadata_path}: "
+            f"metadata={metadata_body_sha256} record={expected_body_sha256}"
+        )
+
+
 def load_nsw_aggregate_context_observations(
     conn,
     jsonl_path: Path | None = None,
@@ -1715,6 +1751,7 @@ def load_nsw_aggregate_context_observations(
                 )
             if record.get("source_id") != NSW_HEATMAP_SOURCE_ID:
                 raise ValueError(f"Unexpected NSW aggregate source_id: {record.get('source_id')!r}")
+            _validate_nsw_aggregate_source_hashes(record)
             metadata_path = str(record.get("source_metadata_path") or "")
             if not metadata_path:
                 raise ValueError("NSW aggregate record is missing source_metadata_path")
@@ -2009,6 +2046,27 @@ def nsw_aggregate_context_path_from_pipeline_manifest(manifest_path: Path) -> Pa
         )
     if summary.get("source_id") != NSW_HEATMAP_SOURCE_ID:
         raise ValueError(f"Unexpected source_id in {summary_path}: {summary.get('source_id')!r}")
+    source_metadata_path = Path(str(summary.get("source_metadata_path") or ""))
+    source_body_path = Path(str(summary.get("source_body_path") or ""))
+    expected_source_metadata_sha256 = str(summary.get("source_metadata_sha256") or "")
+    expected_source_body_sha256 = str(summary.get("source_body_sha256") or "")
+    if not expected_source_metadata_sha256:
+        raise ValueError(f"Summary is missing source_metadata_sha256: {summary_path}")
+    if not expected_source_body_sha256:
+        raise ValueError(f"Summary is missing source_body_sha256: {summary_path}")
+    actual_source_metadata_sha256 = _sha256_path(source_metadata_path)
+    if actual_source_metadata_sha256 != expected_source_metadata_sha256:
+        raise ValueError(
+            f"Source metadata hash mismatch for {source_metadata_path}: "
+            f"summary={expected_source_metadata_sha256} "
+            f"actual={actual_source_metadata_sha256}"
+        )
+    actual_source_body_sha256 = _sha256_path(source_body_path)
+    if actual_source_body_sha256 != expected_source_body_sha256:
+        raise ValueError(
+            f"Source body hash mismatch for {source_body_path}: "
+            f"summary={expected_source_body_sha256} actual={actual_source_body_sha256}"
+        )
     jsonl_path = summary.get("jsonl_path")
     if not jsonl_path:
         raise ValueError(f"Summary is missing jsonl_path: {summary_path}")
@@ -6678,10 +6736,10 @@ def load_processed_artifacts(
                 summary["qld_ecq_eds_money_flows"] = load_qld_ecq_eds_money_flows(conn)
                 summary["qld_ecq_eds_participants"] = load_qld_ecq_eds_participants(conn)
                 summary["qld_ecq_eds_contexts"] = load_qld_ecq_eds_contexts(conn)
-            if include_nsw_aggregates:
-                summary["nsw_aggregate_context_observations"] = (
-                    load_nsw_aggregate_context_observations(conn)
-                )
+        if include_nsw_aggregates:
+            summary["nsw_aggregate_context_observations"] = (
+                load_nsw_aggregate_context_observations(conn)
+            )
         if include_house_interests:
             summary["house_interests"] = load_house_interest_records(conn)
         if include_senate_interests:

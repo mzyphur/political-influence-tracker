@@ -2214,7 +2214,10 @@ def get_state_local_summary(
                 "NSW aggregate context rows are official donor-location totals from a "
                 "static NSW Electoral Commission heatmap. They are not donor-recipient "
                 "money-flow rows and must not be attributed to a representative, "
-                "candidate, councillor, or party unless another source supports that link."
+                "candidate, councillor, or party unless another source supports that link. "
+                "The source caveat says the map does not show recipient locations and "
+                "may exclude donor locations that cannot be mapped. NSWEC material is "
+                "used under CC BY 4.0 unless otherwise noted; no endorsement is implied."
             ),
             "caveat": (
                 "Queensland ECQ EDS rows are state/local disclosure records. "

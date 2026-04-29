@@ -983,7 +983,14 @@ function StateLocalSummaryPanel({
       </div>
     );
   }
-  if (!summary || summary.totals_by_level.length === 0) {
+  const hasQldRows = Boolean(summary && summary.totals_by_level.length > 0);
+  const hasAggregateContext = Boolean(
+    summary &&
+      (summary.aggregate_context_totals.length > 0 ||
+        summary.top_aggregate_donor_locations.length > 0)
+  );
+
+  if (!summary || (!hasQldRows && !hasAggregateContext)) {
     return (
       <div className="scope-notice">
         <strong>{levelLabels[level]} map drilldown is being built.</strong>
@@ -997,107 +1004,118 @@ function StateLocalSummaryPanel({
   const totals = rollupStateLocalTotals(summary);
   const identifierBackedRowSides =
     totals.sourceIdentifierBacked + totals.recipientIdentifierBacked;
+  const headerTitle = hasQldRows ? "QLD ECQ disclosures" : "State/local aggregate context";
+  const headerStatus = hasQldRows
+    ? `${levelName} partial data · refreshed ${formatCompactDateTime(
+        summary.latest_source_fetched_at
+      )}`
+    : `${levelName} aggregate context`;
 
   return (
     <div className="state-local-summary" aria-label="State and local disclosure summary">
       <div className="state-summary-header">
-        <strong>QLD ECQ disclosures</strong>
-        <span>
-          {levelName} partial data · refreshed{" "}
-          {formatCompactDateTime(summary.latest_source_fetched_at)}
-        </span>
+        <strong>{headerTitle}</strong>
+        <span>{headerStatus}</span>
       </div>
-      <div className="state-summary-grid">
-        <Metric
-          icon={<ReceiptText size={16} />}
-          label="Rows"
-          value={totals.moneyFlowCount.toLocaleString("en-AU")}
-        />
-        <Metric
-          icon={<Gift size={16} />}
-          label="Gifts"
-          value={totals.giftOrDonationCount.toLocaleString("en-AU")}
-        />
-        <Metric
-          icon={<Banknote size={16} />}
-          label="Expenditure"
-          value={totals.electoralExpenditureCount.toLocaleString("en-AU")}
-        />
-        <Metric
-          icon={<BadgeCheck size={16} />}
-          label="ID-backed sides"
-          value={identifierBackedRowSides.toLocaleString("en-AU")}
-        />
-      </div>
-      <div className="state-summary-id-row">
-        <span>Source ID-backed rows</span>
-        <strong>{totals.sourceIdentifierBacked.toLocaleString("en-AU")}</strong>
-        <span>Recipient ID-backed rows</span>
-        <strong>{totals.recipientIdentifierBacked.toLocaleString("en-AU")}</strong>
-        <span>Event-backed rows</span>
-        <strong>{totals.eventContextBacked.toLocaleString("en-AU")}</strong>
-        <span>Local electorate-backed rows</span>
-        <strong>{totals.localElectorateContextBacked.toLocaleString("en-AU")}</strong>
-      </div>
-      <div className="state-summary-money-row">
-        <span>Gift/donation total</span>
-        <strong>{formatMoney(totals.giftOrDonationReportedAmountTotal)}</strong>
-        <span>Campaign expenditure incurred</span>
-        <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
-        <span>Money-flow export snapshots</span>
-        <strong>{summary.source_document_count.toLocaleString("en-AU")}</strong>
-      </div>
-      <p className="state-local-inline-caveat">
-        ECQ gift/donation rows are money records. Expenditure rows are campaign activity
-        incurred by an actor, not money personally received by an MP, councillor, or candidate.
-      </p>
+      {hasQldRows ? (
+        <>
+          <div className="state-summary-grid">
+            <Metric
+              icon={<ReceiptText size={16} />}
+              label="Rows"
+              value={totals.moneyFlowCount.toLocaleString("en-AU")}
+            />
+            <Metric
+              icon={<Gift size={16} />}
+              label="Gifts"
+              value={totals.giftOrDonationCount.toLocaleString("en-AU")}
+            />
+            <Metric
+              icon={<Banknote size={16} />}
+              label="Expenditure"
+              value={totals.electoralExpenditureCount.toLocaleString("en-AU")}
+            />
+            <Metric
+              icon={<BadgeCheck size={16} />}
+              label="ID-backed sides"
+              value={identifierBackedRowSides.toLocaleString("en-AU")}
+            />
+          </div>
+          <div className="state-summary-id-row">
+            <span>Source ID-backed rows</span>
+            <strong>{totals.sourceIdentifierBacked.toLocaleString("en-AU")}</strong>
+            <span>Recipient ID-backed rows</span>
+            <strong>{totals.recipientIdentifierBacked.toLocaleString("en-AU")}</strong>
+            <span>Event-backed rows</span>
+            <strong>{totals.eventContextBacked.toLocaleString("en-AU")}</strong>
+            <span>Local electorate-backed rows</span>
+            <strong>{totals.localElectorateContextBacked.toLocaleString("en-AU")}</strong>
+          </div>
+          <div className="state-summary-money-row">
+            <span>Gift/donation total</span>
+            <strong>{formatMoney(totals.giftOrDonationReportedAmountTotal)}</strong>
+            <span>Campaign expenditure incurred</span>
+            <strong>{formatMoney(totals.electoralExpenditureReportedAmountTotal)}</strong>
+            <span>Money-flow export snapshots</span>
+            <strong>{summary.source_document_count.toLocaleString("en-AU")}</strong>
+          </div>
+          <p className="state-local-inline-caveat">
+            ECQ gift/donation rows are money records. Expenditure rows are campaign activity
+            incurred by an actor, not money personally received by an MP, councillor, or candidate.
+          </p>
+        </>
+      ) : null}
       <StateLocalAggregateContext
         totals={summary.aggregate_context_totals}
         rows={summary.top_aggregate_donor_locations}
         caveat={summary.aggregate_context_caveat}
       />
-      <StateLocalRecentRecords
-        rows={mergedRecentRows}
-        totalCount={recordPage.totalCount}
-        status={recordPage.status}
-        error={recordPage.error}
-        flowFilter={recordFlowFilter}
-        canLoadMore={canLoadMoreRecords}
-        onFlowFilterChange={setRecordFlowFilter}
-        onLoadMore={loadMoreRecords}
-      />
-      <StateLocalRankList
-        title="Top gift donors"
-        rows={summary.top_gift_donors}
-        onOpenEntityProfile={onOpenEntityProfile}
-      />
-      <StateLocalRankList
-        title="Top gift recipients"
-        rows={summary.top_gift_recipients}
-        onOpenEntityProfile={onOpenEntityProfile}
-      />
-      <StateLocalRankList
-        title="Top campaign expenditure actors"
-        rows={summary.top_expenditure_actors}
-        onOpenEntityProfile={onOpenEntityProfile}
-      />
-      <StateLocalContextList title="Top ECQ election events" rows={summary.top_events} />
-      <StateLocalContextList
-        title="Top local electorates named"
-        rows={summary.top_local_electorates}
-      />
-      <details className="coverage-caveat">
-        <summary>State/local caveat</summary>
-        <p>{summary.caveat}</p>
-        <p>
-          Map drilldown is pending. These rows are source-family disclosure coverage,
-          not claims that a current MP personally received the money.
-        </p>
-        <p>
-          Local electorate labels are ECQ disclosure context only. They do not attribute
-          a gift, donation, or campaign expenditure row to a candidate, councillor, or MP.
-        </p>
-      </details>
+      {hasQldRows ? (
+        <>
+          <StateLocalRecentRecords
+            rows={mergedRecentRows}
+            totalCount={recordPage.totalCount}
+            status={recordPage.status}
+            error={recordPage.error}
+            flowFilter={recordFlowFilter}
+            canLoadMore={canLoadMoreRecords}
+            onFlowFilterChange={setRecordFlowFilter}
+            onLoadMore={loadMoreRecords}
+          />
+          <StateLocalRankList
+            title="Top gift donors"
+            rows={summary.top_gift_donors}
+            onOpenEntityProfile={onOpenEntityProfile}
+          />
+          <StateLocalRankList
+            title="Top gift recipients"
+            rows={summary.top_gift_recipients}
+            onOpenEntityProfile={onOpenEntityProfile}
+          />
+          <StateLocalRankList
+            title="Top campaign expenditure actors"
+            rows={summary.top_expenditure_actors}
+            onOpenEntityProfile={onOpenEntityProfile}
+          />
+          <StateLocalContextList title="Top ECQ election events" rows={summary.top_events} />
+          <StateLocalContextList
+            title="Top local electorates named"
+            rows={summary.top_local_electorates}
+          />
+          <details className="coverage-caveat">
+            <summary>State/local caveat</summary>
+            <p>{summary.caveat}</p>
+            <p>
+              Map drilldown is pending. These rows are source-family disclosure coverage,
+              not claims that a current MP personally received the money.
+            </p>
+            <p>
+              Local electorate labels are ECQ disclosure context only. They do not attribute
+              a gift, donation, or campaign expenditure row to a candidate, councillor, or MP.
+            </p>
+          </details>
+        </>
+      ) : null}
     </div>
   );
 }

@@ -273,8 +273,9 @@ def test_state_local_nsw_pipeline_records_aggregate_context_steps(monkeypatch) -
     def fake_fetch_source(source):
         return f"fetch:{source.source_id}"
 
-    def fake_normalize_nsw_heatmap(*, metadata_path):
+    def fake_normalize_nsw_heatmap(*, metadata_path, source_page_link_context):
         calls["heatmap_metadata_path"] = str(metadata_path)
+        calls["source_page_link_context"] = source_page_link_context
         return "nsw-heatmap-summary"
 
     monkeypatch.setattr("au_politics_money.pipeline._write_manifest", fake_write_manifest)
@@ -282,6 +283,15 @@ def test_state_local_nsw_pipeline_records_aggregate_context_steps(monkeypatch) -
     monkeypatch.setattr(
         "au_politics_money.pipeline.normalize_nsw_pre_election_donor_location_heatmap",
         fake_normalize_nsw_heatmap,
+    )
+    monkeypatch.setattr(
+        "au_politics_money.pipeline.resolve_nsw_heatmap_url_from_pre_election_page",
+        lambda metadata_path: {
+            "heatmap_url": "https://elections.nsw.gov.au/getmedia/2ea29d95-d8a4-45ee-b45b-f9f9150a8446/FDC-heat-map.html",
+            "link_text": "View the 2023 State election disclosures heatmap",
+            "source_page_metadata_path": str(metadata_path),
+            "source_page_body_path": "fixture.html",
+        },
     )
 
     assert run_state_local_pipeline(jurisdiction="nsw", smoke=True) == "manifest.json"
@@ -301,6 +311,7 @@ def test_state_local_nsw_pipeline_records_aggregate_context_steps(monkeypatch) -
     assert "fetch:nsw_2023_state_election_pre_election_donations" in fetched_sources
     assert "fetch:nsw_2023_state_election_donation_heatmap" in fetched_sources
     assert calls["heatmap_metadata_path"] == "fetch:nsw_2023_state_election_donation_heatmap"
+    assert calls["source_page_link_context"]
 
 
 def test_state_local_pipeline_rejects_unsupported_jurisdiction() -> None:

@@ -64,6 +64,7 @@ from au_politics_money.ingest.official_identifiers import (
 from au_politics_money.ingest.nsw_electoral import (
     HEATMAP_SOURCE_ID as NSW_HEATMAP_SOURCE_ID,
     normalize_nsw_pre_election_donor_location_heatmap,
+    resolve_nsw_heatmap_url_from_pre_election_page,
 )
 from au_politics_money.ingest.pdf_text import extract_pdf_text_batch
 from au_politics_money.ingest.qld_ecq_eds import (
@@ -628,21 +629,32 @@ def run_state_local_pipeline(*, jurisdiction: str = "qld", smoke: bool = False) 
 def _run_nsw_state_local_pipeline(*, smoke: bool = False) -> Path:
     started = utc_now()
     nsw_artifacts: dict[str, Path] = {}
+    nsw_context: dict[str, dict[str, str]] = {}
 
     def fetch_nsw_sources() -> dict[str, Any]:
-        source_ids = (
-            "nsw_2023_state_election_pre_election_donations",
-            NSW_HEATMAP_SOURCE_ID,
+        pre_election_source_id = "nsw_2023_state_election_pre_election_donations"
+        pre_election_metadata_path = fetch_source(get_source(pre_election_source_id))
+        metadata_paths: dict[str, str] = {
+            pre_election_source_id: str(pre_election_metadata_path),
+        }
+        link_context = resolve_nsw_heatmap_url_from_pre_election_page(
+            pre_election_metadata_path
         )
-        metadata_paths: dict[str, str] = {}
-        for source_id in source_ids:
-            metadata_path = fetch_source(get_source(source_id))
-            metadata_paths[source_id] = str(metadata_path)
-            if source_id == NSW_HEATMAP_SOURCE_ID:
-                nsw_artifacts["heatmap_metadata_path"] = Path(metadata_path)
+        registered_heatmap_url = get_source(NSW_HEATMAP_SOURCE_ID).url
+        if link_context["heatmap_url"].casefold() != registered_heatmap_url.casefold():
+            raise ValueError(
+                "NSW heatmap URL on the pre-election page does not match the "
+                "registered heatmap source URL: "
+                f"page={link_context['heatmap_url']} registry={registered_heatmap_url}"
+            )
+        heatmap_metadata_path = fetch_source(get_source(NSW_HEATMAP_SOURCE_ID))
+        metadata_paths[NSW_HEATMAP_SOURCE_ID] = str(heatmap_metadata_path)
+        nsw_artifacts["heatmap_metadata_path"] = Path(heatmap_metadata_path)
+        nsw_context["heatmap_link_context"] = link_context
         return {
             "source_count": len(metadata_paths),
             "metadata_paths": metadata_paths,
+            "heatmap_link_context": link_context,
         }
 
     manifest = PipelineManifest(
@@ -672,6 +684,7 @@ def _run_nsw_state_local_pipeline(*, smoke: bool = False) -> Path:
             "normalize_nsw_pre_election_donor_location_heatmap",
             lambda: normalize_nsw_pre_election_donor_location_heatmap(
                 metadata_path=nsw_artifacts["heatmap_metadata_path"],
+                source_page_link_context=nsw_context.get("heatmap_link_context"),
             ),
         ),
     ]

@@ -249,7 +249,10 @@ The response includes:
   aggregate donor-location rows from the official static 2023 State Election
   heatmap. These rows are not donor-recipient money-flow records and must not
   be attributed to any representative, candidate, councillor, or party without
-  separate supporting evidence.
+  separate supporting evidence. Public displays must preserve the NSWEC source
+  caveat that the map does not show recipient locations and may exclude donor
+  locations that cannot be mapped, plus NSWEC CC BY 4.0 attribution and
+  no-endorsement requirements.
 
 `/api/state-local/records` returns the concrete current ECQ rows behind that
 summary with cursor pagination. Each row includes the normalized source and

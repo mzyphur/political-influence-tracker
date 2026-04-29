@@ -678,3 +678,7 @@ Notable data observations:
   that are unsuitable as filled web-map polygons. Display geometry is now a
   derived land-clipped layer; never overwrite the official source geometry with
   display geometry.
+- NSW aggregate-context replay now verifies the source metadata/body hashes
+  carried by the normalized artifact, resolves the heatmap link from the
+  official explanatory page, and preserves NSWEC map-exclusion and CC BY 4.0
+  attribution caveats.

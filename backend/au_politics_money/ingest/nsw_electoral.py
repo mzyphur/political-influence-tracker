@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
+from urllib.parse import urljoin
 
 from bs4 import BeautifulSoup
 
@@ -15,6 +16,7 @@ from au_politics_money.ingest.official_identifiers import normalize_name
 from au_politics_money.ingest.sources import get_source
 
 SOURCE_DATASET = "nsw_electoral_disclosures"
+PRE_ELECTION_SOURCE_ID = "nsw_2023_state_election_pre_election_donations"
 HEATMAP_SOURCE_ID = "nsw_2023_state_election_donation_heatmap"
 PARSER_NAME = "nsw_pre_election_donor_location_heatmap_normalizer"
 PARSER_VERSION = "1"
@@ -27,7 +29,12 @@ HEATMAP_CAVEAT = (
     "for pre-election-period reportable donations. The heatmap does not identify "
     "the recipient, donor entity, candidate, party, or MP for each aggregate row; "
     "these rows are source-backed aggregate context only and must not be displayed "
-    "as donations received by a representative."
+    "as donations received by a representative. The source page notes the map does "
+    "not show recipient locations and may exclude donor locations that cannot be "
+    "mapped, including silent electors and some donors outside New South Wales. "
+    "NSW Electoral Commission material is used under Creative Commons Attribution "
+    "4.0 unless otherwise noted; attribution is © State of New South Wales through "
+    "the NSW Electoral Commission."
 )
 
 
@@ -47,6 +54,43 @@ def _latest_metadata(source_id: str, raw_dir: Path = RAW_DIR) -> Path:
     candidates = sorted((raw_dir / source_id).glob("*/metadata.json"), reverse=True)
     if not candidates:
         raise FileNotFoundError(f"No metadata found for source {source_id}")
+    return candidates[0]
+
+
+def resolve_nsw_heatmap_url_from_pre_election_page(metadata_path: Path) -> dict[str, str]:
+    metadata = json.loads(Path(metadata_path).read_text(encoding="utf-8"))
+    source = metadata.get("source") or {}
+    if source.get("source_id") != PRE_ELECTION_SOURCE_ID:
+        raise ValueError(
+            f"Expected {PRE_ELECTION_SOURCE_ID} metadata, got {source.get('source_id')!r}"
+        )
+    body_path = Path(str(metadata["body_path"]))
+    body = body_path.read_text(encoding="utf-8", errors="replace")
+    soup = BeautifulSoup(body, "html.parser")
+    candidates: list[dict[str, str]] = []
+    base_url = str(metadata.get("final_url") or source.get("url") or "")
+    for link in soup.find_all("a", href=True):
+        href = str(link.get("href") or "")
+        label = " ".join(link.get_text(" ", strip=True).split())
+        combined = f"{href} {label}".casefold()
+        if "heat-map.html" in combined or "disclosures heatmap" in combined:
+            candidates.append(
+                {
+                    "heatmap_url": urljoin(base_url, href),
+                    "link_text": label,
+                    "source_page_metadata_path": str(metadata_path),
+                    "source_page_body_path": str(body_path),
+                }
+            )
+    if not candidates:
+        raise ValueError("Could not resolve NSW 2023 State election heatmap link")
+    if len(candidates) > 1:
+        unique_urls = {candidate["heatmap_url"].casefold() for candidate in candidates}
+        if len(unique_urls) > 1:
+            raise ValueError(
+                "Multiple NSW heatmap links found on pre-election page: "
+                f"{sorted(candidate['heatmap_url'] for candidate in candidates)}"
+            )
     return candidates[0]
 
 
@@ -118,6 +162,9 @@ def _record(
     district: str,
     amount: Any,
     count: Any,
+    source_metadata_sha256: str,
+    source_body_sha256: str,
+    source_page_link_context: dict[str, str] | None,
 ) -> dict[str, Any]:
     district_name = " ".join(district.split())
     if not district_name:
@@ -165,7 +212,9 @@ def _record(
         ),
         "caveat": HEATMAP_CAVEAT,
         "source_metadata_path": str(source_metadata_path),
+        "source_metadata_sha256": source_metadata_sha256,
         "source_body_path": str(source_body_path),
+        "source_body_sha256": source_body_sha256,
         "metadata": {
             "source_surface": "static_official_heatmap_htmlwidget",
             "state_election": "2023 NSW State Election",
@@ -174,6 +223,14 @@ def _record(
             "donor_identified": False,
             "representative_attribution": "none",
             "public_display_group": "aggregate_context",
+            "source_page_link_context": source_page_link_context or {},
+            "copyright": {
+                "notice": "© State of New South Wales through NSW Electoral Commission",
+                "license": "Creative Commons Attribution 4.0",
+                "license_url": "https://creativecommons.org/licenses/by/4.0/",
+                "copyright_url": "https://elections.nsw.gov.au/copyright",
+                "no_endorsement": True,
+            },
         },
     }
 
@@ -181,6 +238,7 @@ def _record(
 def normalize_nsw_pre_election_donor_location_heatmap(
     *,
     metadata_path: Path | None = None,
+    source_page_link_context: dict[str, str] | None = None,
     raw_dir: Path = RAW_DIR,
     processed_dir: Path = PROCESSED_DIR,
 ) -> Path:
@@ -190,13 +248,21 @@ def normalize_nsw_pre_election_donor_location_heatmap(
         except FileNotFoundError:
             metadata_path = fetch_source(get_source(HEATMAP_SOURCE_ID), raw_dir=raw_dir)
 
-    metadata = json.loads(Path(metadata_path).read_text(encoding="utf-8"))
+    metadata_path = Path(metadata_path)
+    source_metadata_sha256 = _sha256_path(metadata_path)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     source = metadata.get("source") or {}
     if source.get("source_id") != HEATMAP_SOURCE_ID:
         raise ValueError(
             f"Expected {HEATMAP_SOURCE_ID} metadata, got {source.get('source_id')!r}"
         )
     source_body_path = Path(str(metadata["body_path"]))
+    source_body_sha256 = _sha256_path(source_body_path)
+    if metadata.get("sha256") and metadata["sha256"] != source_body_sha256:
+        raise ValueError(
+            f"NSW heatmap body hash mismatch: metadata={metadata['sha256']} "
+            f"actual={source_body_sha256}"
+        )
     body = source_body_path.read_text(encoding="utf-8", errors="replace")
     districts, amounts, counts = _find_district_table(body)
 
@@ -220,6 +286,9 @@ def normalize_nsw_pre_election_donor_location_heatmap(
                 district=district,
                 amount=amount,
                 count=count,
+                source_metadata_sha256=source_metadata_sha256,
+                source_body_sha256=source_body_sha256,
+                source_page_link_context=source_page_link_context,
             )
             total_amount += Decimal(str(record["amount_aud"]))
             total_count += int(record["donation_count"])
@@ -233,9 +302,12 @@ def normalize_nsw_pre_election_donor_location_heatmap(
         "jsonl_path": str(jsonl_path),
         "jsonl_sha256": _sha256_path(jsonl_path),
         "source_metadata_path": str(metadata_path),
+        "source_metadata_sha256": source_metadata_sha256,
         "source_body_path": str(source_body_path),
+        "source_body_sha256": source_body_sha256,
         "source_id": HEATMAP_SOURCE_ID,
         "source_dataset": SOURCE_DATASET,
+        "source_page_link_context": source_page_link_context or {},
         "total_count": len(districts),
         "donation_count_total": total_count,
         "reported_amount_total": str(total_amount),

@@ -193,6 +193,7 @@ def test_default_load_refreshes_official_identifiers_before_influence_events(mon
         include_vote_divisions=False,
         include_postcode_crosswalk=False,
         include_party_entity_links=False,
+        include_nsw_aggregates=False,
         reapply_reviews=False,
     )
 
@@ -526,8 +527,36 @@ def test_qld_pipeline_manifest_rejects_failed_steps(tmp_path) -> None:
 
 
 def test_nsw_pipeline_manifest_selects_aggregate_context_artifact(tmp_path) -> None:
+    source_body_path = tmp_path / "nsw-heatmap.html"
+    source_body_path.write_text("<html>fixture</html>", encoding="utf-8")
+    source_body_sha256 = hashlib.sha256(source_body_path.read_bytes()).hexdigest()
+    source_metadata_path = tmp_path / "metadata.json"
+    source_metadata_path.write_text(
+        json.dumps(
+            {
+                "body_path": str(source_body_path),
+                "sha256": source_body_sha256,
+            },
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    source_metadata_sha256 = hashlib.sha256(source_metadata_path.read_bytes()).hexdigest()
     jsonl_path = tmp_path / "nsw-aggregates.jsonl"
-    jsonl_path.write_text(json.dumps({"source_id": "nsw_2023_state_election_donation_heatmap"}) + "\n", encoding="utf-8")
+    jsonl_path.write_text(
+        json.dumps(
+            {
+                "source_id": "nsw_2023_state_election_donation_heatmap",
+                "source_metadata_path": str(source_metadata_path),
+                "source_metadata_sha256": source_metadata_sha256,
+                "source_body_path": str(source_body_path),
+                "source_body_sha256": source_body_sha256,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     summary_path = tmp_path / "nsw-aggregates.summary.json"
     summary_path.write_text(
         json.dumps(
@@ -537,6 +566,10 @@ def test_nsw_pipeline_manifest_selects_aggregate_context_artifact(tmp_path) -> N
                 "source_id": "nsw_2023_state_election_donation_heatmap",
                 "jsonl_path": str(jsonl_path),
                 "jsonl_sha256": hashlib.sha256(jsonl_path.read_bytes()).hexdigest(),
+                "source_metadata_path": str(source_metadata_path),
+                "source_metadata_sha256": source_metadata_sha256,
+                "source_body_path": str(source_body_path),
+                "source_body_sha256": source_body_sha256,
                 "total_count": 1,
             },
             sort_keys=True,
@@ -569,6 +602,10 @@ def test_nsw_pipeline_manifest_selects_aggregate_context_artifact(tmp_path) -> N
     )
 
     assert nsw_aggregate_context_path_from_pipeline_manifest(manifest_path) == jsonl_path
+
+    source_body_path.write_text("<html>changed</html>", encoding="utf-8")
+    with pytest.raises(ValueError, match="Source body hash mismatch"):
+        nsw_aggregate_context_path_from_pipeline_manifest(manifest_path)
 
 
 def test_display_geometry_repair_buffer_validates_range() -> None:

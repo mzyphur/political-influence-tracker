@@ -452,7 +452,7 @@ SOURCES: tuple[SourceRecord, ...] = (
         source_type="state_financial_disclosure_aggregate_context",
         url=(
             "https://elections.nsw.gov.au/getmedia/"
-            "2ea29d95-d8a4-45ee-b45b-f9f9150a8446/fdc-heat-map.html"
+            "2ea29d95-d8a4-45ee-b45b-f9f9150a8446/FDC-heat-map.html"
         ),
         expected_format="html_flexdashboard",
         update_frequency="event_plus_amendments",
@@ -461,7 +461,9 @@ SOURCES: tuple[SourceRecord, ...] = (
             "Official static NSW Electoral Commission heatmap for 2023 State "
             "Election pre-election-period reportable donations by donor-location "
             "district. Aggregate context only: rows do not identify donation "
-            "recipients, donors, candidates, parties, MPs, or councillors."
+            "recipients, donors, candidates, parties, MPs, or councillors. "
+            "Preserve NSWEC map exclusion caveats and Creative Commons "
+            "Attribution 4.0 licence requirements."
         ),
     ),
     SourceRecord(

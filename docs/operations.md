@@ -137,6 +137,8 @@ NSW is now wired as an aggregate-context state adapter:
 cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/backend"
 MANIFEST=$(.venv/bin/python -m au_politics_money.cli run-state-local-pipeline --jurisdiction nsw)
 .venv/bin/dotenv -f .env run -- \
+  .venv/bin/python -m au_politics_money.cli migrate-postgres
+.venv/bin/dotenv -f .env run -- \
   .venv/bin/python -m au_politics_money.cli load-state-local-pipeline-manifest "$MANIFEST"
 ```
 
@@ -147,6 +149,9 @@ loader stores these rows in `aggregate_context_observation`, not `money_flow`.
 They are donor-location aggregates for the 1 Oct 2022 to 25 Mar 2023
 pre-election period, so they can support contextual state summaries but must not
 be displayed as donations received by an MP, candidate, party, or councillor.
+The runner verifies that the current explanatory page still links to the
+registered heatmap URL, and the loader validates source metadata/body hashes
+from the normalized artifact before inserting rows.
 
 ECQ gift/donation rows are money records. ECQ expenditure rows are
 campaign-support records with event type `state_local_electoral_expenditure`;

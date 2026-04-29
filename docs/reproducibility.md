@@ -120,7 +120,13 @@ pre-election period. These rows are stored as `aggregate_context_observation`
 records, not `money_flow` records, because the heatmap does not identify the
 recipient, donor entity, candidate, party, or MP for each aggregate row. The
 public UI and API must label this family as aggregate donor-location context,
-not representative receipt or donor-recipient flow.
+not representative receipt or donor-recipient flow. The NSW runner resolves and
+checks the heatmap link from the official explanatory page on each run; the
+summary and JSONL carry SHA-256 hashes for the source metadata and source body,
+and manifest replay refuses to load rows if those hashes no longer match.
+The source page caveat about unmapped donor locations and NSWEC Creative
+Commons Attribution 4.0 requirements must be preserved in public displays and
+derived data documentation.
 Donors are ECQ-identifier-backed only when they also appear in an accepted ECQ
 participant lookup record.
 
