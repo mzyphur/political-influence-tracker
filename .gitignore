@@ -30,3 +30,4 @@ data/audit/
 
 # Notebook checkpoints
 .ipynb_checkpoints/
+.claude/

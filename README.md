@@ -1,231 +1,248 @@
-# AU Politics Money Tracker
+# Australian Political Influence Transparency
 
-This project builds a public evidence system for Australian political money, gifts,
-interests, lobbying access, and voting behaviour.
+A reproducible, source-backed evidence system for Australian political
+money, gifts, interests, lobbying access, party-channelled support, and
+parliamentary voting behaviour. Federal-first; state/local follows.
 
-The initial scope is Commonwealth/federal politics:
+The project's central rule: **show the evidence, preserve the source,
+and separate facts from interpretation.** Direct disclosed person-level
+records, source-backed campaign-support records, party/entity-mediated
+context, and modelled allocations are kept as separate evidence
+families. They are NEVER summed into a single "money received" headline.
+Every public claim travels with its evidence tier and attribution
+limit.
 
-- AEC financial disclosure returns and detailed receipts.
-- House and Senate registers of interests, gifts, travel, hospitality, and related interests.
-- Current and historical MPs/Senators, parties, electorates, and electoral boundaries.
-- Parliamentary voting behaviour, initially through official records and They Vote For You.
-- Donor/entity resolution and industry classification.
+The corresponding theory of influence and the per-mechanism modelling
+choices are documented in
+[`docs/theory_of_influence.md`](docs/theory_of_influence.md) and
+[`docs/influence_network_model.md`](docs/influence_network_model.md).
+The hostable, public-facing companion page is at
+[`frontend/public/methodology.html`](frontend/public/methodology.html)
+(linked from the app as **Method**).
 
-The project principle is: show the evidence, preserve the source, and separate facts
-from interpretation. The app should make influence visible without overstating what
-the public record can prove.
+---
 
-The project also maintains an explicit operating theory of influence in
-`docs/theory_of_influence.md`. Engineering choices should connect to that theory:
-which influence mechanism is being operationalized, which observable indicator is
-being used, and which public claims remain out of bounds.
+## Reproduce every number on the site
 
-The frontend includes a hostable public companion page at
-`frontend/public/methodology.html`, linked from the app as "Method". It translates
-the theory and evidence rules into an HTML page with diagrams for public,
-journalistic, and academic audiences.
+Every number the public app shows is reproducible from public sources
+plus the code in this repository. There is no manual data entry, no
+private spreadsheets, no human-curated row-by-row totals.
 
-The state/council expansion sequence is tracked in
-`docs/state_council_expansion_plan.md`. It identifies the first official
-state/territory disclosure surfaces, source-priority order, and attribution
-rules for carrying the same influence model below the Commonwealth level.
-
-## Current Structure
-
-- `docs/` - planning, research standards, source inventory, and methodology.
-- `backend/` - Python ingestion, normalization, and database code.
-- `backend/schema/` - PostgreSQL/PostGIS schema drafts.
-- `frontend/` - React/Vite/MapLibre public interface scaffold.
-- `data/raw/` - raw downloaded source documents, grouped by source and timestamp.
-- `data/processed/` - derived intermediate outputs.
-- `data/audit/` - validation reports and extraction QA outputs.
-- `notebooks/` - exploratory analysis only.
-
-## First Backend Commands
-
-From `backend/`:
+### One command, from a clean clone
 
 ```bash
-python3 -m au_politics_money.cli list-sources
-python3 -m au_politics_money.cli show-source aec_transparency_downloads
-python3 -m au_politics_money.cli fetch-source aec_transparency_downloads
+git clone <repo-url> au-politics
+cd au-politics
+make bootstrap        # backend venv + frontend npm deps
+make db-up            # local Postgres/PostGIS via docker-compose
+make db-ready         # block until Postgres is ready
+make reproduce-federal
 ```
 
-The fetch command stores raw bytes plus JSON metadata under `data/raw/`. It does
-not parse or transform records yet.
+`make reproduce-federal` runs
+[`scripts/reproduce_federal_from_scratch.sh`](scripts/reproduce_federal_from_scratch.sh).
+The script:
 
-For the local backend environment:
+1. Sanity-checks Python / Node / docker-compose and reports disk free.
+2. Brings up the local Postgres/PostGIS container.
+3. Bootstraps the backend venv with `requirements.lock` so dependency
+   versions are pinned.
+4. Runs the federal foundation pipeline against the **live** AEC, APH,
+   AIMS, and (optional) They Vote For You sources, archiving raw
+   responses + parsed JSONL under
+   [`data/raw/`](data/raw/) and [`data/processed/`](data/processed/).
+5. Applies every Postgres schema migration in
+   [`backend/schema/`](backend/schema/), including the AEC Register
+   ingestion (`033`) and federal-party-row consolidation (`034`).
+6. Loads the freshly-fetched processed artifacts into Postgres.
+7. Runs the `qa-serving-database` gate (current-MP coverage, dropped
+   boundaries, parser boilerplate detection, vote-count parity, etc.).
+8. Runs the full backend pytest suite with Postgres integration.
+9. Runs `ruff check` and the frontend production build.
+10. Prints the audit-manifest path and the per-stage log paths.
+
+### CI / quick-iteration mode
 
 ```bash
-cd backend
-make install
-make test
-make lint
+make reproduce-federal-smoke
 ```
 
-For the local frontend environment:
+The same chain in `--smoke` mode (House interests PDF work limited to
+a small subset). Used by CI; do not use for public data publication.
+
+### Targeted reproducibility entry points
+
+If you only want to reproduce the most recently-changed surfaces, the
+top-level `Makefile` exposes single-step targets that match the
+methodology-page sections:
+
+| Step | Target |
+|---|---|
+| Fetch the AEC Register of Entities live | `make fetch-aec-register` |
+| Load the latest fetched AEC Register JSONL into Postgres | `make load-aec-register` |
+| Fetch postcodes from the AEC electorate finder using the seed list | `make fetch-postcode-crosswalk` |
+| Load the latest postcode crosswalk JSONL | `make load-postcode-crosswalk` |
+| Run the post-load QA gate + tests + frontend build | `make verify` |
+
+Run `make help` to see the full list.
+
+### Auditing what just happened
+
+Every run leaves behind:
+
+- `data/raw/<source_id>/<timestamp>/metadata.json` for each fetched
+  source (URL, HTTP status, sha256, request/response headers, redaction
+  policy, source-licence caveat).
+- `data/processed/<dataset>/<timestamp>.jsonl(.summary.json)` for each
+  parsed output.
+- `data/audit/pipeline_runs/<run-id>.json` recording pipeline name,
+  status, timestamps, runtime, Python + package versions, platform,
+  git commit, parameters, and per-step output paths/errors.
+- `data/audit/logs/reproduce_federal_*_<timestamp>.{stdout,stderr}.log`
+  for every stage of the reproduce script.
+
+The detailed reproducibility policy is in
+[`docs/reproducibility.md`](docs/reproducibility.md).
+
+---
+
+## Repository layout
+
+| Path | Purpose |
+|---|---|
+| [`backend/`](backend/) | Python ingestion, normalization, FastAPI surface, and database loaders. |
+| [`backend/schema/`](backend/schema/) | PostgreSQL/PostGIS schema migrations (`001` baseline, then additive). |
+| [`backend/au_politics_money/`](backend/au_politics_money/) | Pipeline / loader / parser / API code. |
+| [`backend/tests/`](backend/tests/) | Pytest suites. Postgres integration tests are gated behind `AUPOL_RUN_POSTGRES_INTEGRATION=1`. |
+| [`frontend/`](frontend/) | Vite/React/MapLibre app. |
+| [`frontend/public/methodology.html`](frontend/public/methodology.html) | Hostable public methodology companion. |
+| [`scripts/`](scripts/) | Pipeline-runner shell scripts (weekly federal, weekly state/local, reproduce-from-scratch). |
+| [`data/raw/`](data/raw/) | Raw downloaded source documents, grouped by source and timestamp. |
+| [`data/processed/`](data/processed/) | Parsed/normalised JSONL outputs. |
+| [`data/audit/`](data/audit/) | Pipeline-run manifests, validation reports, run logs. |
+| [`data/seeds/`](data/seeds/) | Hand-curated seed lists (postcodes, etc.) used by reproducible fetchers. |
+| [`docs/`](docs/) | Methodology, source inventory, build log, session state, reproducibility policy. |
+| [`notebooks/`](notebooks/) | Exploratory analysis only — never the source of truth. |
+
+---
+
+## Local serving baseline
+
+These are the row counts on the local development database after the
+last full federal reproduce run. They are NOT goals; they are
+auditable facts about the most recent ingestion. Anyone reproducing
+the pipeline against the same public sources at the same point in time
+should get equivalent numbers (modulo source-side updates).
+
+- **314,040** non-rejected `influence_event` rows.
+- **318** `person` rows.
+- **150** federal House `electorate` rows.
+- **87** reviewed `party_entity_link` rows derived from the AEC
+  Register of Entities (86 → ALP, 1 → AG).
+- **9** `postcode_electorate_crosswalk` rows from the bootstrap
+  postcode seed list.
+
+The `qa-serving-database` gate enforces the structural invariants on
+top of the row counts (current House boundary count, current-roster
+match coverage, parser-boilerplate detection, etc.).
+
+The federal foundation pipeline currently archives and normalises:
+
+- AEC annual + election disclosure bulk data.
+- AEC Register of Entities (political party / associated entity /
+  significant third party / third party).
+- AEC current federal electorate boundary shapefile + GeoJSON +
+  AIMS-clipped display geometry.
+- APH House / Senate registers of interests, gifts, travel,
+  hospitality.
+- APH House Votes & Proceedings + Senate Journals decision-record
+  indexes and PDFs.
+- APH MP/Senator current contacts CSVs (the federal roster).
+- AEC Electorate Finder postcode crosswalk (bootstrap seed list).
+- Australian Government Register of Lobbyists snapshot.
+- Optional: They Vote For You division/vote API ingestion (with
+  `THEY_VOTE_FOR_YOU_API_KEY`).
+
+---
+
+## Frontend / API for local development
 
 ```bash
-cd frontend
-npm install
-npm run dev
+make api-dev          # backend FastAPI on http://127.0.0.1:8008
+make frontend-dev     # frontend Vite dev server on http://127.0.0.1:5173
 ```
 
-The first frontend screen uses `/api/map/electorates` and `/api/search`, with
-MapTiler configured through `VITE_MAPTILER_API_KEY` in `frontend/.env.local`.
+The frontend defaults to `VITE_API_BASE_URL=http://127.0.0.1:8008` and
+proxies `/api` and `/health` through Vite. MapTiler tiles are
+configured via `VITE_MAPTILER_API_KEY` in `frontend/.env.local`.
 
-For a local PostgreSQL/PostGIS database:
+The browser of choice for visual checks is **Firefox or the in-app
+browser**, never Chrome. The reasoning is in
+[`CLAUDE.md`](CLAUDE.md). The eyes-on smoke checklist is at
+[`docs/batch_d3_firefox_smoke_checklist.md`](docs/batch_d3_firefox_smoke_checklist.md).
+
+---
+
+## Tests, linting, build
 
 ```bash
-cd backend
-cp .env.example .env
-docker compose up -d
+make test       # backend pytest (Postgres integration enabled) + frontend build
+make lint       # backend ruff
+make verify     # qa-serving-database + tests + lint + frontend build
 ```
 
-The initial schema is in `backend/schema/001_initial.sql`.
-Additive local migrations start at `backend/schema/002_official_identifiers.sql`;
-`backend/schema/003_influence_events.sql` adds the unified event surface used by
-the future API/frontend.
+The full backend suite currently passes 315/315; running the suite
+locally requires the Postgres container up
+(`make db-up && make db-ready`).
 
-Load the latest reproducible artifacts into PostgreSQL:
+---
 
-```bash
-cd backend
-export DATABASE_URL=postgresql://au_politics:change-me-local-only@localhost:54329/au_politics
-.venv/bin/python -m au_politics_money.cli load-postgres --apply-schema
-```
+## Claim discipline (the rule everything else serves)
 
-For an existing local database, apply additive migrations without rerunning the
-initial schema:
+When in doubt, the project errs toward under-claiming.
 
-```bash
-cd backend
-.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money migrate-postgres
-```
+We can show:
 
-Current local serving baseline loaded into PostgreSQL:
+- Source-backed flows: who disclosed what, from whom, to whom, when,
+  and which public source.
+- Pathways with explicit evidence tiers (direct-disclosed,
+  source-backed-campaign-context, party/entity-mediated,
+  modelled-allocation).
+- Missingness as a data condition, not as zero.
 
-- 192,201 AEC annual money-flow rows, plus election-period, public-funding,
-  QLD ECQ state/local, and campaign-support records where reproducible adapters
-  are active.
-- 5,838 current House interest records from PDF text/OCR extraction; 49 older
-  parsed rows are retained as non-current source evidence after parser
-  hardening but are not served as active influence events.
-- 1,752 Senate interest records from the official APH-backed Senate interests API.
-- 302,297 non-rejected unified `influence_event` rows: 217,531 money events,
-  77,176 campaign-support events, 1,406 benefit events, 4,700 private-interest
-  events, 1,384 organisational-role events, and 100 other declared interests.
-- 7,823 rows are currently person-linked. Reported non-rejected amounts total
-  AUD 12,857,350,922.47 across loaded event families, with campaign-support
-  and direct person-level records kept as separate attribution families.
-- 50 direct AEC House-member return money rows are now person-linked to MP
-  profiles through conservative unique cleaned-name matching, totaling
-  AUD 1,383,511. Unmatched direct representative rows remain unlinked with audit
-  metadata rather than guessed.
-- 226 people/office terms, including one documented House-register-derived fallback for Sussan Ley/Farrer because the APH contact CSV omitted that House seat.
-- 150 current federal House electorate boundaries from the AEC March 2025
-  national ESRI shapefile transformed from GDA94/EPSG:4283 to GeoJSON/PostGIS
-  SRID 4326.
-- 35,874 generated entity-sector classifications from `public_interest_sector_rules_v1`; these are inferred rule-based labels pending official identifier/manual-review enrichment.
-- 3,591 unique official identifier observations: the Australian Government Register of Lobbyists full current snapshot plus one live ABN Lookup web-service smoke record for BHP Group Limited.
-- Targeted ABN Lookup web-service enrichment is implemented for reviewed ABN/ACN lookups, with raw XML archiving, secret redaction, and trading-name caveats.
-- 393 exact-name official match candidates are queued for manual review. No official identifiers are attached to money-flow entities until an existing identifier or a reviewed mapping supports the match.
-- 72 official APH decision-record index rows: 53 current House Votes and
-  Proceedings links and 19 current Senate Journals links. These are
-  `official_record_index` rows linked to 91 archived raw ParlInfo snapshots:
-  72 HTML representations and 19 Senate PDF representations. The official
-  documents are snapshotted and format-validated.
-- 335 official APH Senate divisions parsed from Senate Journals PDFs, with
-  18,715 matched senator-vote rows and zero unmatched current-senator votes.
-- 399 They Vote For You civic-source divisions loaded for 2026-01-01 through
-  2026-04-28: 55 House divisions, 24 Senate divisions not already represented
-  by official APH keys, and TVFY enrichment attached to 320 official APH Senate
-  divisions. TVFY person-vote context is attached to 17,263 official APH
-  senator-vote rows, with 8,084 TVFY-only person-vote rows retained mainly for
-  House divisions pending official House person-vote parsing.
-- Review-queue export commands now write auditable JSONL artifacts for official
-  match candidates, benefit events, and inferred entity classifications under
-  `data/audit/review_queues/`.
-- Reviewed decisions can be imported with a dry-run-first command that stores
-  append-only decision records and applies only conflict-checked/manual overlay
-  updates.
-- Sector-policy link suggestions can be exported for human review with
-  `suggest-sector-policy-links`; suggestions do not mutate the database and do
-  not make source-to-effect claims until reviewed evidence is imported.
+We must not claim without stronger evidence:
 
-## Reproducible Pipeline
+- Bribery, personal receipt, or improper influence — lawful
+  disclosure is not automatically improper, and party money is not
+  personal income.
+- Causation — a donor did not necessarily cause a vote.
+- Hidden values — missing dollar amounts are missing data, not
+  evidence the value was high.
 
-The main federal workflow is now a single auditable command:
+Per-tier rules for campaign-support attribution are in
+[`docs/campaign_support_attribution.md`](docs/campaign_support_attribution.md).
 
-```bash
-cd backend
-.venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline --refresh-existing-sources
-```
+---
 
-It writes a run manifest under `data/audit/pipeline_runs/`.
-Scheduled federal runs use this refresh mode so update-sensitive cached sources
-are fetched again and source checksum changes become new auditable snapshots.
+## License / source-licence terms
 
-The pipeline currently archives and normalizes:
+Source-licence wording is intentionally conservative: "official
+public AEC/APH/AIMS/etc. snapshot; public redistribution / licence
+terms to be recorded before public data redistribution." Local
+development is OK; public redistribution requires verified licence
+terms captured in the repo. AIMS Australian Coastline 50K is currently
+"Not Specified" upstream and is therefore not a public-release artifact
+until terms are confirmed.
 
-- APH current MP/Senator roster CSVs.
-- AEC annual and election disclosure bulk data. Election rows are treated as
-  source disclosure observations, with cross-table duplicate observations
-  retained for audit but excluded from reported-total sums.
-- AEC current national federal electorate boundary shapefile and GeoJSON/PostGIS
-  source boundary layer, plus AIMS/eAtlas/AODN Coastline 50K-backed land-clipped
-  display geometry for the web map.
-- Senate register JSON records from the official APH-backed Senate interests API.
-- House register PDF text/OCR, numbered sections, and structured interest records.
-- Official APH House Votes and Proceedings and Senate Journals current
-  decision-record indexes plus linked ParlInfo HTML/PDF snapshots. Current
-  Senate Journals PDFs are parsed into official Senate division/person-vote
-  records.
-- Rule-based entity and public-interest-sector classifications.
-- Official identifier source discovery and the Australian Government Register of
-  Lobbyists API snapshot. ASIC, ABN Bulk Extract, and ACNC parsers are implemented
-  for official extracts; local data.gov.au access currently returned HTTP 403 in
-  this environment, so those bulk extracts are staged but not yet loaded here.
-- Optional They Vote For You division/vote API ingestion. This is a third-party
-  civic source and requires `THEY_VOTE_FOR_YOU_API_KEY`; stored metadata omits
-  only the key while preserving the public API response body. The fetcher
-  automatically splits capped date windows to avoid silent API truncation.
+---
 
-For CI/development:
+## Where to look next
 
-```bash
-cd backend
-.venv/bin/python -m au_politics_money.cli run-federal-foundation-pipeline --smoke
-```
-
-See `docs/reproducibility.md` and `docs/operations.md`.
-
-## Local API
-
-The first read-only FastAPI layer is available for frontend development:
-
-```bash
-cd backend
-make api-dev
-```
-
-It serves global search and source-to-policy context endpoints at
-`http://127.0.0.1:8008`; see `docs/api.md`. The map endpoint defaults to a
-low-tolerance interactive geometry and can emit exact source geometry for strict
-QA. `/api/coverage` exposes source-family coverage so map-linked representative
-counts are not confused with whole-database party/entity/return-level money-flow
-counts. Postcode search can return source-backed AEC electorate candidates
-where the crosswalk has been loaded, with explicit caveats for split postcodes
-and AEC next-election boundary context. AEC candidates that cannot yet be
-matched to the loaded boundary table are retained in an unresolved-audit table
-and surfaced as search limitations, not discarded.
-
-## Standards
-
-Every public claim should eventually link to:
-
-1. The source document or official page.
-2. The parser/extractor version.
-3. The normalized database record.
-4. The confidence level for entity matching and industry classification.
-5. A human-readable caveat where the evidence is incomplete or ambiguous.
+- **Methodology** for non-engineers and journalists — open the app and
+  click **Method**, or visit
+  [`frontend/public/methodology.html`](frontend/public/methodology.html).
+- **Reproducibility policy** — [`docs/reproducibility.md`](docs/reproducibility.md).
+- **Build log** — [`docs/build_log.md`](docs/build_log.md) (newest
+  first).
+- **Session state for the next contributor** — [`docs/session_state.md`](docs/session_state.md).
+- **Operating mode for AI-assisted contributions** — [`CLAUDE.md`](CLAUDE.md).
