@@ -410,6 +410,18 @@
         line-height: 1.55;
       }
 
+      .version-line {
+        margin: 8px 0 0;
+        font-size: 13px;
+      }
+
+      .version-line code {
+        background: rgba(20, 36, 43, 0.06);
+        padding: 1px 6px;
+        border-radius: 4px;
+        font-size: 12px;
+      }
+
       @media (max-width: 900px) {
         .hero,
         .section-grid,
@@ -468,7 +480,11 @@
           <a href="#read-network">How to read it</a>
           <a href="#mechanisms">Mechanisms</a>
           <a href="#network">Pathways</a>
+          <a href="#aec-register-pathways">AEC Register</a>
+          <a href="#equal-share">Equal-share estimates</a>
+          <a href="#campaign-support-tiers">Campaign support tiers</a>
           <a href="#claims">Claim discipline</a>
+          <a href="#version">Version</a>
         </div>
       </nav>
 
@@ -855,6 +871,122 @@
           </div>
         </article>
 
+        <article class="panel wide" id="aec-register-pathways">
+          <h2>AEC Register Pathways and Disambiguation</h2>
+          <p>
+            The AEC Register of Entities is the official public registry of
+            registered political parties, associated entities, significant third
+            parties, and third parties. It is the source-backed origin from
+            which a deterministic resolver produces reviewed party/entity
+            relationship rows without ad-hoc human review per row.
+          </p>
+          <ul class="claim-list allowed">
+            <li>
+              <strong>Exact-name match first.</strong> The resolver matches an
+              <code>AssociatedParties</code> segment to a canonical party only when the
+              normalized segment exactly equals an existing
+              <code>party.name</code> or <code>party.short_name</code>. No fuzzy
+              similarity, ever.
+            </li>
+            <li>
+              <strong>Documented branch alias rules.</strong> A short list of state
+              and territory branch wordings (ALP/Liberal/Greens/Nationals
+              branches) rewrites to a canonical parent party name and re-matches
+              by exact normalized name.
+            </li>
+            <li>
+              <strong>Source-jurisdiction disambiguation.</strong> When more than
+              one row matches and they only differ by jurisdiction, the resolver
+              prefers the row whose <code>jurisdiction_id</code> equals the
+              source document's own jurisdiction. The AEC Register is by
+              definition a federal source, so its loader passes the local
+              Commonwealth jurisdiction id. The check is exact integer equality
+              on a stable, source-attributed attribute - it is not fuzzy
+              similarity.
+            </li>
+            <li>
+              <strong>Fail closed.</strong> If no rule yields a unique canonical
+              party, the resolver records the row as
+              <code>unresolved_multiple_matches</code>,
+              <code>unresolved_no_match</code>, or
+              <code>unresolved_individual_segment</code> instead of guessing.
+              These remain auditable observations rather than silent links.
+            </li>
+            <li>
+              <strong>One-shot consolidation.</strong> Where the local DB
+              accidentally grew duplicate federal-jurisdiction rows for the same
+              real-world party (e.g. an "ALP" short-form row plus an
+              "Australian Labor Party" long-form row), a one-shot data-fix
+              migration consolidates them into a single canonical row,
+              re-pointing every FK reference and preserving the curated
+              short_name code. State-jurisdiction rows are left alone.
+            </li>
+          </ul>
+        </article>
+
+        <article class="panel wide" id="equal-share">
+          <h2>Equal-Share Estimates and Denominator Asymmetry</h2>
+          <p>
+            Reviewed party-pathway receipts are exposed on every current MP's
+            profile as an "Est. exposure" line, computed under the
+            <code>equal_current_representative_share</code> allocation method.
+            This is deliberately a rough exposure index, and the response surface
+            it back with both numerator and denominator scope chips.
+          </p>
+          <ul class="claim-list allowed">
+            <li>
+              <strong>Numerator</strong> - all reviewed party/entity money
+              receipts currently loaded into the database, with no time window.
+              The summary tags this as
+              <code>event_period_scope = all_loaded_reviewed_party_entity_receipts</code>.
+            </li>
+            <li>
+              <strong>Denominator</strong> - the count of distinct people whose
+              <code>office_term.term_end IS NULL</code> for the same party. The
+              summary tags this as
+              <code>representative_scope = current_office_term_party_membership</code>.
+            </li>
+            <li>
+              <strong>Asymmetry</strong> - because the numerator is a long
+              historical record while the denominator is a single cross-section,
+              the per-representative figure is <em>not</em> a "money seen during
+              service" estimate. A wave-election party that recently doubled its
+              head-count shows a smaller per-rep figure; a party that recently
+              lost seats shows a larger one.
+            </li>
+            <li>
+              <strong>UI rule</strong> - every surface that exposes this number
+              prefixes it with "Est. exposure" and ships the denominator chip,
+              so the consumer always sees the size of the cross-section the
+              estimate was divided by. The figure is never summed with direct
+              receipts or campaign-support records.
+            </li>
+          </ul>
+        </article>
+
+        <article class="panel wide" id="campaign-support-tiers">
+          <h2>Campaign Support: Source-Backed Context, Not Personal Receipts</h2>
+          <p>
+            The full per-tier campaign-support attribution policy lives in
+            <code>docs/campaign_support_attribution.md</code>. The headline rule:
+            disclosed direct person-or-group records, source-backed candidate or
+            group campaign records, source-backed campaign returns, source-backed
+            media-ad activity, source-backed third-party campaign expenditure,
+            party-aggregate public funding, and modelled allocations are <em>each</em>
+            shown under their own labels with their own caveats. None of them
+            are summed into a single "money received" headline.
+          </p>
+          <p>
+            Election public funding paid to a party or independent candidate is
+            shown as public campaign funding paid to that recipient, not as a
+            donation, gift, or private benefit received by an individual MP,
+            senator, or candidate. The frontend keeps every campaign-support
+            total visually separate from direct reported totals, and the
+            <code>campaign_support_summary</code> API field carries its own
+            attribution caveat.
+          </p>
+        </article>
+
         <article class="panel wide" id="claims">
           <h2>Claim Discipline</h2>
           <p>
@@ -883,14 +1015,34 @@
         </article>
       </section>
 
-      <footer class="footer">
+      <footer class="footer" id="version">
         <p>
-          This page is the public-facing companion to the project methodology in
-          <code>docs/theory_of_influence.md</code>,
+          This page is the public-facing companion to the project methodology
+          in <code>docs/theory_of_influence.md</code>,
           <code>docs/influence_network_model.md</code>, and
-          <code>docs/research_standards.md</code>. It is intentionally written as a
-          hostable static artifact so the theory, diagrams, and claim rules can
-          ship with the public web app.
+          <code>docs/campaign_support_attribution.md</code>. It is intentionally
+          written as a hostable static artifact so the theory, diagrams, and
+          claim rules ship with the public web app.
+        </p>
+        <p class="version-line">
+          <strong>Methodology version:</strong>
+          <code>2026-04-30</code>
+          &middot; Repo revision <code>3f40524</code> (Batch D #5 - this
+          page now also covers AEC Register pathways, source-jurisdiction
+          disambiguation, federal-party-row consolidation, and equal-share
+          denominator asymmetry).
+        </p>
+        <p class="version-line">
+          <strong>Document sources at this revision:</strong>
+          <code>docs/influence_network_model.md</code> &middot;
+          <code>docs/theory_of_influence.md</code> &middot;
+          <code>docs/campaign_support_attribution.md</code>
+        </p>
+        <p class="version-line">
+          The repository revision identifier above is intended as a stable
+          permalink for this version of the methodology. Each future
+          methodology change should bump the date and the revision so older
+          captures remain auditable.
         </p>
       </footer>
     </main>
