@@ -80,7 +80,7 @@ disclosed person-level money with campaign-support records, party-
 mediated party/entity context, or modelled allocation. Every public
 claim must travel with its evidence tier and attribution limit.
 
-## Current state (live, end of Batch I — 2026-05-01)
+## Current state (live, end of Batch J — 2026-05-01)
 
 - **Backend pytest:** 358/358 passing
 - **Backend ruff:** clean
@@ -100,9 +100,13 @@ Live database (Postgres at
   for Canberra)
 - **0** `unresolved_no_match` in either `associatedentity` or
   `politicalparty` AEC Register observations
-- **191** `postcode_electorate_crosswalk` rows + 35 unresolved
-  candidates (residential-sample 200-postcode bulk fetch); coverage
-  NSW 84 / VIC 71 / QLD 12 / ACT 6 / WA 6 / NT 5 / TAS 4 / SA 3
+- **448** `postcode_electorate_crosswalk` rows / **404** distinct
+  postcodes / **127** federal House electorates covered (84.7% of
+  150 House seats); 67 unresolved postcode candidates retained as
+  auditable observations. Per-state: NSW 121 rows / 37 electorates,
+  VIC 114 / 31, QLD 73 / 27, WA 64 / 12, SA 40 / 9, TAS 19 / 5,
+  ACT 6 / 3, NT 5 / 2. (Batch J round lifted from 191 → 448 rows
+  via three staged 195/208/211-postcode runs against the CC0 seed.)
 
 ## Batches A → I — what's already done (one-liner each)
 
@@ -144,6 +148,11 @@ Live database (Postgres at
   `postcode.auspost.com.au/free_display.html?id=1`) + 200-postcode
   residential-sample bulk fetch (51 → 191 crosswalk rows) +
   `docs/letters/` exception-request drafts
+- **J**: three staged residential-sample postcode runs (195 + 208 +
+  211 = 614 unique NEW postcodes, zero overlap) lifting the
+  crosswalk from 191 → **448 rows** / 171 → **404 distinct
+  postcodes** / 123 → **127 federal House electorates (84.7%)**.
+  Pure live-data round; no source-file changes.
 
 ## Critical architectural decisions to preserve
 
@@ -221,12 +230,16 @@ These items are PROJECT-LEAD-side or genuinely-outside-this-session:
 2. **Publish to a public git mirror.** Set `METHODOLOGY_REPO_URL` in
    the build environment when this lands; the methodology marker
    becomes a clickable `commit/<sha>` link automatically.
-3. **Stage 2-3 more postcode batches** from
-   `data/seeds/aec_postcode_search_seed_full.txt` to push the
-   crosswalk toward 800-1000 rows. Build a residential-sample seed
-   FIRST to skip 1000-1099 PO Box codes that AEC's finder returns
-   no localities for (see Batch I #2 build_log entry for the
-   `awk` filter).
+3. **Postcode batches — Batch J completed three more staged runs**
+   (614 NEW postcodes, 191 → 448 crosswalk rows / 127 of 150 federal
+   House seats covered). Diminishing returns now: each ~200-postcode
+   batch lifts crosswalk by ~75-100 rows but yields only 0-2 new
+   electorates. Don't over-fetch — AEC etiquette matters and the
+   84.7% seat coverage is already strong. ACT (0200-0299) and NT
+   (0800-0899) residential ranges are NOT in the CC0 source (Matthew
+   Proctor stores postcodes as integers, no leading zeros), so
+   coverage in those territories is stuck at 6 / 5 rows respectively
+   — expanding requires a different seed source.
 4. **AIMS-eAtlas browser-fetch follow-up (low priority).**
    data.gov.au verbatim "Licence Not Specified" already drives the
    conservative blocked status; eAtlas SPA may have additional
@@ -271,12 +284,31 @@ bash scripts/expand_postcode_seed.sh \
     data/seeds/aec_postcode_search_seed_full.txt \
     --max-postcodes=200
 
-# Build a residential-sample seed before bulk fetch:
+# Build a residential-sample seed before bulk fetch.
+# Note: the CC0 source has NO leading-zero postcodes (0200-0299 ACT,
+# 0800-0899 NT) — those ranges in the awk filter below are inert.
+# Genuine 2xxx-7xxx residential ranges are what produce real hits.
 grep -E '^[0-9]{4}' data/seeds/aec_postcode_search_seed_full.txt \
   | awk -F'#' '{print $1}' \
   | sort -u \
-  | awk 'BEGIN{n=0} { p=$1+0; if ((p>=200 && p<=299) || (p>=800 && p<=899) || (p>=2000 && p<=2999) || (p>=3000 && p<=3999) || (p>=4000 && p<=4999) || (p>=5000 && p<=5999) || (p>=6000 && p<=6999) || (p>=7000 && p<=7999)) { n++; if (n%10==0) print $1 } }' \
+  | awk 'BEGIN{n=0} { p=$1+0; if ((p>=2000 && p<=2999) || (p>=3000 && p<=3999) || (p>=4000 && p<=4999) || (p>=5000 && p<=5999) || (p>=6000 && p<=6999) || (p>=7000 && p<=7999)) { n++; if (n%10==0) print $1 } }' \
   | head -200 > /tmp/postcode_residential_sample.txt
+
+# Better: build a seed that EXCLUDES already-fetched postcodes
+# (Batch J's pattern). Snapshot what's in the DB, exclude, then pick.
+docker-compose -f backend/docker-compose.yml exec -T postgres \
+  psql -U au_politics -d au_politics -t \
+  -c "SELECT DISTINCT postcode FROM postcode_electorate_crosswalk \
+      UNION SELECT DISTINCT postcode FROM postcode_electorate_crosswalk_unresolved \
+      ORDER BY 1;" \
+  | tr -d ' ' | grep -E '^[0-9]{4}$' | sort -u > /tmp/postcodes_already_fetched.txt
+grep -E '^[0-9]{4}' data/seeds/aec_postcode_search_seed_full.txt \
+  | awk -F'#' '{gsub(/[ \t\r]/,"",$1); if (length($1)==4) print $1}' \
+  | sort -u > /tmp/cc0_all_postcodes.txt
+awk 'NR==FNR { ex[$1]=1; next } { if (!($1 in ex)) print }' \
+  /tmp/postcodes_already_fetched.txt /tmp/cc0_all_postcodes.txt \
+  | awk 'BEGIN{n=0} { p=$1+0; if ((p>=2000 && p<=7999) && !(p>=8000)) { n++; if (n%30==0) print } }' \
+  | head -200 > /tmp/postcode_next_batch.txt
 ```
 
 ## Operating constraints (will be enforced by the user)
@@ -319,7 +351,20 @@ These come up repeatedly. Internalise them.
 - **`expand_postcode_seed.sh` silent exit** is not a bug — it's
   what happens when AEC's finder returns no localities for the
   staged postcodes (PO Box / synthetic ranges 1000-1099). Always
-  build a residential-sample seed first.
+  build a residential-sample seed first. Even residential-band
+  bulk runs hit a 35-60% silent-skip rate because the CC0 dataset
+  includes business / large-volume-recipient codes outside the
+  AEC's coverage. That's the cost of using a comprehensive seed
+  rather than a curated one.
+- **CC0 seed has no leading-zero postcodes.** Matthew Proctor's
+  CSV stores postcodes as integers, so 0200-0299 (ACT residential)
+  and 0800-0899 (NT residential) are absent from
+  `data/seeds/aec_postcode_search_seed_full.txt`. ACT/NT crosswalk
+  coverage is therefore stuck at 6 / 5 rows respectively. To
+  expand, source a different postcode list (data.gov.au POA
+  shapefile or AEC's own electorate-boundary intersections) under
+  a redistribution-cleared licence — Australia Post is blocked
+  per `docs/source_licences.md`.
 - **`integration_db` fixture** seeds the Commonwealth jurisdiction
   AFTER migrations run, so any migration that requires the
   jurisdiction (e.g. `034`, `035`, `036`, `037`) short-circuits in

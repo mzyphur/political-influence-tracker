@@ -1,5 +1,95 @@
 # Build Log
 
+## 2026-05-01 (Batch J — postcode crosswalk expansion: 191 → 448 rows / 123 → 127 electorates)
+
+Three staged bulk-fetch PRs landed against the live AEC Electorate
+Finder, all sourced from the CC0 national seed at
+`data/seeds/aec_postcode_search_seed_full.txt` (Matthew Proctor's
+public-domain dataset). Each PR built a fresh residential-sample
+seed under `/tmp` that excluded already-fetched postcodes plus the
+prior PRs' picks, so no postcode was re-fetched within Batch J. No
+project source file changed; the work is documentation + live data.
+
+- **J #1: 195-postcode QLD/SA/WA/TAS focus run.** Picked every 20th
+  postcode in 4xxx-7xxx residential ranges (49 each from QLD / SA /
+  WA / TAS, balanced) — the under-served quadrant after Batch I,
+  whose awk filter drained head-of-list quickly through 2xxx/3xxx
+  before reaching 5xxx-7xxx. Live results: **+65
+  postcode_electorate_crosswalk rows** (191 → 256), 63 postcodes
+  resolved, 5 ambiguous-postcode candidates, 4 unresolved postcode
+  candidates, 4 skipped (no electorate match). 117 of 195 postcodes
+  silent-skipped (60%) — the CC0 dataset includes business / large-
+  volume-recipient codes the AEC finder doesn't return localities
+  for, especially in regional ranges. State coverage shift:
+  NSW 82 / VIC 71 / QLD 12 → 33 / WA 6 → 32 / SA 3 → 16 / TAS 4 → 9
+  / ACT 6 / NT 5.
+- **J #2: 208-postcode balanced 2xxx-7xxx run.** Took every 30th in
+  2xxx/3xxx (~30 picks each) and every 25th in 4xxx-7xxx (~37 picks
+  each), excluding already-fetched and PR-1 picks. Live results:
+  **+98 crosswalk rows** (256 → 354), 87 postcodes resolved, 13
+  ambiguous-postcode candidates, 13 unresolved postcode candidates,
+  13 skipped. 82 of 208 postcodes silent-skipped (39%) — meaningfully
+  lower than PR 1 because 2xxx/3xxx postcodes are more densely
+  residential. State coverage shift: NSW 82 → 105 (no new
+  electorates) / VIC 71 → 95 / QLD 33 → 53 / WA 32 → 42 / SA 16 →
+  27 / TAS 9 → 15.
+- **J #3: 211-postcode broader 2xxx-7xxx run.** Same shape as PR 2
+  with a fresh exclusion set (excluded already-fetched + PR 1 picks
+  + PR 2 picks). Live results: **+94 crosswalk rows** (354 → 448),
+  87 postcodes resolved, 16 ambiguous-postcode candidates, 15
+  unresolved postcode candidates, 15 skipped. 78 of 211 silent-
+  skipped (37%). **+4 distinct electorates** (123 → 127 — QLD +2,
+  WA +1, SA +1). Final per-state coverage: NSW 121 rows / 37
+  electorates, VIC 114 / 31, QLD 73 / 27, WA 64 / 12, SA 40 / 9,
+  TAS 19 / 5, ACT 6 / 3, NT 5 / 2. **127 / 150 federal House seats
+  have at least one postcode entry (84.7%)**.
+
+**Cumulative Batch J shape:**
+
+- Postcodes seeded across the three PRs: 195 + 208 + 211 = **614
+  unique residential-sample postcodes**, zero overlap across PRs.
+- Postcodes resolved into crosswalk rows: 63 + 87 + 87 = **237** (some
+  multi-electorate postcodes contributed multiple crosswalk rows).
+- Crosswalk-row growth: 191 → 448 (**+257 rows, +135%**).
+- Distinct postcodes in crosswalk: 171 → 404 (**+233**).
+- Distinct electorates in crosswalk: 123 → **127** (+4).
+- Unresolved postcode candidates retained as auditable observations:
+  35 → 67.
+
+**Notes for the next batch operator:**
+
+- The CC0 dataset has **no postcodes with leading zeros** — Matthew
+  Proctor's CSV stores postcodes as integers, so 0200-0299 (ACT
+  residential) and 0800-0899 (NT residential) are not in
+  `data/seeds/aec_postcode_search_seed_full.txt`. The Batch I run's
+  awk filter included those ranges but matched zero rows, which is
+  why ACT/NT coverage is stuck at 6 / 5 rows respectively. Whoever
+  expands ACT/NT coverage will need a different seed source (data.gov.au
+  POA or AEC's own electorate boundary intersections), AND it must
+  be re-licensed for public redistribution.
+- Silent-skip rate is the dominant operational signal. The CC0
+  dataset includes business / large-volume-recipient codes the AEC
+  finder doesn't have data for; these silently exit the script with
+  a non-zero `postcodes_refreshed` count but zero loader output. PR 1
+  hit a 60% silent-skip rate on the 4xxx-7xxx bands; PR 2 + PR 3 hit
+  ~37% on broader 2xxx-7xxx bands. Don't try to fix this by tightening
+  the seed without ground-truth data on which 4-digit codes are
+  actual residential postcodes — the silent skips are the cost of
+  using the comprehensive CC0 list rather than a curated one.
+- 127 / 150 House-seat electorate coverage is the load-bearing
+  metric for the public postcode-search UI. Batch J added 4 new
+  electorates; further postcode batches will yield diminishing
+  returns on electorate count (most additional postcodes will land
+  in already-covered electorates). The 23 missing electorates are
+  likely fragmented inner-metro Sydney/Melbourne, plus remote
+  regional electorates where AEC's finder data is sparse.
+- Batch J did not change any project source file. No new tests,
+  no new migrations, no schema changes. This is a pure data-
+  expansion batch.
+
+358/358 backend pytest pass. ruff clean. frontend production build
+clean. Direct-money invariant test still passes.
+
 ## 2026-05-01 (Batch I — last-mile licence verbatim + 200-postcode bulk fetch + exception-request letters)
 
 Five PRs landed:

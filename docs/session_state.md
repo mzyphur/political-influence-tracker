@@ -5,8 +5,9 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-04-30** (end of Batch D #1 — live AEC Register
-pipeline run + verification landed in three commits).
+Last updated: **2026-05-01** (end of Batch J — three staged postcode
+crosswalk expansion runs lifted live coverage from 191 to 448
+crosswalk rows / 127 federal House electorates).
 
 ## Current state
 
@@ -87,6 +88,32 @@ pipeline run + verification landed in three commits).
   (the actual bulk fetch is intentionally a maintainer decision, not
   an agent run). 356/356 backend pytest green. ruff clean. frontend
   build clean.
+- **Batch J — postcode crosswalk expansion** (no new source-file
+  changes; pure live-data round; commits TBD this batch):
+  - **J #1**: 195-postcode QLD/SA/WA/TAS focus run (every 20th
+    in 4xxx-7xxx, balanced ~49 per state). +65 crosswalk rows
+    (191 → 256). Per-state shift NSW 82/VIC 71/QLD 12 → 33/WA 6 → 32/
+    SA 3 → 16/TAS 4 → 9/ACT 6/NT 5.
+  - **J #2**: 208-postcode balanced 2xxx-7xxx run (every 30th in
+    2xxx/3xxx, every 25th in 4xxx-7xxx, excluding already-fetched
+    and PR-1 picks). +98 crosswalk rows (256 → 354).
+  - **J #3**: 211-postcode broader 2xxx-7xxx run (same shape as PR 2,
+    fresh exclusion set). +94 crosswalk rows (354 → **448**); +4
+    distinct electorates (123 → **127**: 84.7% of federal House
+    seats). Final per-state: NSW 121/37, VIC 114/31, QLD 73/27,
+    WA 64/12, SA 40/9, TAS 19/5, ACT 6/3, NT 5/2.
+  - Cumulative: **614 unique postcodes seeded across the three PRs,
+    zero overlap, 257 new crosswalk rows, 4 new electorates surfaced**.
+    Silent-skip rate ranged 37% to 60% per PR — the cost of using the
+    comprehensive CC0 list (Matthew Proctor) rather than a curated
+    list. Documented in `docs/build_log.md`.
+  - **Known gap recorded for the next operator**: the CC0 source
+    has no leading-zero postcodes (0200-0299 ACT and 0800-0899 NT
+    residential). ACT and NT coverage is stuck at 6 / 5 rows
+    respectively. Expanding those would require a different seed
+    source (data.gov.au POA or AEC's own electorate boundary
+    intersections), under a redistribution-cleared licence.
+
 - **Batch I — last-mile licence verbatim + 200-postcode bulk fetch +
   exception-request letters** (commits TBD this batch):
   - **I #1**: Australia Post canonical product page verbatim
@@ -448,10 +475,10 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: Batches D + E + F + G + H + I are closed; next-step menu
+## When you start: Batches D + E + F + G + H + I + J are closed; next-step menu
 
 The federal-launch path is structurally complete. Live data state at
-end of Batch G:
+end of Batch J:
 
 - 314,040 non-rejected `influence_event` rows; $13.48B reported total.
 - 318 `person`, 150 federal House `electorate` rows.
@@ -460,8 +487,12 @@ end of Batch G:
   Canberra).
 - **0 `unresolved_no_match`** in either `associatedentity` or
   `politicalparty` register observations.
-- **51 `postcode_electorate_crosswalk` rows** from a 48-postcode seed
-  (was 9 from the bootstrap 8-postcode seed).
+- **448 `postcode_electorate_crosswalk` rows** (was 191 at end of
+  Batch I) covering **404 distinct postcodes** across **127 of 150
+  federal House seats (84.7%)**. Per-state distribution:
+  NSW 121 rows / 37 electorates, VIC 114 / 31, QLD 73 / 27, WA 64 / 12,
+  SA 40 / 9, TAS 19 / 5, ACT 6 / 3, NT 5 / 2. **67 unresolved postcode
+  candidates** retained as auditable observations.
 - 358/358 backend pytest pass. ruff clean. frontend production build
   clean. Direct-money invariant test still passes.
 
@@ -476,15 +507,23 @@ read this:
    blocker; AEC GIS is mostly seeking written confirmation that
    the project's use sits within the existing "Derivative Product"
    permission. Land both before public launch.
-2. **Stage further postcode batches** as needed. Batch I #2 lifted
-   to 191 crosswalk rows / 35 unresolved candidates from a 200-
-   postcode residential-sample run. The CC0 national seed at
-   `data/seeds/aec_postcode_search_seed_full.txt` has 8957 postcodes
-   total (most are PO Box / large-volume-recipient codes that AEC's
-   finder returns no localities for; build a residential-sample
-   seed if you want diverse coverage). Recommend running 2-3 more
-   residential-range batches before public launch to push toward
-   800-1000 crosswalk rows.
+2. **Postcode batches — Batch J completed three more staged runs**
+   lifting to 448 crosswalk rows / 404 distinct postcodes / 127
+   federal House electorates (84.7% seat coverage). Further
+   residential-sample batches would push the row count higher but
+   yield diminishing returns on electorate count — 23 missing
+   electorates are likely fragmented inner-metro Sydney/Melbourne
+   plus remote regional electorates where AEC's finder data is
+   sparse. ACT (0200-0299) and NT (0800-0899) residential ranges
+   are entirely absent from the CC0 source (Matthew Proctor's
+   dataset stores postcodes as integers, no leading zeros);
+   expanding those requires a different seed source (data.gov.au
+   POA or AEC's own electorate boundary intersections) under a
+   redistribution-cleared licence. The CC0 seed at
+   `data/seeds/aec_postcode_search_seed_full.txt` has ~6000
+   residential candidates remaining (after Batch I + Batch J
+   excluded ~614 of them); each ~200-postcode batch lifts crosswalk
+   rows by ~75-100 with a 35-60% silent-skip rate.
 3. **Methodology page permalink upgrade.** `git remote -v` shows
    no public mirror yet. When the project publishes to GitHub /
    GitLab / Sourcehut, set `METHODOLOGY_REPO_URL` in the build
