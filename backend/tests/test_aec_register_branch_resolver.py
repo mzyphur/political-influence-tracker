@@ -51,8 +51,21 @@ def deduped_directory() -> PartyDirectory:
 
 @pytest.fixture
 def duplicate_alp_directory() -> PartyDirectory:
-    """Mirrors the live local DB which has multiple ALP rows; the resolver
-    must fail closed on this rather than auto-pick one."""
+    """Synthetic directory that simulates two ALP rows with the same
+    canonical name in the SAME jurisdiction. The resolver must fail
+    closed on this rather than auto-pick one — even with source-
+    jurisdiction disambiguation, ambiguity within a single jurisdiction
+    is unresolvable.
+
+    Note: the previous version of this fixture mirrored the live local
+    DB's pre-`034_consolidate_federal_party_duplicates` state (id=1351
+    federal long-form + id=152936 QLD short-form). After migration 034
+    consolidated short/long-form federal pairs and the resolver gained
+    the source-jurisdiction disambiguation rule, this fixture is now a
+    deliberately-constructed adversarial case rather than a live mirror.
+    The `federal_vs_state_duplicate_alp_directory` fixture below covers
+    the live federal-vs-state case that disambiguation can break.
+    """
     return PartyDirectory.from_rows(
         [
             (1, "ALP", "ALP"),

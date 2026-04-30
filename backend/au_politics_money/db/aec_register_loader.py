@@ -92,20 +92,35 @@ def _commonwealth_jurisdiction_id(conn) -> int | None:
     federal id. Returns `None` if the jurisdiction is not present, in
     which case the resolver simply skips its source-jurisdiction
     disambiguation step (and continues to fail closed on multi-match).
+
+    Raises `ValueError` if the seed accidentally registered MORE than one
+    row that matches the federal-Commonwealth pattern. Failing loud is
+    safer than silently picking the lower id and quietly biasing every
+    AEC-Register-derived link toward an arbitrary jurisdiction.
     """
     with conn.cursor() as cur:
         cur.execute(
             """
-            SELECT id
+            SELECT id, code, name
             FROM jurisdiction
             WHERE level = 'federal'
               AND (code = 'CWLTH' OR LOWER(name) = 'commonwealth')
             ORDER BY id
-            LIMIT 1
             """
         )
-        row = cur.fetchone()
-    return int(row[0]) if row else None
+        rows = cur.fetchall()
+    if not rows:
+        return None
+    if len(rows) > 1:
+        # Multiple federal-Commonwealth rows would silently bias every
+        # link the loader creates; refuse to guess.
+        raise ValueError(
+            "Multiple jurisdiction rows match the federal-Commonwealth "
+            "pattern (level='federal' AND (code='CWLTH' OR "
+            "LOWER(name)='commonwealth')); refusing to guess which one to "
+            f"use for AEC Register source-jurisdiction disambiguation. Rows: {rows!r}"
+        )
+    return int(rows[0][0])
 
 
 def _now() -> datetime:

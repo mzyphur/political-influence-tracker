@@ -5,8 +5,8 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-05-01** (end of Batch C — AEC Register of Entities
-ingestion landed in three commits).
+Last updated: **2026-04-30** (end of Batch D #1 — live AEC Register
+pipeline run + verification landed in three commits).
 
 ## Current state
 
@@ -25,8 +25,21 @@ ingestion landed in three commits).
 - **Batch C — AEC Register of Entities ingestion** (commits `b9978b7`,
   `ba479c6`, `1e1fe0d`): three PRs for fetch + raw archive + CLI + tests,
   schema 033 + deterministic branch resolver + loader + integration tests,
-  pipeline integration + `load_processed_artifacts` wiring + docs. Full
-  backend pytest 306/306 green. ruff clean. frontend build clean.
+  pipeline integration + `load_processed_artifacts` wiring + docs.
+- **Batch D #1 — live AEC Register pipeline run + verification**
+  (commits `901c5c1`, `ef8342f`, `56f1928`): fetcher metadata fix
+  (`body_path`/`final_url`/`content_type`); deterministic source-
+  jurisdiction disambiguation rule (`source_jurisdiction_disambiguation_v1`)
+  in the resolver, with 7 new unit tests; one-shot data-fix migration
+  `034_consolidate_federal_party_duplicates.sql` consolidating 8 federal-
+  jurisdiction short/long-form duplicate pairs into single canonical
+  rows. Live load now produces 87 unique reviewed `party_entity_link`
+  rows (86 → ALP id=1, 1 → AG id=136), and `party_exposure_summary`
+  surfaces non-empty for current ALP MPs (event_count 4,291,
+  party-context total $310M, equal-share modelled per current rep
+  ~$2.53M, denominator 123). Direct-money invariant unchanged
+  (314,040 events / $13.48B). 313/313 backend pytest green. ruff clean.
+  frontend build clean.
 
 ## What's next: Batch D — pre-launch readiness
 

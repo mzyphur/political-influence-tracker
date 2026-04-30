@@ -627,3 +627,174 @@ def test_loader_does_not_change_direct_representative_money_totals(
         "AEC Register loader changed direct-representative money totals; "
         "this would silently leak party-mediated context into direct receipts."
     )
+
+
+def _seed_qld_alp_party(conn) -> int:
+    """Add a second `Australian Labor Party` row in the QLD state
+    jurisdiction. Returns the new id.
+
+    This mirrors the live local DB state where state-level QLD ECQ
+    ingestion legitimately creates a separate ALP row in the state
+    jurisdiction. The federal-jurisdiction Commonwealth row from
+    `_seed_canonical_alp_party` continues to coexist.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id FROM jurisdiction
+            WHERE level = 'state' AND (code = 'QLD' OR LOWER(name) = 'queensland')
+            """
+        )
+        row = cur.fetchone()
+        if row is None:
+            cur.execute(
+                """
+                INSERT INTO jurisdiction (name, level, code)
+                VALUES ('Queensland', 'state', 'QLD')
+                RETURNING id
+                """
+            )
+            jurisdiction_id = int(cur.fetchone()[0])
+        else:
+            jurisdiction_id = int(row[0])
+        cur.execute(
+            """
+            SELECT id FROM party
+            WHERE name = 'Australian Labor Party'
+              AND jurisdiction_id = %s
+            """,
+            (jurisdiction_id,),
+        )
+        existing = cur.fetchone()
+        if existing:
+            return int(existing[0])
+        cur.execute(
+            """
+            INSERT INTO party (name, short_name, jurisdiction_id)
+            VALUES ('Australian Labor Party', 'ALP', %s)
+            RETURNING id
+            """,
+            (jurisdiction_id,),
+        )
+        return int(cur.fetchone()[0])
+
+
+def test_get_or_create_party_preserves_curated_short_name_post_dedup(
+    integration_db: IntegrationDatabase,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """Regression test for the federal-jurisdiction party-row consolidation
+    introduced in migration `034_consolidate_federal_party_duplicates`.
+
+    Post-migration, the canonical ALP row has `name='Australian Labor
+    Party'` and `short_name='ALP'`. The federal roster / TVFY ingestors
+    call `get_or_create_party('Australian Labor Party', cwlth_id)` on
+    every run, which must NOT clobber the curated `short_name`. Without
+    the COALESCE guard on the ON CONFLICT clause, the long-form name
+    would silently overwrite the short-form code on every pipeline run,
+    breaking every consumer that filters by `short_name='ALP'`.
+    """
+    from au_politics_money.db.load import get_or_create_party
+
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM jurisdiction WHERE code = 'CWLTH'"
+            )
+            cwlth_id = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                INSERT INTO party (name, short_name, jurisdiction_id)
+                VALUES ('Curated Test Party Long Name', 'CTPLN', %s)
+                ON CONFLICT (name, jurisdiction_id) DO UPDATE SET
+                    short_name = EXCLUDED.short_name
+                RETURNING id
+                """,
+                (cwlth_id,),
+            )
+            curated_id = int(cur.fetchone()[0])
+            conn.commit()
+
+            # Simulate the pipeline running again with only the long-form
+            # name available, exactly as the federal roster ingestor does.
+            same_id = get_or_create_party(
+                conn, "Curated Test Party Long Name", cwlth_id
+            )
+            assert same_id == curated_id, (
+                "get_or_create_party must hit the existing row by "
+                "(name, jurisdiction_id), not insert a new one."
+            )
+            conn.commit()
+
+            cur.execute(
+                "SELECT short_name FROM party WHERE id = %s",
+                (curated_id,),
+            )
+            short_name_after = cur.fetchone()[0]
+
+    assert short_name_after == "CTPLN", (
+        "get_or_create_party clobbered the curated short_name "
+        f"({short_name_after!r}); the COALESCE guard on the ON CONFLICT "
+        "clause is missing or broken. Without it, every pipeline run "
+        "would silently break short_name-driven UI filters."
+    )
+
+
+def test_source_jurisdiction_disambiguates_federal_vs_state_alp_rows(
+    integration_db: IntegrationDatabase,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """End-to-end check that the loader's source-jurisdiction
+    disambiguation correctly picks the federal-jurisdiction ALP row when
+    both a federal-jurisdiction and a state-jurisdiction
+    `Australian Labor Party` row exist with the same canonical name.
+    Mirrors the live local DB state where QLD ECQ ingestion creates a
+    parallel state-jurisdiction ALP row.
+    """
+    with connect(integration_db.url) as conn:
+        federal_alp_id = _seed_canonical_alp_party(conn)
+        qld_alp_id = _seed_qld_alp_party(conn)
+        assert federal_alp_id != qld_alp_id, (
+            "Test must seed two distinct ALP rows in different jurisdictions"
+        )
+        conn.commit()
+        jsonl_path, summary_path = _write_artefacts(
+            tmp_path,
+            "associatedentity",
+            [
+                {
+                    "ClientIdentifier": "70042",
+                    "ClientName": "Fixture Disambiguation Holdings Pty Ltd",
+                    "AssociatedParties": "Australian Labor Party (NSW Branch); ",
+                }
+            ],
+            timestamp="20260430T030000Z",
+        )
+        result = load_aec_register_of_entities(
+            conn,
+            client_type="associatedentity",
+            jsonl_path=jsonl_path,
+            summary_path=summary_path,
+        )
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT party_id, review_status, method, reviewer
+                FROM party_entity_link
+                WHERE reviewer = %s
+                  AND review_status = 'reviewed'
+                  AND method = 'official'
+                """,
+                (SYSTEM_REVIEWER,),
+            )
+            links = cur.fetchall()
+
+    assert result["reviewed_party_entity_links_upserted"] >= 1, (
+        "Loader should have created at least one reviewed link via the "
+        "federal-jurisdiction ALP row."
+    )
+    assert links, "No reviewed links were created"
+    assert all(link[0] == federal_alp_id for link in links), (
+        f"Reviewed links must point to the federal-jurisdiction ALP row "
+        f"(id={federal_alp_id}); got {links}"
+    )

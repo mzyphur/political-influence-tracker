@@ -998,6 +998,23 @@ def get_or_create_jurisdiction(conn, name: str, level: str, code: str) -> int:
 
 
 def get_or_create_party(conn, name: str, jurisdiction_id: int) -> int | None:
+    """Get or create a `party` row by `(name, jurisdiction_id)`.
+
+    Callers (federal roster ingestion, TVFY ingestion, etc.) only have the
+    long-form display name available, so they pass it as both the `name`
+    and the `short_name`. The short_name is only used as a fallback when
+    the row is being created for the first time and no other ingestion
+    path has supplied a more meaningful short form.
+
+    On conflict the EXISTING `short_name` is **preserved** unless it is
+    NULL, in which case it is filled with the supplied value. This stops
+    later pipeline runs from clobbering deliberately-curated short_names
+    such as the post-`034_consolidate_federal_party_duplicates` state
+    where `id=1` has `name='Australian Labor Party'` and
+    `short_name='ALP'` — without this guard the next federal roster run
+    would overwrite `short_name='ALP'` with `short_name='Australian
+    Labor Party'`.
+    """
     if not name:
         return None
     with conn.cursor() as cur:
@@ -1005,7 +1022,8 @@ def get_or_create_party(conn, name: str, jurisdiction_id: int) -> int | None:
             """
             INSERT INTO party (name, short_name, jurisdiction_id)
             VALUES (%s, %s, %s)
-            ON CONFLICT (name, jurisdiction_id) DO UPDATE SET short_name = EXCLUDED.short_name
+            ON CONFLICT (name, jurisdiction_id) DO UPDATE SET
+                short_name = COALESCE(party.short_name, EXCLUDED.short_name)
             RETURNING id
             """,
             (name, name, jurisdiction_id),
