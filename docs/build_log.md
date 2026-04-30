@@ -1,5 +1,67 @@
 # Build Log
 
+## 2026-04-30 (Batch H — direct-fetch licence verbatim + CC0 postcode seed + is_personality_vehicle API surface)
+
+Three PRs landed (`2c6946f`, `c787130`, `e3a8803`):
+
+- **H #1 — direct-fetch licence verbatim (`2c6946f`).** Replaced the
+  search-confirmed wording in `docs/source_licences.md` with verbatim
+  text fetched directly from each publisher's licence page on
+  2026-04-30. Eight of ten sources now carry verbatim direct-fetch
+  wording (AEC website, AEC GIS, APH, ABS, TVFY, MapTiler ×2, OSM,
+  Natural Earth). AIMS Australian Coastline 50K verbatim string from
+  data.gov.au is literally **"Licence Not Specified"** — status
+  downgraded from needs-follow-up to **blocked** for public
+  redistribution; substitute with Natural Earth coastline (public
+  domain). The eAtlas companion of AIMS returned HTTP 403; the
+  Australia Post licensing-arrangements URL resolved to a 404 (the
+  page appears to have been moved/JS-rendered). Both flagged as
+  not-yet-verbatim with explicit follow-ups for a maintainer with a
+  browser. APH's current Creative Commons deed is now confirmed as
+  **CC BY-NC-ND 4.0 International** (the search-only round had recorded
+  3.0 AU; NC-ND restrictions are still load-bearing either way). AEC
+  GIS direct-fetch is **friendlier** than the search-only round
+  suggested — derivative products ARE permitted with attribution. The
+  project-level "Implications" block updated accordingly.
+- **H #2 — CC0 comprehensive postcode seed (`c787130`).** New
+  `scripts/build_postcode_seed_from_cc0.sh` downloads Matthew
+  Proctor's `matthewproctor/australianpostcodes` GitHub dataset
+  (Public Domain / CC0), archives the source CSV with SHA-256, and
+  writes a deduplicated 4-digit-postcode list (8957 unique postcodes)
+  to `data/seeds/aec_postcode_search_seed_full.txt`. The default
+  pipeline seed at `data/seeds/aec_postcode_search_seed.txt` stays at
+  the curated 48-postcode v2 list to respect AEC endpoint etiquette
+  during routine runs. `docs/data_sources.md` gains a "Postcode Seed
+  (Comprehensive)" section explaining the source choice (NOT
+  Australia Post — blocked) + the staged-bulk-fetch operational
+  recommendation.
+- **H #3 — `is_personality_vehicle` wired through API + frontend
+  (`e3a8803`).** Closes the inert-flag gap reviewer-flagged in
+  Batch G #2. `_representative_party_exposure_summary` now selects
+  `party.metadata->>'is_personality_vehicle'` and
+  `party.metadata->>'affiliated_person_hint'` and propagates both
+  through the response payload. `RepresentativePartyExposureSummary`
+  TypeScript type updated. `DetailsPanel.tsx` renders personality-
+  vehicle rows with a "personal electoral vehicle" suffix in the
+  label and a chip in the detail line: "personal electoral vehicle
+  for <name> — not an ideological federal party" when an
+  affiliated_person_hint is present. The Batch G #2 regression test
+  is upgraded from a blanket "no office_term may reference these
+  rows" assertion to an end-to-end API surface assertion: seeds a
+  personality-vehicle party + office_term + recipient-side
+  influence_event + reviewed party_entity_link, then asserts the API
+  returns `is_personality_vehicle=True` and the affiliated_person_hint
+  string. Locks the wiring end-to-end (party metadata → SQL
+  projection → API response shape → frontend chip).
+- **Permission allowlist** (`.claude/settings.local.json` —
+  gitignored) broadens WebFetch / WebSearch / curl / make / npm allow
+  rules so future runs skip the per-URL permission gate. This file is
+  intentionally NOT committed (it's local-only per the existing
+  `.claude/` gitignore rule).
+
+358/358 backend pytest pass. ruff clean. frontend production build
+clean. Direct-money invariant test still passes.
+
 ## 2026-04-30 (Batch G — licence capture + permalink env-var + candidate-vehicle seed + postcode parser fix + v2 seed + sub-national plan)
 
 Seven changes landed:

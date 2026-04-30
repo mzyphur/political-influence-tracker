@@ -87,6 +87,34 @@ pipeline run + verification landed in three commits).
   (the actual bulk fetch is intentionally a maintainer decision, not
   an agent run). 356/356 backend pytest green. ruff clean. frontend
   build clean.
+- **Batch H — direct-fetch licence verbatim + CC0 postcode seed +
+  is_personality_vehicle API surface** (commits `2c6946f`, `c787130`,
+  `e3a8803`):
+  - **H #1**: verbatim direct-fetch verification of
+    `docs/source_licences.md` for 8 of 10 sources. AIMS Coastline 50K
+    verbatim "Licence Not Specified" → **blocked** for public
+    redistribution. APH confirmed CC BY-NC-ND 4.0 International
+    (prior round had said 3.0 AU). AEC GIS verbatim review is
+    friendlier than search-only suggested (derivative products
+    permitted with attribution). Australia Post URL 404'd; eAtlas
+    AIMS companion 403'd; both flagged for browser-based maintainer
+    re-fetch.
+  - **H #2**: `scripts/build_postcode_seed_from_cc0.sh` builds a
+    9000-postcode national seed (`aec_postcode_search_seed_full.txt`)
+    from Matthew Proctor's CC0 dataset; default pipeline seed stays
+    at 48 postcodes for AEC endpoint etiquette.
+    `docs/data_sources.md` records the CC0 source choice + staged
+    bulk-fetch recommendation.
+  - **H #3**: `is_personality_vehicle` wired through
+    `_representative_party_exposure_summary` + `RepresentativePartyExposureSummary`
+    type + `DetailsPanel.tsx` chip ("personal electoral vehicle for
+    <name> — not an ideological federal party"). Regression test
+    upgraded from blanket "no office_term may reference" assertion to
+    end-to-end API-surface assertion. 358/358 pytest pass. Frontend
+    build clean.
+  - **Permission allowlist** (`.claude/settings.local.json` —
+    gitignored) broadens WebFetch / WebSearch / curl / make / npm
+    allow rules so future runs skip the per-URL gate.
 - **Batch G — licence capture + permalink env-var + candidate-vehicle
   seed + postcode parser fix + v2 seed + sub-national plan** (commits
   `27db774`, `afe9c8d`, `e32fb6a`, `b862e76`, `df0edaa`):
@@ -394,7 +422,7 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: Batches D + E + F + G are closed; next-step menu
+## When you start: Batches D + E + F + G + H are closed; next-step menu
 
 The federal-launch path is structurally complete. Live data state at
 end of Batch G:
@@ -414,44 +442,36 @@ end of Batch G:
 Pick whichever item below is highest empirical value at the time you
 read this:
 
-1. **Maintainer follow-ups on `docs/source_licences.md`.** Batch G #3
-   landed the doc but every entry is search-confirmed, not directly
-   page-fetched. Before any public data release: open each
-   `Verified at` URL, replace the licence/attribution wording with
-   verbatim text, and re-stamp the date. The blocker priority is APH
-   (CC BY-NC-ND 3.0 AU — derivative restriction) and AEC GIS (Limited
-   End-user Licence). AIMS Coastline 50K terms are still
-   "Not Specified" upstream.
-2. **Wire `is_personality_vehicle` through the API surface.** Batch G
-   #2 added the metadata flag and a regression test, but the flag is
-   currently inert — no API or frontend consumer reads it. Adding
-   `is_personality_vehicle` to the `_representative_party_exposure_summary`
-   response shape and the `party_breakdown` JSON, plus a frontend
-   chip on personality-vehicle rows, would let the regression test
-   relax its blanket "no office_term may reference these rows"
-   stance.
-3. **Run the full ~3000-postcode national seed expansion.** Batch G
-   #4 expanded the seed from 8 to 48 postcodes; the wrapper at
-   `scripts/expand_postcode_seed.sh` is ready for a larger run. The
-   maintainer chooses the source list — `docs/source_licences.md`
-   notes that **Australia Post's free CSV is BLOCKED** for this
-   purpose; use a CC0 community list (e.g. Matthew Proctor's
-   Australian-postcodes on GitHub) or ABS POA boundaries instead,
-   and document the source choice in `docs/data_sources.md` before
-   running.
-4. **Methodology page permalink upgrade.** Batch G #1 added optional
+1. **Maintainer browser-fetch round on the two licence stragglers.**
+   Batch H direct-fetched 8 of 10 sources verbatim. The two that
+   still need a maintainer with a real browser:
+   - **AIMS Coastline 50K** — eAtlas companion page returned HTTP 403
+     in the curl/WebFetch round. data.gov.au record IS verbatim
+     ("Licence Not Specified") — already captured. eAtlas may have
+     additional context worth reading directly.
+   - **Australia Post** — `/about-us/about-our-site/our-licensing-arrangements`
+     URL resolves to a 404; the page appears to have been moved or
+     made JS-rendered only. Find the new canonical URL and verbatim
+     the licensing terms before any public release that mentions
+     Australia Post.
+2. **Run the staged ~9000-postcode bulk fetch** when ready. Batch H
+   #2 landed `data/seeds/aec_postcode_search_seed_full.txt` (CC0
+   sourced) + `make expand-postcode-seed` wrapper. Stage in 100-300
+   postcode batches via `EXPAND_POSTCODE_SEED_FLAGS=--max-postcodes=200`.
+3. **Methodology page permalink upgrade.** Batch G #1 added optional
    `METHODOLOGY_REPO_URL` env-var support. When the project gets a
-   public git mirror, set this in the build environment and the
-   marker becomes a clickable `commit/<sha>` link.
+   public git mirror, set this in the build environment.
+4. **APH / AEC-GIS public-redistribution exception requests.** APH
+   CC BY-NC-ND 4.0 blocks parsed register-of-interests JSON for
+   public redistribution; AEC GIS Limited End-user Licence permits
+   derivative products with attribution but warrants explicit
+   confirmation for public hosting. Land written exceptions / clarity
+   from each agency before public launch.
 5. **Sub-national party seeds rollout.** Plan documented in
-   `docs/sub_national_party_seeds_plan.md`. Three-part PR shape (seed
-   migration + resolver dual-call + API jurisdiction filter). QLD is
-   the first target. Out of scope until federal launch lands and the
-   state/local rollout begins.
+   `docs/sub_national_party_seeds_plan.md`. Three-part PR shape.
+   QLD first. Out of scope until federal launch.
 6. **State/local expansion** (NSW/VIC after QLD) — DEFERRED until
-   after federal launch per the dev's standing direction. Do not
-   let state/local work delay the May 2026 federal release unless
-   it exposes a reusable data-model flaw.
+   after federal launch per the dev's standing direction.
 
 Operating constraints below still apply.
 

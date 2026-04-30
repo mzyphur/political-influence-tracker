@@ -30,7 +30,7 @@ You are continuing work on the Australian Political Influence Transparency proje
 
 Build a reproducible, source-backed Australian political influence transparency app, federal-first, that NEVER conflates direct disclosed person-level money with campaign-support records, party-mediated party/entity context, or modelled allocation. Every public claim must travel with its evidence tier and attribution limit.
 
-## What just landed (Batches C + D + E + F + G — federal launch readiness)
+## What just landed (Batches C + D + E + F + G + H — federal launch readiness)
 
 **Live data state at end of Batch G (2026-04-30):**
 
@@ -56,16 +56,36 @@ Build a reproducible, source-backed Australian political influence transparency 
 - Federal vs state party rows: federal-jurisdiction short-form rows
   consolidated with their long-form pairs in migration 034. State-
   jurisdiction rows (e.g. QLD ALP id=152936) intentionally untouched.
-- `is_personality_vehicle` metadata flag added in migration 037 but
-  CURRENTLY INERT — no API or frontend consumer reads it. Regression
-  test fails closed if any office_term references a personality-
-  vehicle party row.
+- `is_personality_vehicle` flag is now wired end-to-end as of Batch H
+  #3. SQL projection in `_representative_party_exposure_summary` →
+  `RepresentativePartyExposureSummary` TypeScript type → DetailsPanel
+  chip "personal electoral vehicle for <name> — not an ideological
+  federal party". Regression test
+  `test_personality_vehicle_party_row_surfaces_flag_in_api` asserts the
+  end-to-end wiring, not just the metadata presence.
 - `METHODOLOGY_REPO_URL` env-var optionally wraps the methodology page
   revision marker in a `commit/<sha>` link. Off by default until a
   public mirror exists.
-- Source-licence terms documented in `docs/source_licences.md`. Three
-  blockers for public redistribution: APH (CC BY-NC-ND 3.0 AU), AEC
-  GIS (Limited End-user Licence), Australia Post (non-commercial only).
+- Source-licence terms in `docs/source_licences.md` are now
+  direct-fetch-verbatim for 8 of 10 sources (Batch H #1). Critical
+  blockers for public redistribution:
+  - **APH = CC BY-NC-ND 4.0 International** (parsed register-of-interests
+    JSON is a derivative work; needs written exception);
+  - **AEC GIS = Limited End-user Licence** (derivative products
+    permitted with attribution per direct-fetch — friendlier than
+    search-only round suggested, but still warrants written
+    confirmation for public hosting);
+  - **AIMS Coastline 50K = "Licence Not Specified" verbatim → blocked**
+    (substitute with Natural Earth public-domain coastline);
+  - **Australia Post = blocked, non-commercial reference only** (do
+    NOT use for public postcode lookup).
+- Comprehensive postcode seed comes from Matthew Proctor's CC0
+  GitHub dataset (Batch H #2), archived under
+  `data/raw/cc0_postcode_seed_source/` with SHA-256. Default
+  pipeline seed is the curated 48-postcode v2 list to respect AEC
+  endpoint etiquette; the 9000-postcode national list is at
+  `data/seeds/aec_postcode_search_seed_full.txt` for staged
+  maintainer runs.
 - Sub-national party seeds rollout designed in
   `docs/sub_national_party_seeds_plan.md` but DEFERRED until after
   federal launch + state/local rollout.
@@ -134,29 +154,31 @@ Build a reproducible, source-backed Australian political influence transparency 
 
 ## What's next (priority order)
 
-1. **Maintainer follow-ups on `docs/source_licences.md`.** Every
-   entry is search-confirmed, not directly page-fetched. Before any
-   public data release: open each `Verified at` URL, replace the
-   licence/attribution wording with verbatim text, and re-stamp the
-   date. Blocker priority is APH (NC-ND derivative restriction) and
-   AEC GIS (Limited End-user Licence).
-2. **Wire `is_personality_vehicle` through the API.** Currently inert
-   — adding it to `_representative_party_exposure_summary` and
-   `party_breakdown` JSON, plus a frontend chip, lets the regression
-   test relax its blanket "no office_term may reference these rows"
-   stance.
-3. **Run the full ~3000-postcode national seed expansion.** Wrapper
-   ready at `scripts/expand_postcode_seed.sh`. NOT Australia Post's
-   CSV (blocked per `docs/source_licences.md`) — use a CC0 community
-   list (e.g. Matthew Proctor's Australian-postcodes on GitHub) or
-   ABS POA boundaries. Document the source choice in
-   `docs/data_sources.md` before running.
-4. **User runs the Firefox visual smoke** per
-   `docs/batch_d3_firefox_smoke_checklist.md` if not already done
-   in-app.
-5. **Methodology permalink upgrade**: when a public git mirror
+1. **Maintainer browser-fetch on the two licence stragglers.** Batch
+   H direct-fetched 8 of 10 sources verbatim. The two that still need
+   a browser:
+   - **AIMS Coastline 50K eAtlas page** (HTTP 403 in curl/WebFetch
+     round). data.gov.au record verbatim already captured ("Licence
+     Not Specified" → blocked).
+   - **Australia Post licensing-arrangements URL** (404 — page moved
+     or JS-rendered only). Find the new canonical URL.
+2. **Run the staged ~9000-postcode bulk fetch** when ready. Use
+   `make expand-postcode-seed
+   SEED_FILE=data/seeds/aec_postcode_search_seed_full.txt
+   EXPAND_POSTCODE_SEED_FLAGS=--max-postcodes=200`. Stage in
+   100-300 postcode batches.
+3. **Methodology permalink upgrade**: when a public git mirror
    exists, set `METHODOLOGY_REPO_URL` in the build environment.
    Already wired by Batch G #1.
+4. **APH / AEC-GIS public-redistribution exception requests.** Both
+   sources have direct-fetch licence text now (Batch H #1). APH
+   CC BY-NC-ND 4.0 blocks parsed register-of-interests JSON for
+   public redistribution. AEC GIS direct-fetch is friendlier than
+   search-only suggested (derivatives permitted with attribution)
+   but still warrants written confirmation for public hosting.
+5. **User runs the Firefox visual smoke** per
+   `docs/batch_d3_firefox_smoke_checklist.md` if not already done
+   in-app.
 6. **Sub-national party seeds rollout** per
    `docs/sub_national_party_seeds_plan.md`. Three-part PR shape;
    QLD first; deferred behind state/local rollout.
