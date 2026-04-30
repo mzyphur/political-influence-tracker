@@ -1,5 +1,68 @@
 # Build Log
 
+## 2026-04-30 (Batch F — methodology auto-stamp + visual smoke + politicalparty long tail + postcode-expansion path)
+
+Four PRs landed:
+
+- **F #1: build-time methodology version + revision injection.** Replaced
+  the hand-edited `2026-04-30 / 3f40524` revision marker on
+  `frontend/public/methodology.html` with `<code data-methodology-
+  version-date>` and `<code data-methodology-version-sha>` placeholders.
+  New `frontend/scripts/sync-methodology-version.mjs` calls
+  `git rev-parse --short HEAD`, suffixes `-dirty` if the working tree
+  has uncommitted changes, and stamps both placeholders in place.
+  Wired into npm `predev` + `prebuild` so dev and build always carry
+  the actual current SHA (no more stale markers). Standalone
+  invocation as `npm run sync:methodology-version`.
+- **F #2: residual visual smoke via the in-app browser.** Confirmed
+  state-map mode (`State map beta`, 93 features, Algester selected,
+  state-map-layer caveat intact); council-map mode (`Council map beta`,
+  78 QLD-LOCAL features, Aurukun Shire selected, "are not treated as
+  personal receipts or representative-linked claims" caveat intact);
+  and the influence-graph panel (134 source-backed/reviewed/context
+  connections for Bean's MP, full claim-discipline subtitle, selected-
+  connection drawer with source URLs). All three panels rendered with
+  the project's strict "do not prove causation or improper conduct"
+  framing.
+- **F #3: politicalparty long-tail seed migration + 7 new alias
+  rules.** Migration `036_seed_additional_canonical_party_rows_v2.sql`
+  adds nine federal-jurisdiction canonical rows (Australian Federation
+  Party, Family First Party Australia, The Great Australian Party,
+  Better Together Party, Indigenous - Aboriginal Party of Australia,
+  Socialist Alliance, Sustainable Australia Party, Power 2 People,
+  Health Environment Accountability Rights Transparency). Each row
+  carries seed-source / date / rationale / attribution-caveat
+  metadata; idempotent on rerun. Resolver gained 7 new alias rules:
+  Greens parens-without-Branch + comma-form + unpunctuated-form, "The
+  Greens" short-form + Inc-suffix, Nationals state divisions with Inc
+  suffix, Australian Federation Party state suffixes, Libertarian
+  Party state branches, "Affordable Housing Now -" prefix for
+  Sustainable Australia Party, and the HEART parenthetical
+  short-form. 23 new resolver unit tests (14 alias-rule checks,
+  9 seeded-canonical-party exact checks). Live load post-PR drops
+  `politicalparty` `unresolved_no_match` from 31 to **4** (the
+  remaining 4 are deliberately-excluded candidate-vehicle / personality
+  registered names: "Dai Le & Frank Carbone W.S.C.", "Kim for Canberra",
+  "Tammy Tyrrell for Tasmania", "votefusion.org for big ideas").
+  Reviewed `party_entity_link` count unchanged at 147 (politicalparty
+  client_type doesn't auto-create links per the C-rule); the win is
+  cleaner audit trail.
+- **F #4: postcode seed expansion path.** New
+  `scripts/expand_postcode_seed.sh` wrapper feeds an arbitrary seed
+  file through the existing fetch → normalize → load chain with
+  `--max-postcodes=N` cap support. New `make expand-postcode-seed`
+  target documents the operational etiquette: a full ~3000-postcode
+  national seed should be a deliberate maintainer run, not part of the
+  weekly federal pipeline. The maintainer chooses the source list
+  (data.gov.au community-curated postcode CSV, ABS POA shapefile, or
+  Australia Post free-tier locality CSV) and documents the source
+  choice in `docs/data_sources.md` before running with a non-bootstrap
+  list. The actual ~3000-postcode bulk fetch is intentionally NOT run
+  in this batch — it's a maintainer decision, not an agent-run task.
+
+356/356 backend pytest pass (was 333 pre-Batch-F; +23 new). ruff clean.
+frontend production build clean.
+
 ## 2026-04-30 (Batch E — public reproducibility + visual smoke + perf + curated seed)
 
 Three PRs landed (`4409f6f`, `28ca462`, `a57fe19`) plus the live
