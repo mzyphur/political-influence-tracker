@@ -679,6 +679,110 @@ def _seed_qld_alp_party(conn) -> int:
         return int(cur.fetchone()[0])
 
 
+def test_no_office_term_references_personality_vehicle_party_row(
+    integration_db: IntegrationDatabase,  # noqa: F811
+) -> None:
+    """Regression guard for the candidate-vehicle / personality-registered-
+    name party seed (migration 037).
+
+    Migration 037 adds federal canonical `party` rows for "Dai Le & Frank
+    Carbone W.S.C.", "Kim for Canberra", "Tammy Tyrrell for Tasmania",
+    and "votefusion.org for big ideas" with explicit
+    `metadata->>'is_personality_vehicle' = 'true'` (or `false` for the
+    Fusion row) and `seed_source = 'schema/037_*.sql'`.
+
+    The C-rule requires that downstream loaders never silently link a
+    representative's `office_term.party_id` to one of these personality-
+    vehicle rows without explicit human review. If a future loader does
+    so without first adding a UI affordance that distinguishes
+    personality-vehicle parties from ideological ones, the API will
+    render e.g. "Dai Le & Frank Carbone W.S.C." next to that
+    representative's `party_exposure_summary` with no visible distinction
+    from ALP/LP — exactly the conflation the C-rule was written to
+    prevent.
+
+    This test fails closed if it spots ANY office_term row pointing at a
+    party seeded by migration 037, regardless of whether the
+    is_personality_vehicle flag is true or false. A maintainer who
+    legitimately wants to model a personality-vehicle's MP must update
+    this test in the same PR that wires the API flag through.
+    """
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            # Seed a personality-vehicle party row directly here. The
+            # `_seed_minimal_influence_graph` fixture creates the
+            # Commonwealth jurisdiction AFTER migrations run, so
+            # migration 037 short-circuits during fixture setup
+            # (it requires the jurisdiction to already exist). Doing the
+            # insert here makes the regression real for every CI run
+            # rather than skipping silently when the fixture order
+            # leaves the seed empty.
+            cur.execute(
+                "SELECT id FROM jurisdiction WHERE code = 'CWLTH'"
+            )
+            cwlth_id = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                INSERT INTO party (name, short_name, jurisdiction_id, metadata)
+                VALUES (
+                    'Pytest Personality Vehicle Party',
+                    'PYTEST-PV',
+                    %s,
+                    jsonb_build_object(
+                        'seed_source',
+                        'schema/037_seed_candidate_vehicle_party_rows.sql',
+                        'is_personality_vehicle', true
+                    )
+                )
+                RETURNING id
+                """,
+                (cwlth_id,),
+            )
+            personality_party_id = int(cur.fetchone()[0])
+            conn.commit()
+
+            cur.execute(
+                """
+                SELECT
+                    p.id,
+                    p.name,
+                    p.metadata->>'is_personality_vehicle'
+                        AS is_personality_vehicle,
+                    count(ot.id) AS office_term_count
+                FROM party p
+                LEFT JOIN office_term ot ON ot.party_id = p.id
+                WHERE p.metadata->>'seed_source' =
+                    'schema/037_seed_candidate_vehicle_party_rows.sql'
+                GROUP BY p.id, p.name, p.metadata
+                ORDER BY p.id
+                """
+            )
+            rows = cur.fetchall()
+
+    assert rows, (
+        "No personality-vehicle party rows were found, even after the "
+        "test's manual insert. Did the `seed_source` metadata key change?"
+    )
+    offending = [
+        (party_id, party_name, is_pv, count)
+        for party_id, party_name, is_pv, count in rows
+        if int(count or 0) > 0
+    ]
+    assert not offending, (
+        "office_term rows are linked to a personality-vehicle party row "
+        "seeded by migration 037 without a UI/API affordance to "
+        "distinguish personality-vehicle parties from ideological ones. "
+        f"Offending parties: {offending}. Either propagate "
+        "is_personality_vehicle through the API surface (see "
+        "queries.py:_representative_party_exposure_summary), or update "
+        "this test in the same PR that intentionally adds the link."
+    )
+    assert personality_party_id in {int(row[0]) for row in rows}, (
+        "Test's seeded personality-vehicle row is missing from the "
+        "post-insert query — there is a search_path / schema problem."
+    )
+
+
 def test_get_or_create_party_preserves_curated_short_name_post_dedup(
     integration_db: IntegrationDatabase,  # noqa: F811
     tmp_path: Path,
