@@ -30,7 +30,47 @@ You are continuing work on the Australian Political Influence Transparency proje
 
 Build a reproducible, source-backed Australian political influence transparency app, federal-first, that NEVER conflates direct disclosed person-level money with campaign-support records, party-mediated party/entity context, or modelled allocation. Every public claim must travel with its evidence tier and attribution limit.
 
-## What just landed (Batches C + D — federal launch readiness)
+## What just landed (Batches C + D + E + F + G — federal launch readiness)
+
+**Live data state at end of Batch G (2026-04-30):**
+
+- 314,040 non-rejected `influence_event` rows; $13.48B reported total.
+- 318 `person`, 150 federal House `electorate` rows.
+- **148 reviewed `party_entity_link` rows**, all sourced from the AEC
+  Register of Entities (89 ALP, 38 LP, 7 NATS, 6 LNP, 2 Australian
+  Citizens Party, 1 each → SFF / AG / CLP / AJP / Libertarian / Kim
+  for Canberra).
+- **0 `unresolved_no_match`** in either `associatedentity` or
+  `politicalparty` AEC Register observations.
+- **51 `postcode_electorate_crosswalk` rows** from a 48-postcode v2
+  seed (capital-city CBDs + 1-3 regional centres / second cities per
+  state-territory).
+- 358/358 backend pytest pass; ruff clean; frontend production build
+  clean. Direct-money invariant test still passes.
+
+**Key architectural decisions to preserve:**
+
+- Resolver is fully deterministic (no fuzzy similarity). Five resolution
+  stages: exact-name match → branch-alias rules → parenthetical
+  short-form alias → source-jurisdiction disambiguation → fail closed.
+- Federal vs state party rows: federal-jurisdiction short-form rows
+  consolidated with their long-form pairs in migration 034. State-
+  jurisdiction rows (e.g. QLD ALP id=152936) intentionally untouched.
+- `is_personality_vehicle` metadata flag added in migration 037 but
+  CURRENTLY INERT — no API or frontend consumer reads it. Regression
+  test fails closed if any office_term references a personality-
+  vehicle party row.
+- `METHODOLOGY_REPO_URL` env-var optionally wraps the methodology page
+  revision marker in a `commit/<sha>` link. Off by default until a
+  public mirror exists.
+- Source-licence terms documented in `docs/source_licences.md`. Three
+  blockers for public redistribution: APH (CC BY-NC-ND 3.0 AU), AEC
+  GIS (Limited End-user Licence), Australia Post (non-commercial only).
+- Sub-national party seeds rollout designed in
+  `docs/sub_national_party_seeds_plan.md` but DEFERRED until after
+  federal launch + state/local rollout.
+
+
 
 - **Batch C — AEC Register of Entities ingestion** (commits `b9978b7`,
   `ba479c6`, `1e1fe0d`): fetcher with token redaction + cookie-value
@@ -92,32 +132,38 @@ Build a reproducible, source-backed Australian political influence transparency 
   permalink wording re-named to "internal revision marker" to stop
   overstating what the bare git SHA is.
 
-## What's next
+## What's next (priority order)
 
-The federal-launch path is structurally complete. Suggested next
-moves, in priority order:
-
-1. **User runs the Firefox visual smoke** per
-   `docs/batch_d3_firefox_smoke_checklist.md`. If anything regresses
-   visually, log it and fix.
-2. **Expand the postcode seed list.** `data/seeds/aec_postcode_search_seed.txt`
-   currently has 8 bootstrap postcodes. Production refresh should
-   cover at least every postcode that maps to a federal electorate
-   (~3000+ Australian postcodes). The pipeline supports the
-   expanded list out of the box; just feed a larger
-   `--postcodes-file`.
-3. **Methodology page link in the markdown footer.** The static page
-   carries a `2026-04-30 / 3f40524` marker. When the project gets a
-   public git mirror, wrap the marker in an `<a href="…/commit/3f40524">`
-   so it becomes a real permalink.
-4. **Source-licence capture.** The repo currently uses "official public
-   AEC register; public redistribution/licence terms to be recorded
-   before public data redistribution." Land verified terms before any
-   public data redistribution.
-5. **State/local expansion** (NSW/VIC after QLD). Deferred until after
-   federal launch per the dev's standing direction; do NOT let
-   state/local work delay the May 2026 federal release unless it
-   exposes a reusable data-model flaw.
+1. **Maintainer follow-ups on `docs/source_licences.md`.** Every
+   entry is search-confirmed, not directly page-fetched. Before any
+   public data release: open each `Verified at` URL, replace the
+   licence/attribution wording with verbatim text, and re-stamp the
+   date. Blocker priority is APH (NC-ND derivative restriction) and
+   AEC GIS (Limited End-user Licence).
+2. **Wire `is_personality_vehicle` through the API.** Currently inert
+   — adding it to `_representative_party_exposure_summary` and
+   `party_breakdown` JSON, plus a frontend chip, lets the regression
+   test relax its blanket "no office_term may reference these rows"
+   stance.
+3. **Run the full ~3000-postcode national seed expansion.** Wrapper
+   ready at `scripts/expand_postcode_seed.sh`. NOT Australia Post's
+   CSV (blocked per `docs/source_licences.md`) — use a CC0 community
+   list (e.g. Matthew Proctor's Australian-postcodes on GitHub) or
+   ABS POA boundaries. Document the source choice in
+   `docs/data_sources.md` before running.
+4. **User runs the Firefox visual smoke** per
+   `docs/batch_d3_firefox_smoke_checklist.md` if not already done
+   in-app.
+5. **Methodology permalink upgrade**: when a public git mirror
+   exists, set `METHODOLOGY_REPO_URL` in the build environment.
+   Already wired by Batch G #1.
+6. **Sub-national party seeds rollout** per
+   `docs/sub_national_party_seeds_plan.md`. Three-part PR shape;
+   QLD first; deferred behind state/local rollout.
+7. **State/local expansion** (NSW/VIC after QLD). Deferred until
+   after federal launch per the dev's standing direction; do NOT
+   let state/local work delay the May 2026 federal release unless
+   it exposes a reusable data-model flaw.
 
 ## Critical operating constraints (will be enforced; user has pushed back hard)
 

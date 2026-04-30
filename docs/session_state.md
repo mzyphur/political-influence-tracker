@@ -87,6 +87,50 @@ pipeline run + verification landed in three commits).
   (the actual bulk fetch is intentionally a maintainer decision, not
   an agent run). 356/356 backend pytest green. ruff clean. frontend
   build clean.
+- **Batch G — licence capture + permalink env-var + candidate-vehicle
+  seed + postcode parser fix + v2 seed + sub-national plan** (commits
+  `27db774`, `afe9c8d`, `e32fb6a`, `b862e76`, `df0edaa`):
+  - **G #1**: methodology permalink env-var. `sync-methodology-version.mjs`
+    reads `METHODOLOGY_REPO_URL`; when set, wraps the SHA in a
+    `commit/<sha>` link. Idempotent (non-greedy regex) so a re-run
+    with a different URL re-wraps cleanly and a re-run without the
+    env var strips the link.
+  - **G #2**: candidate-vehicle party seed migration `037` adds the
+    last four AEC-registered "candidate-vehicle" / personality
+    registered-name parties (Dai Le & Frank Carbone W.S.C.; Kim for
+    Canberra; Tammy Tyrrell for Tasmania; votefusion.org for big
+    ideas) with `is_personality_vehicle` metadata flag. Drops
+    `unresolved_no_match` to **0 across all client_types**. Reviewed
+    `party_entity_link` count 147 → 148. Reviewer-flagged regression
+    test `test_no_office_term_references_personality_vehicle_party_row`
+    fails closed if any future loader links an MP to one of these
+    rows without first wiring the flag through the API.
+  - **G #3**: source-licence doc `docs/source_licences.md` records
+    per-source licence terms, attribution wording, and redistribution
+    status. Headline blockers: APH (CC BY-NC-ND 3.0 AU — derivative
+    restriction), AEC GIS (Limited End-user Licence), AIMS Coastline
+    (still "Not Specified" upstream), Australia Post (blocked for
+    public postcode lookup). README links to the doc.
+  - **G #4**: AEC electorate-finder pagination-row parser bug. Live
+    fetch crashed mid-normalize on 8 postcodes whose results spanned
+    multiple result pages (the GridView footer's numeric anchors
+    parsed as `{Postcode='2'}` data rows). Added
+    `_looks_like_pagination_row()` filter + defensive `try/except`
+    skip + a unit test pinning the fix. Postcode v2 seed expanded
+    from bootstrap 8 to 48 postcodes (capital-city CBDs + regional
+    centres / second cities). Live fetch + load yields 51 crosswalk
+    rows (was 9), 8 unresolved postcode candidates retained as
+    auditable observations.
+  - **G #5**: `docs/sub_national_party_seeds_plan.md` documents the
+    deferred design for state-jurisdiction party-mediated exposure.
+    Three-part PR shape (state seed migration + resolver dual-call
+    + API jurisdiction filter). QLD is first target; NSW/VIC/etc.
+    follow the deferred state/local rollout. Out-of-scope: money-
+    flow re-allocation, federal-row changes, cross-jurisdiction
+    merger rules.
+  - 358/358 backend pytest green (was 356; +2 new — pagination skip
+    + personality-vehicle regression). ruff clean. frontend build
+    clean.
 
 ## What's next: Batch D — pre-launch readiness
 
@@ -350,45 +394,60 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: Batches D + E + F are closed; next-step menu
+## When you start: Batches D + E + F + G are closed; next-step menu
 
-The federal-launch path is structurally complete. Pick whichever item
-below is highest empirical value at the time you read this:
+The federal-launch path is structurally complete. Live data state at
+end of Batch G:
 
-1. **Run the postcode seed expansion** when ready. Batch F landed
-   `scripts/expand_postcode_seed.sh` and `make expand-postcode-seed`
-   that take a seed file and feed the existing pipeline. The
-   maintainer chooses the source list (data.gov.au community-curated
-   postcode CSV, ABS POA shapefile, or Australia Post free locality
-   CSV) and documents the source in `docs/data_sources.md`. Use
-   `--max-postcodes=N` for staged runs to respect AEC endpoint
-   etiquette.
-2. **Methodology page permalink upgrade.** The static page now carries
-   an auto-stamped `<git-short-sha>` marker (Batch F #1). When the
-   project gets a public git mirror, wrap the marker in an
-   `<a href="…/commit/<sha>">` link to make it a real URL. The Node
-   sync script (`frontend/scripts/sync-methodology-version.mjs`) is
-   the right place to add the optional URL prefix.
-3. **Source-licence capture.** Repo currently uses the conservative
-   "to be recorded before public data redistribution" wording. Land
-   verified terms before any public redistribution.
-4. **Candidate-vehicle / personality registered names.** The 4
-   remaining `unresolved_no_match` `politicalparty` rows ("Dai Le &
-   Frank Carbone W.S.C.", "Kim for Canberra", "Tammy Tyrrell for
-   Tasmania", "votefusion.org for big ideas") were deliberately
-   excluded from migration `036`. Adding them as canonical party
-   rows is a decision about whether to model "personality vehicle"
-   parties as separate canonicals or fold them into the candidate's
-   federal-MP record. Decide explicitly before adding.
-5. **Sub-national party seeds.** Some state-level "Greens" / "Liberals"
-   rows in the AEC Register currently fold into the federal canonical
-   via Batch F alias rules. If the project later wants to surface
-   *state-jurisdiction* exposure separately (so a NSW Greens donation
-   shows on a NSW state MP's profile, not an Australian Greens
-   federal MP's), seed state-jurisdiction party rows for those
-   branches and have the resolver emit jurisdiction-tagged links.
-   This is a deliberate scope decision tied to the state/local
-   rollout, not a bug fix.
+- 314,040 non-rejected `influence_event` rows; $13.48B reported total.
+- 318 `person`, 150 federal House `electorate` rows.
+- **148 reviewed `party_entity_link` rows** (89 ALP, 38 LP, 7 NATS, 6
+  LNP, 2 ACP, 1 each → SFF, AG, CLP, AJP, Libertarian, Kim for
+  Canberra).
+- **0 `unresolved_no_match`** in either `associatedentity` or
+  `politicalparty` register observations.
+- **51 `postcode_electorate_crosswalk` rows** from a 48-postcode seed
+  (was 9 from the bootstrap 8-postcode seed).
+- 358/358 backend pytest pass. ruff clean. frontend production build
+  clean. Direct-money invariant test still passes.
+
+Pick whichever item below is highest empirical value at the time you
+read this:
+
+1. **Maintainer follow-ups on `docs/source_licences.md`.** Batch G #3
+   landed the doc but every entry is search-confirmed, not directly
+   page-fetched. Before any public data release: open each
+   `Verified at` URL, replace the licence/attribution wording with
+   verbatim text, and re-stamp the date. The blocker priority is APH
+   (CC BY-NC-ND 3.0 AU — derivative restriction) and AEC GIS (Limited
+   End-user Licence). AIMS Coastline 50K terms are still
+   "Not Specified" upstream.
+2. **Wire `is_personality_vehicle` through the API surface.** Batch G
+   #2 added the metadata flag and a regression test, but the flag is
+   currently inert — no API or frontend consumer reads it. Adding
+   `is_personality_vehicle` to the `_representative_party_exposure_summary`
+   response shape and the `party_breakdown` JSON, plus a frontend
+   chip on personality-vehicle rows, would let the regression test
+   relax its blanket "no office_term may reference these rows"
+   stance.
+3. **Run the full ~3000-postcode national seed expansion.** Batch G
+   #4 expanded the seed from 8 to 48 postcodes; the wrapper at
+   `scripts/expand_postcode_seed.sh` is ready for a larger run. The
+   maintainer chooses the source list — `docs/source_licences.md`
+   notes that **Australia Post's free CSV is BLOCKED** for this
+   purpose; use a CC0 community list (e.g. Matthew Proctor's
+   Australian-postcodes on GitHub) or ABS POA boundaries instead,
+   and document the source choice in `docs/data_sources.md` before
+   running.
+4. **Methodology page permalink upgrade.** Batch G #1 added optional
+   `METHODOLOGY_REPO_URL` env-var support. When the project gets a
+   public git mirror, set this in the build environment and the
+   marker becomes a clickable `commit/<sha>` link.
+5. **Sub-national party seeds rollout.** Plan documented in
+   `docs/sub_national_party_seeds_plan.md`. Three-part PR shape (seed
+   migration + resolver dual-call + API jurisdiction filter). QLD is
+   the first target. Out of scope until federal launch lands and the
+   state/local rollout begins.
 6. **State/local expansion** (NSW/VIC after QLD) — DEFERRED until
    after federal launch per the dev's standing direction. Do not
    let state/local work delay the May 2026 federal release unless
