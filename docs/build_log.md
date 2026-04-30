@@ -1,5 +1,31 @@
 # Build Log
 
+## 2026-04-30 (Batch D #2 — postcode crosswalk live verification)
+
+Completed:
+
+- Confirmed `aec_electorate_finder.py` + `db.load.load_postcode_electorate_crosswalk`
+  + CLI wiring + pipeline steps already form a complete fetch → normalize
+  → load chain. Re-fetched the 8 postcodes from the bootstrap seed
+  (`data/seeds/aec_postcode_search_seed.txt`) against the live AEC
+  electorate-finder endpoint, normalised the JSONL, and reloaded into
+  Postgres: 9 `postcode_electorate_crosswalk` rows / 1 ambiguous
+  postcode (2600 → Canberra + Bean) / 0 unresolved candidates / 8
+  source documents upserted.
+- Hit `search_database` for `q=2600` (ambiguous), `q=3000` (Melbourne),
+  `q=0800` (Solomon) and confirmed every result includes the
+  attribution caveat *"AEC postcode search can return multiple federal
+  electorates because a postcode can contain multiple localities or
+  split across boundaries…"*, the boundary-context label, and the
+  current-member-context label. Confidence 0.5 for ambiguous postcodes
+  and 1.0 for unambiguous, as designed.
+- Existing postcode tests all pass: 2 in `test_aec_electorate_finder.py`
+  (parser + ambiguity preservation), 1 in
+  `test_postgres_integration.py::test_postcode_loader_keeps_unresolved_aec_candidates_auditable`.
+- No new code was needed; the wiring landed earlier as part of schemas
+  022-025. Batch D #2's actual work was a live-data smoke run plus
+  documentation that the path is production-ready.
+
 ## 2026-04-30 (Batch D #1 — live AEC Register pipeline run + verification)
 
 Completed (3 PRs):

@@ -114,16 +114,20 @@ table dedup migration. The local DB has duplicate rows for
 (1692, 152969). The C-rule correctly fails closed on these; the right
 fix is to consolidate canonical rows, not to weaken the resolver.
 
-### Batch D #2 — postcode crosswalk ingestion
+### Batch D #2 — postcode crosswalk ingestion (DONE — live smoke)
 
-Schemas 022–025 are live but unfed. The frontend already requests
-`postcode` as a search type. `backend/au_politics_money/ingest/aec_electorate_finder.py`
-exists and is partially wired into the federal pipeline
-(`fetch_aec_electorate_finder_postcodes` and
-`normalize_aec_electorate_finder_postcodes` already run). Need to wire
-the loader (`load_postcode_electorate_crosswalk`) — already invoked from
-`load_processed_artifacts` when `include_postcode_crosswalk=True`. Verify
-end-to-end and add tests if missing.
+The `aec_electorate_finder.py` ingest module + the `db.load.load_postcode_electorate_crosswalk`
+loader + the CLI commands (`fetch-aec-electorate-finder-postcodes`,
+`normalize-aec-electorate-finder-postcodes`,
+`load-postcode-electorate-crosswalk`) + the pipeline steps + the
+`include_postcode_crosswalk=True` flag in `load_processed_artifacts`
+were already wired before Batch D started. Batch D #2's actual work
+was the live-data smoke run: re-fetched the 8 seed postcodes from the
+live AEC endpoint, normalised, and reloaded — 9 crosswalk rows / 1
+ambiguous postcode / 0 unresolved candidates. Search API returns
+postcode results with the full attribution caveat and confidence
+labels intact. Existing tests still pass (2 parser tests + 1 loader
+integration test). No new code required.
 
 ### Batch D #3 — frontend visual smoke (Firefox only)
 
