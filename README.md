@@ -226,13 +226,31 @@ Per-tier rules for campaign-support attribution are in
 
 ## License / source-licence terms
 
-Source-licence wording is intentionally conservative: "official
-public AEC/APH/AIMS/etc. snapshot; public redistribution / licence
-terms to be recorded before public data redistribution." Local
-development is OK; public redistribution requires verified licence
-terms captured in the repo. AIMS Australian Coastline 50K is currently
-"Not Specified" upstream and is therefore not a public-release artifact
-until terms are confirmed.
+Source-licence status for every public source ingested by the project
+is documented in [`docs/source_licences.md`](docs/source_licences.md),
+with verbatim publisher pages cited.
+
+Headline implications a maintainer must resolve before any public
+data release:
+
+- **APH (Parliament of Australia) — CC BY-NC-ND 3.0 AU.** Parsing the
+  registers of interests is a derivative work; needs explicit written
+  exception or restriction to verbatim-only public surfaces.
+- **AEC GIS (electorate boundaries) — Limited End-user Licence.** Public
+  redistribution of the geometry likely falls outside the licence;
+  needs written confirmation from AEC.
+- **AIMS Australian Coastline 50K — licence not yet confirmed
+  upstream.** Used only as a display-clip layer; substitute with
+  Natural Earth before any public release until terms are captured.
+- **Australia Post postcode CSV — non-commercial reference only.** Do
+  NOT seed the project's public postcode crosswalk from this source.
+
+Source-licence wording on internal artefacts continues to be
+intentionally conservative: *"official public <agency> snapshot;
+public redistribution / licence terms to be recorded before public
+data redistribution"*. Local development is fine; public
+redistribution requires verified licence terms captured in
+`docs/source_licences.md`.
 
 ---
 
