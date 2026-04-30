@@ -1,5 +1,72 @@
 # Build Log
 
+## 2026-04-30 (Batch E — public reproducibility + visual smoke + perf + curated seed)
+
+Three PRs landed (`4409f6f`, `28ca462`, `a57fe19`) plus the live
+visual smoke through the in-app browser:
+
+- **PR 1 — public reproducibility infra.** Top-level `Makefile` with
+  the public reproducibility entry points (bootstrap / db-up /
+  db-ready / reproduce-federal / verify / fetch-aec-register /
+  load-aec-register / fetch-postcode-crosswalk / load-postcode-crosswalk
+  / api-dev / frontend-dev / test / lint).
+  `scripts/reproduce_federal_from_scratch.sh` runs the full live fetch
+  → migrate → load → QA → pytest → ruff → frontend-build chain with
+  per-stage logs in `data/audit/logs/`. `scripts/clean_local_data.sh`
+  is a confirmed-deletion helper for `data/raw` + `data/processed` +
+  `data/audit`. Top-level `README.md` rewritten with a prominent
+  "Reproduce every number on the site" section, the one-command recipe,
+  the targeted entry-point table, the auditing checklist, and a
+  refreshed local-serving baseline.
+- **PR 2 — methodology HTML reproducibility section.** Added
+  `#reproducibility` section + nav anchor on
+  `frontend/public/methodology.html`. Walks a public reader through
+  the clone → bootstrap → reproduce recipe; bullets every concrete
+  thing `make reproduce-federal` does (locked deps, live fetch,
+  raw + processed archive, audit manifest, qa gate, pytest with the
+  cross-cutting direct-money invariant); covers `--smoke` mode and
+  the targeted entry points; points at `docs/reproducibility.md` for
+  the full policy.
+- **PR 3 — curated party-seed migration + extended resolver alias
+  rules.** Migration `035_seed_additional_canonical_party_rows.sql`
+  adds four federal-jurisdiction canonical `party` rows the AEC
+  Register names but the local DB never carried: Animal Justice
+  Party, Australian Citizens Party, Libertarian Party, and Shooters,
+  Fishers and Farmers Party. Each row records seed source / date /
+  rationale / attribution caveat in metadata; idempotent on rerun.
+  Resolver gained 7 new alias rules (Liberal long form, Liberal state
+  divisions in comma- and hyphen-delimited form, dot-abbreviated state
+  codes, full state names, WA "Inc" suffix, LNP-of-QLD long form,
+  CLP-(NT)) plus extended state-list coverage on the existing Liberal
+  / Nationals state branch rules. Stage 3 (parenthetical short-form
+  alias) now also runs deterministic source-jurisdiction disambiguation
+  so `Australian Labor Party (ALP)` resolves to the federal-jurisdiction
+  ALP row rather than falling through to unresolved on the parallel
+  QLD-jurisdiction row. 18 new resolver unit tests (13 parametrised
+  alias-rule checks, 4 seeded-party exact checks, 1 parenthetical
+  disambiguation). Full backend pytest 333/333 (was 315 pre-Batch-E).
+
+Live results post-Batch E:
+
+- Reviewed `party_entity_link` rows: 87 → **147** (89 ALP, 38 LP,
+  7 NATS, 6 LNP, 2 Australian Citizens Party, 1 each → SFF, AG, CLP,
+  AJP, Libertarian).
+- `associatedentity` unresolved_no_match: 60 → **1**.
+- `politicalparty` unresolved_no_match: 49 → 31 (remaining are
+  state-level parties without a federal canonical parent — out of
+  scope for federal-jurisdiction disambiguation).
+- API perf check: `_representative_party_exposure_summary` across
+  all 149 current House MPs — p50 5.8 ms, p90 6.7 ms, p99 12.7 ms,
+  max 16.5 ms. EXPLAIN ANALYZE shows clean bitmap-index-scan +
+  nested-loop-with-index plan; total execution 7.5 ms / 0 disk reads.
+- Visual smoke via the in-app browser confirmed: map renders 150
+  features, Bean (ALP) details panel surfaces "Party-Linked Money
+  Exposure" with `Est. exposure` line and `denominator scope: current
+  office-term party representatives only (asymmetric — see methodology)`
+  chip; methodology page anchors all reachable; postcode-search
+  endpoint returns ambiguous-2600 correctly with confidence 0.5 +
+  caveat.
+
 ## 2026-04-30 (Batch D #2 — postcode crosswalk live verification)
 
 Completed:

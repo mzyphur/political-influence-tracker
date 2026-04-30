@@ -37,12 +37,31 @@ pipeline run + verification landed in three commits).
   preservation via `COALESCE`, `_commonwealth_jurisdiction_id`
   fail-loud-on-ambiguous-seed, integration test for jurisdiction
   disambiguation, regression test for short_name preservation). Live
-  load now produces 87 unique reviewed `party_entity_link` rows (86 →
-  ALP id=1, 1 → AG id=136), and `party_exposure_summary` surfaces non-
-  empty for current ALP MPs (event_count 4,291, party-context total
-  $310M, equal-share modelled per current rep ~$2.53M, denominator
-  123). Direct-money invariant unchanged (314,040 events / $13.48B).
-  315/315 backend pytest green. ruff clean. frontend build clean.
+  load produces 87 unique reviewed `party_entity_link` rows (86 →
+  ALP id=1, 1 → AG id=136); current ALP MPs surface non-empty
+  `party_exposure_summary`. Direct-money invariant unchanged. 315/315
+  backend pytest green.
+- **Batch E — public reproducibility + visual smoke + perf + curated
+  party seed** (commits `4409f6f`, `28ca462`, `a57fe19`): top-level
+  `Makefile` with public reproducibility entry points
+  (`make reproduce-federal` runs the full live-fetch chain end-to-end);
+  new `scripts/reproduce_federal_from_scratch.sh` and
+  `scripts/clean_local_data.sh`; top-level `README.md` rewritten with
+  a "Reproduce every number on the site" section; methodology HTML
+  extended with `#reproducibility` section + nav anchor; live visual
+  smoke via the in-app browser confirmed party-exposure panel,
+  denominator chip, and postcode search; performance pass on
+  `_representative_party_exposure_summary` (p50 5.8 ms, p99 12.7 ms,
+  max 16.5 ms, no disk reads); curated party-seed migration
+  `035_seed_additional_canonical_party_rows.sql` adding Animal
+  Justice Party, Australian Citizens Party, Libertarian Party, and
+  Shooters Fishers and Farmers Party as federal canonical rows;
+  resolver gained 7 new alias rules + extended state-list coverage on
+  the existing rules + Stage-3 parenthetical short-form alias now
+  applies source-jurisdiction disambiguation; 18 new resolver tests.
+  Reviewed `party_entity_link` rows lifted from 87 → **147** (89 ALP,
+  38 LP, 7 NATS, 6 LNP, 2 ACP, 1 each → SFF/AG/CLP/AJP/Libertarian).
+  333/333 backend pytest green. ruff clean. frontend build clean.
 
 ## What's next: Batch D — pre-launch readiness
 
@@ -306,29 +325,43 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: Batch D is closed; next-step menu
+## When you start: Batches D + E are closed; next-step menu
 
 The federal-launch path is structurally complete. Pick whichever item
 below is highest empirical value at the time you read this:
 
-1. **User runs the Firefox visual smoke** per
-   `docs/batch_d3_firefox_smoke_checklist.md` (commit `4e516fd`). If
-   anything regresses visually, log it and fix. Until this is run,
-   the only Batch D item with an unverified human-side signal is
-   D #3.
-2. **Expand the postcode seed list.**
+1. **Expand the postcode seed list.**
    `data/seeds/aec_postcode_search_seed.txt` currently has only 8
    bootstrap postcodes. Production refresh should cover at least
    every Australian postcode that maps to a federal electorate
-   (~3000+). Pipeline supports the expanded list out of the box.
-3. **Methodology page link in the markdown footer.** The static page
-   carries a `2026-04-30 / 3f40524` revision marker. When the
-   project gets a public git mirror, wrap the marker in an
-   `<a href="…/commit/3f40524">` so it becomes a real permalink.
+   (~3000+). Pipeline supports the expanded list out of the box;
+   the resolver, loader, and search API already handle the larger
+   volume.
+2. **Visual smoke remaining edge cases.** The live in-app browser
+   smoke confirmed map render + ALP MP party-exposure panel +
+   denominator chip + postcode search + methodology page anchors.
+   Open items the user may still want to eyeball in Firefox:
+   council/state map mode click-throughs, influence-graph rendering
+   for an ALP MP, the 50 most recent state/local rows panel.
+   `docs/batch_d3_firefox_smoke_checklist.md` covers these.
+3. **Methodology page permalink upgrade.** The static page carries
+   an `Internal revision marker` (`2026-04-30 / a57fe19` at the time
+   of Batch E close). When the project gets a public git mirror, wrap
+   the marker in an `<a href="…/commit/a57fe19">`. A simple build-time
+   `git rev-parse --short HEAD` injection would also stop the marker
+   going stale.
 4. **Source-licence capture.** Repo currently uses the conservative
    "to be recorded before public data redistribution" wording. Land
    verified terms before any public redistribution.
-5. **State/local expansion** (NSW/VIC after QLD) — DEFERRED until
+5. **Politicalparty long tail.** 31 `politicalparty` register rows
+   are still `unresolved_no_match` after Batch E because they are
+   state-level parties without a federal canonical parent (e.g.
+   Australian Federation Party Australian Capital Territory,
+   Australian Greens (South Australia)). Adding state-jurisdiction
+   canonical rows for these is a deliberate scope expansion; do it
+   carefully and only when the public app is ready to display
+   state-level party context.
+6. **State/local expansion** (NSW/VIC after QLD) — DEFERRED until
    after federal launch per the dev's standing direction. Do not
    let state/local work delay the May 2026 federal release unless
    it exposes a reusable data-model flaw.
