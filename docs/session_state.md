@@ -27,19 +27,22 @@ pipeline run + verification landed in three commits).
   schema 033 + deterministic branch resolver + loader + integration tests,
   pipeline integration + `load_processed_artifacts` wiring + docs.
 - **Batch D #1 — live AEC Register pipeline run + verification**
-  (commits `901c5c1`, `ef8342f`, `56f1928`): fetcher metadata fix
-  (`body_path`/`final_url`/`content_type`); deterministic source-
+  (commits `901c5c1`, `ef8342f`, `56f1928`, `3f40524`): fetcher metadata
+  fix (`body_path`/`final_url`/`content_type`); deterministic source-
   jurisdiction disambiguation rule (`source_jurisdiction_disambiguation_v1`)
   in the resolver, with 7 new unit tests; one-shot data-fix migration
   `034_consolidate_federal_party_duplicates.sql` consolidating 8 federal-
   jurisdiction short/long-form duplicate pairs into single canonical
-  rows. Live load now produces 87 unique reviewed `party_entity_link`
-  rows (86 → ALP id=1, 1 → AG id=136), and `party_exposure_summary`
-  surfaces non-empty for current ALP MPs (event_count 4,291,
-  party-context total $310M, equal-share modelled per current rep
-  ~$2.53M, denominator 123). Direct-money invariant unchanged
-  (314,040 events / $13.48B). 313/313 backend pytest green. ruff clean.
-  frontend build clean.
+  rows; reviewer-flagged fixes (`get_or_create_party` short_name
+  preservation via `COALESCE`, `_commonwealth_jurisdiction_id`
+  fail-loud-on-ambiguous-seed, integration test for jurisdiction
+  disambiguation, regression test for short_name preservation). Live
+  load now produces 87 unique reviewed `party_entity_link` rows (86 →
+  ALP id=1, 1 → AG id=136), and `party_exposure_summary` surfaces non-
+  empty for current ALP MPs (event_count 4,291, party-context total
+  $310M, equal-share modelled per current rep ~$2.53M, denominator
+  123). Direct-money invariant unchanged (314,040 events / $13.48B).
+  315/315 backend pytest green. ruff clean. frontend build clean.
 
 ## What's next: Batch D — pre-launch readiness
 
@@ -50,11 +53,16 @@ release unless it exposes a reusable data-model flaw.
 
 Ordered by ratio of empirical value to risk:
 
-### Batch D #1 — live AEC Register pipeline run + verification (start here)
+### Batch D #1 — live AEC Register pipeline run + verification (DONE — see commits above)
 
-Highest empirical value, smallest effort. Proves Batch C works against
-production data and surfaces any blockers (e.g. party-table duplicate
-rows preventing auto-resolution) **before** items 3–5 lock around them.
+Highest empirical value, smallest effort. Proved Batch C works against
+production data and surfaced the duplicate-party-row blocker described
+in this section's earlier note. Both the resolver-side fix (source-
+jurisdiction disambiguation) and the data-side fix (one-shot
+consolidation migration `034`) landed in commits `901c5c1`, `ef8342f`,
+`56f1928`, `3f40524`. The original verification checklist below is kept
+for historical reference; every item is now satisfied. Skip to Batch
+D #2.
 
 Run order:
 
