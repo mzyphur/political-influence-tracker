@@ -76,6 +76,7 @@ class PartyDirectoryRow:
     short_name: str | None
     normalized_name: str
     normalized_short_name: str
+    jurisdiction_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,17 @@ class PartyDirectory:
     rows: tuple[PartyDirectoryRow, ...]
 
     @classmethod
-    def from_rows(cls, rows: Iterable[tuple[int, str, str | None]]) -> "PartyDirectory":
+    def from_rows(
+        cls,
+        rows: Iterable[
+            tuple[int, str, str | None]
+            | tuple[int, str, str | None, int | None]
+        ],
+    ) -> "PartyDirectory":
+        """Build a directory from `(id, name, short_name)` or
+        `(id, name, short_name, jurisdiction_id)` tuples. Older 3-tuple
+        callers continue to work (jurisdiction_id is left as None and the
+        source-jurisdiction disambiguation step is a no-op for them)."""
         directory_rows = tuple(
             PartyDirectoryRow(
                 party_id=int(row[0]),
@@ -91,6 +102,11 @@ class PartyDirectory:
                 short_name=str(row[2]) if row[2] else None,
                 normalized_name=_normalize_party_name(row[1]),
                 normalized_short_name=_normalize_party_name(row[2]),
+                jurisdiction_id=(
+                    int(row[3])
+                    if len(row) >= 4 and row[3] is not None
+                    else None
+                ),
             )
             for row in rows
         )
@@ -292,11 +308,58 @@ class SegmentResolution:
     notes: dict[str, Any]
 
 
-def resolve_segment(segment: str, directory: PartyDirectory) -> SegmentResolution:
+SOURCE_JURISDICTION_DISAMBIGUATION_RULE_ID = (
+    "source_jurisdiction_disambiguation_v1"
+)
+
+
+def _disambiguate_by_source_jurisdiction(
+    matches: list[PartyDirectoryRow],
+    source_jurisdiction_id: int | None,
+) -> tuple[list[PartyDirectoryRow], bool]:
+    """Filter `matches` to those whose `jurisdiction_id` equals the source
+    document's jurisdiction.
+
+    Returns `(filtered_matches, applied)`. Disambiguation is **applied**
+    (`applied=True`) only when:
+
+    - a `source_jurisdiction_id` is provided,
+    - more than one candidate exists, AND
+    - exactly one candidate's `jurisdiction_id` equals the source jurisdiction.
+
+    The rule is fully deterministic — it consults a stable, source-attributed
+    integer attribute (the AEC Register is published by a federal authority,
+    so its rows are by definition Commonwealth-jurisdiction). It is NOT
+    fuzzy similarity. When applied, the resolver records the rule id in the
+    resolution notes so the audit trail is preserved.
+    """
+    if source_jurisdiction_id is None or len(matches) <= 1:
+        return matches, False
+    same_juris = [
+        row for row in matches if row.jurisdiction_id == source_jurisdiction_id
+    ]
+    if len(same_juris) == 1:
+        return same_juris, True
+    return matches, False
+
+
+def resolve_segment(
+    segment: str,
+    directory: PartyDirectory,
+    *,
+    source_jurisdiction_id: int | None = None,
+) -> SegmentResolution:
     """Resolve a single AEC AssociatedParties segment to a canonical party.
 
     Returns a `SegmentResolution` with the deterministic resolver_status
     and any candidate matches captured in metadata.
+
+    `source_jurisdiction_id` (optional) lets the loader bias multi-match
+    candidates toward the source's own jurisdiction. The AEC Register is a
+    federal source, so loaders pass the local Commonwealth jurisdiction id;
+    that lets the resolver pick the federal-jurisdiction `Australian Labor
+    Party` row over a coexisting state-jurisdiction row of the same name
+    when they only differ by jurisdiction.
     """
     raw = segment
     cleaned = " ".join(segment.split())
@@ -304,8 +367,27 @@ def resolve_segment(segment: str, directory: PartyDirectory) -> SegmentResolutio
 
     # Stage 1: exact-normalized match against party.name / party.short_name.
     exact_matches = directory.find_by_normalized(normalized)
-    if len(exact_matches) == 1:
-        match = exact_matches[0]
+    exact_after, exact_disambiguated = _disambiguate_by_source_jurisdiction(
+        exact_matches, source_jurisdiction_id
+    )
+    if len(exact_after) == 1:
+        match = exact_after[0]
+        notes: dict[str, Any] = {
+            "stage": "exact_normalized_party_name_or_short_name",
+            "resolver_name": RESOLVER_NAME,
+            "resolver_version": RESOLVER_VERSION,
+        }
+        if exact_disambiguated:
+            notes["source_jurisdiction_disambiguation"] = {
+                "rule_id": SOURCE_JURISDICTION_DISAMBIGUATION_RULE_ID,
+                "source_jurisdiction_id": source_jurisdiction_id,
+                "candidate_party_ids_before": sorted(
+                    m.party_id for m in exact_matches
+                ),
+                "candidate_party_names_before": sorted(
+                    {m.name for m in exact_matches}
+                ),
+            }
         return SegmentResolution(
             segment=raw,
             normalized_segment=normalized,
@@ -313,15 +395,15 @@ def resolve_segment(segment: str, directory: PartyDirectory) -> SegmentResolutio
             canonical_party_id=match.party_id,
             canonical_party_name=match.name,
             canonical_party_short_name=match.short_name,
-            matched_via_rule_id=None,
+            matched_via_rule_id=(
+                SOURCE_JURISDICTION_DISAMBIGUATION_RULE_ID
+                if exact_disambiguated
+                else None
+            ),
             candidate_party_ids=(match.party_id,),
-            notes={
-                "stage": "exact_normalized_party_name_or_short_name",
-                "resolver_name": RESOLVER_NAME,
-                "resolver_version": RESOLVER_VERSION,
-            },
+            notes=notes,
         )
-    if len(exact_matches) > 1:
+    if len(exact_after) > 1:
         return SegmentResolution(
             segment=raw,
             normalized_segment=normalized,
@@ -330,15 +412,16 @@ def resolve_segment(segment: str, directory: PartyDirectory) -> SegmentResolutio
             canonical_party_name=None,
             canonical_party_short_name=None,
             matched_via_rule_id=None,
-            candidate_party_ids=tuple(sorted(m.party_id for m in exact_matches)),
+            candidate_party_ids=tuple(sorted(m.party_id for m in exact_after)),
             notes={
                 "stage": "exact_normalized_party_name_or_short_name",
                 "ambiguity": "multiple_party_rows_match_normalized_segment",
                 "resolver_name": RESOLVER_NAME,
                 "resolver_version": RESOLVER_VERSION,
                 "candidate_party_names": sorted(
-                    {match.name for match in exact_matches}
+                    {match.name for match in exact_after}
                 ),
+                "source_jurisdiction_id_used": source_jurisdiction_id,
             },
         )
 
@@ -346,9 +429,35 @@ def resolve_segment(segment: str, directory: PartyDirectory) -> SegmentResolutio
     rewritten_name, rule_id = _resolve_via_alias_rules(cleaned)
     if rewritten_name is not None and rule_id is not None:
         rewritten_norm = _normalize_party_name(rewritten_name)
-        branch_matches = directory.find_by_normalized(rewritten_norm)
+        branch_matches_raw = directory.find_by_normalized(rewritten_norm)
+        branch_matches, branch_disambiguated = _disambiguate_by_source_jurisdiction(
+            branch_matches_raw, source_jurisdiction_id
+        )
         if len(branch_matches) == 1:
             match = branch_matches[0]
+            notes = {
+                "stage": "branch_alias_rewrite",
+                "resolver_name": RESOLVER_NAME,
+                "resolver_version": RESOLVER_VERSION,
+                "alias_rule_id": rule_id,
+                "rewritten_to_canonical_name": rewritten_name,
+                "attribution_limit": (
+                    "Official AEC branch/party relationship resolved to canonical "
+                    "app party for display/network context; not proof of personal "
+                    "receipt or candidate-specific support."
+                ),
+            }
+            if branch_disambiguated:
+                notes["source_jurisdiction_disambiguation"] = {
+                    "rule_id": SOURCE_JURISDICTION_DISAMBIGUATION_RULE_ID,
+                    "source_jurisdiction_id": source_jurisdiction_id,
+                    "candidate_party_ids_before": sorted(
+                        m.party_id for m in branch_matches_raw
+                    ),
+                    "candidate_party_names_before": sorted(
+                        {m.name for m in branch_matches_raw}
+                    ),
+                }
             return SegmentResolution(
                 segment=raw,
                 normalized_segment=normalized,
@@ -358,18 +467,7 @@ def resolve_segment(segment: str, directory: PartyDirectory) -> SegmentResolutio
                 canonical_party_short_name=match.short_name,
                 matched_via_rule_id=rule_id,
                 candidate_party_ids=(match.party_id,),
-                notes={
-                    "stage": "branch_alias_rewrite",
-                    "resolver_name": RESOLVER_NAME,
-                    "resolver_version": RESOLVER_VERSION,
-                    "alias_rule_id": rule_id,
-                    "rewritten_to_canonical_name": rewritten_name,
-                    "attribution_limit": (
-                        "Official AEC branch/party relationship resolved to canonical "
-                        "app party for display/network context; not proof of personal "
-                        "receipt or candidate-specific support."
-                    ),
-                },
+                notes=notes,
             )
         if len(branch_matches) > 1:
             return SegmentResolution(
@@ -393,6 +491,7 @@ def resolve_segment(segment: str, directory: PartyDirectory) -> SegmentResolutio
                     "candidate_party_names": sorted(
                         {match.name for match in branch_matches}
                     ),
+                    "source_jurisdiction_id_used": source_jurisdiction_id,
                 },
             )
         # Alias rule matched but the rewritten name does not exist in the party
@@ -477,6 +576,14 @@ def resolve_segment(segment: str, directory: PartyDirectory) -> SegmentResolutio
 
 
 def resolve_segments(
-    segments: Iterable[str], directory: PartyDirectory
+    segments: Iterable[str],
+    directory: PartyDirectory,
+    *,
+    source_jurisdiction_id: int | None = None,
 ) -> list[SegmentResolution]:
-    return [resolve_segment(segment, directory) for segment in segments]
+    return [
+        resolve_segment(
+            segment, directory, source_jurisdiction_id=source_jurisdiction_id
+        )
+        for segment in segments
+    ]

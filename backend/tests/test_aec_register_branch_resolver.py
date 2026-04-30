@@ -274,3 +274,140 @@ def test_party_directory_normalization_collapses_whitespace_and_punctuation() ->
     )
     assert res.resolver_status == "resolved_exact"
     assert res.canonical_party_id == 42
+
+
+# --- Source-jurisdiction disambiguation -----------------------------------
+#
+# The local DB legitimately stores both a federal-jurisdiction `Australian
+# Labor Party` row (id=1351, jurisdiction_id=1) AND a QLD-jurisdiction
+# `Australian Labor Party` row (id=152936, jurisdiction_id=41). They are
+# NOT duplicates — they belong to different jurisdiction scopes. When the
+# AEC Register (a federal source) yields an `Australian Labor Party`
+# segment, the resolver must deterministically prefer the federal-
+# jurisdiction row, NOT fail closed and NOT pick fuzzily.
+
+
+@pytest.fixture
+def federal_vs_state_duplicate_alp_directory() -> PartyDirectory:
+    """ALP federal row + ALP QLD-state row, plus an unrelated party."""
+    return PartyDirectory.from_rows(
+        [
+            (1351, "Australian Labor Party", "Australian Labor Party", 1),
+            (152936, "Australian Labor Party", "ALP", 41),
+            (1412, "Australian Greens", "Australian Greens", 1),
+        ]
+    )
+
+
+def test_source_jurisdiction_breaks_exact_federal_state_tie(
+    federal_vs_state_duplicate_alp_directory: PartyDirectory,
+) -> None:
+    res = resolve_segment(
+        "Australian Labor Party",
+        federal_vs_state_duplicate_alp_directory,
+        source_jurisdiction_id=1,
+    )
+    assert res.resolver_status == "resolved_exact"
+    assert res.canonical_party_id == 1351
+    assert res.matched_via_rule_id == "source_jurisdiction_disambiguation_v1"
+    juris_notes = res.notes["source_jurisdiction_disambiguation"]
+    assert juris_notes["source_jurisdiction_id"] == 1
+    assert juris_notes["candidate_party_ids_before"] == [1351, 152936]
+
+
+def test_source_jurisdiction_breaks_branch_alias_federal_state_tie(
+    federal_vs_state_duplicate_alp_directory: PartyDirectory,
+) -> None:
+    res = resolve_segment(
+        "Australian Labor Party (ACT Branch)",
+        federal_vs_state_duplicate_alp_directory,
+        source_jurisdiction_id=1,
+    )
+    assert res.resolver_status == "resolved_branch"
+    assert res.canonical_party_id == 1351
+    assert (
+        res.matched_via_rule_id
+        == "alp_state_or_territory_branch_to_alp_parent_v1"
+    )
+    juris_notes = res.notes["source_jurisdiction_disambiguation"]
+    assert juris_notes["source_jurisdiction_id"] == 1
+    assert juris_notes["candidate_party_ids_before"] == [1351, 152936]
+
+
+def test_source_jurisdiction_unknown_keeps_old_fail_closed_behaviour(
+    federal_vs_state_duplicate_alp_directory: PartyDirectory,
+) -> None:
+    res = resolve_segment(
+        "Australian Labor Party",
+        federal_vs_state_duplicate_alp_directory,
+    )
+    assert res.resolver_status == "unresolved_multiple_matches"
+    assert res.canonical_party_id is None
+
+
+def test_source_jurisdiction_with_no_matching_candidate_still_fails_closed(
+    federal_vs_state_duplicate_alp_directory: PartyDirectory,
+) -> None:
+    # Pretend the AEC Register lived in jurisdiction 999, which no party
+    # row matches. Disambiguation must NOT pick anything and must fail
+    # closed.
+    res = resolve_segment(
+        "Australian Labor Party",
+        federal_vs_state_duplicate_alp_directory,
+        source_jurisdiction_id=999,
+    )
+    assert res.resolver_status == "unresolved_multiple_matches"
+    assert res.canonical_party_id is None
+
+
+def test_source_jurisdiction_with_two_matching_candidates_still_fails_closed() -> None:
+    # Two rows in the SAME jurisdiction with the same name — disambiguation
+    # cannot break this, and the resolver must remain fail-closed.
+    directory = PartyDirectory.from_rows(
+        [
+            (10, "Independent", "IND", 1),
+            (11, "Independent", "Independent", 1),
+        ]
+    )
+    res = resolve_segment(
+        "Independent",
+        directory,
+        source_jurisdiction_id=1,
+    )
+    assert res.resolver_status == "unresolved_multiple_matches"
+    assert res.canonical_party_id is None
+
+
+def test_source_jurisdiction_does_not_change_unique_match() -> None:
+    # When there is already exactly one candidate, disambiguation must be a
+    # no-op and must NOT decorate the resolution with a rule id.
+    directory = PartyDirectory.from_rows(
+        [
+            (1, "Australian Labor Party", "ALP", 1),
+            (2, "Australian Greens", "Australian Greens", 1),
+        ]
+    )
+    res = resolve_segment(
+        "Australian Labor Party", directory, source_jurisdiction_id=1
+    )
+    assert res.resolver_status == "resolved_exact"
+    assert res.canonical_party_id == 1
+    assert res.matched_via_rule_id is None
+    assert "source_jurisdiction_disambiguation" not in res.notes
+
+
+def test_three_tuple_directory_is_still_supported() -> None:
+    # Backwards compatibility: existing fixtures and callers that pass
+    # 3-tuples (id, name, short_name) without jurisdiction continue to
+    # work, and disambiguation is silently a no-op.
+    directory = PartyDirectory.from_rows(
+        [
+            (1, "Australian Labor Party", "ALP"),
+            (2, "Australian Greens", "Australian Greens"),
+        ]
+    )
+    res = resolve_segment(
+        "Australian Labor Party", directory, source_jurisdiction_id=1
+    )
+    assert res.resolver_status == "resolved_exact"
+    assert res.canonical_party_id == 1

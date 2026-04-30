@@ -77,9 +77,35 @@ def latest_summary(client_type: str, *, processed_dir: Path = PROCESSED_DIR) -> 
 
 def _ensure_party_directory(conn) -> PartyDirectory:
     with conn.cursor() as cur:
-        cur.execute("SELECT id, name, short_name FROM party")
+        cur.execute("SELECT id, name, short_name, jurisdiction_id FROM party")
         rows = cur.fetchall()
     return PartyDirectory.from_rows(rows)
+
+
+def _commonwealth_jurisdiction_id(conn) -> int | None:
+    """Return the local id of the Commonwealth (federal) jurisdiction.
+
+    The AEC Register is by definition a federal source, so when its
+    `AssociatedParties` segments resolve to multiple `party` rows that only
+    differ by jurisdiction (e.g. ALP federal-row + ALP QLD-row), the
+    resolver should prefer the row whose `jurisdiction_id` matches this
+    federal id. Returns `None` if the jurisdiction is not present, in
+    which case the resolver simply skips its source-jurisdiction
+    disambiguation step (and continues to fail closed on multi-match).
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id
+            FROM jurisdiction
+            WHERE level = 'federal'
+              AND (code = 'CWLTH' OR LOWER(name) = 'commonwealth')
+            ORDER BY id
+            LIMIT 1
+            """
+        )
+        row = cur.fetchone()
+    return int(row[0]) if row else None
 
 
 def _now() -> datetime:
@@ -463,6 +489,7 @@ def load_aec_register_of_entities(
     ).replace(tzinfo=timezone.utc)
 
     party_directory = party_directory_factory(conn)
+    source_jurisdiction_id = _commonwealth_jurisdiction_id(conn)
     reviewed_at = now_factory()
     resolver_status_counts: dict[str, int] = {}
     observations_upserted = 0
@@ -498,13 +525,19 @@ def load_aec_register_of_entities(
             segments = list(record.get("associated_party_segments") or [])
             resolutions: list[SegmentResolution] = []
             if record["client_type"] == "associatedentity" and segments:
-                resolutions = resolve_segments(segments, party_directory)
+                resolutions = resolve_segments(
+                    segments,
+                    party_directory,
+                    source_jurisdiction_id=source_jurisdiction_id,
+                )
             elif record["client_type"] == "politicalparty":
                 # Resolve the entity's own ClientName against the party
                 # directory just to record the match, but do NOT auto-link
                 # via party_entity_link.
                 resolutions = resolve_segments(
-                    [record.get("client_name") or ""], party_directory
+                    [record.get("client_name") or ""],
+                    party_directory,
+                    source_jurisdiction_id=source_jurisdiction_id,
                 )
 
             canonical_party_id_for_observation = _representative_canonical_party_id(
