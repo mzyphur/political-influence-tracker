@@ -1678,6 +1678,188 @@ def test_qld_council_boundary_loader_exposes_council_map(
     )
 
 
+def test_qld_council_disclosure_context_alias_regex_matrix(
+    integration_db: IntegrationDatabase,
+) -> None:
+    """Adversarial alias-regex matrix.
+
+    The QLD council disclosure context matcher distinguishes between council names
+    that share a common base (`Town of Weipa` vs `Townsville City`), so the regex
+    branches in `_qld_council_disclosure_context` must not produce false positives
+    across them. This test seeds a focused matrix of council electorates and ECQ
+    rows that cross several adversarial edges and asserts the resulting
+    `match_scope` enum per electorate via `/api/electorates/{id}`.
+    """
+    with connect(integration_db.url) as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT id FROM source_document WHERE source_id = 'pytest-source'")
+            source_document_id = cur.fetchone()[0]
+            cur.execute(
+                """
+                INSERT INTO jurisdiction (name, level, code)
+                VALUES ('Queensland Local Government (alias matrix)', 'local', 'QLD-LOCAL')
+                ON CONFLICT (name) DO UPDATE SET level = EXCLUDED.level, code = EXCLUDED.code
+                RETURNING id
+                """
+            )
+            qld_local_jurisdiction_id = cur.fetchone()[0]
+
+            council_names = [
+                "Townsville City",
+                "Weipa Town",
+                "Sunshine Coast Regional",
+                "Sunshine Coast Hinterland Regional",
+                "Mareeba Shire",
+                "Cairns Regional",
+            ]
+            council_ids: dict[str, int] = {}
+            for name in council_names:
+                cur.execute(
+                    """
+                    INSERT INTO electorate (
+                        name, jurisdiction_id, chamber, state_or_territory, source_document_id
+                    )
+                    VALUES (%s, %s, 'council', 'QLD', %s)
+                    RETURNING id
+                    """,
+                    (name, qld_local_jurisdiction_id, source_document_id),
+                )
+                council_ids[name] = cur.fetchone()[0]
+
+            # ECQ rows. Each row pretends to be from a real ECQ local_electorate. The
+            # matcher must associate each row only with the electorate whose name
+            # actually matches it under the alias rules; cross-prefix and
+            # similar-base names must NOT cross-match.
+            ecq_rows = [
+                ("matrix-townsville-exact", "Townsville City"),
+                ("matrix-townsville-child", "Townsville City Division 4"),
+                ("matrix-weipa-alias", "Town of Weipa"),
+                ("matrix-weipa-exact", "Weipa Town"),
+                ("matrix-sunshine-base", "Sunshine Coast Regional"),
+                ("matrix-sunshine-child", "Sunshine Coast Regional Division 2"),
+                ("matrix-sunshine-hinterland", "Sunshine Coast Hinterland Regional"),
+                ("matrix-mareeba-alias", "Shire of Mareeba"),
+                ("matrix-mareeba-exact", "Mareeba Shire"),
+                ("matrix-cairns-base", "Cairns Regional"),
+                ("matrix-cairns-child", "Cairns Regional Division 1"),
+            ]
+            for index, (external_key, local_electorate_name) in enumerate(ecq_rows):
+                cur.execute(
+                    """
+                    INSERT INTO money_flow (
+                        external_key, source_raw_name, recipient_raw_name, amount,
+                        receipt_type, disclosure_category, jurisdiction_id,
+                        source_document_id, source_row_ref, original_text,
+                        date_received, confidence, is_current, metadata
+                    )
+                    VALUES (
+                        %s, %s, %s, %s,
+                        'Gift', 'qld_gift', %s,
+                        %s, %s, '{}',
+                        '2026-01-02', 'resolved', TRUE, %s
+                    )
+                    """,
+                    (
+                        external_key,
+                        f"Alias matrix donor {index}",
+                        f"Alias matrix recipient {index}",
+                        100 + index,
+                        qld_local_jurisdiction_id,
+                        source_document_id,
+                        external_key,
+                        Jsonb(
+                            {
+                                "flow_kind": "qld_gift",
+                                "source_dataset": "qld_ecq_eds",
+                                "event_name": "2028 Local Government Elections (matrix)",
+                                "qld_ecq_context": {
+                                    "event": {
+                                        "external_id": "matrix-event-2028",
+                                        "name": "2028 Local Government Elections (matrix)",
+                                    },
+                                    "local_electorate": {
+                                        "external_id": (
+                                            "matrix-"
+                                            + local_electorate_name.lower().replace(" ", "-")
+                                        ),
+                                        "name": local_electorate_name,
+                                        "status": "matched",
+                                    },
+                                },
+                            }
+                        ),
+                    ),
+                )
+        conn.commit()
+
+    client = TestClient(app)
+
+    def _scopes_for(council_name: str) -> dict[str, str]:
+        response = client.get(f"/api/electorates/{council_ids[council_name]}")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        context = payload["qld_ecq_local_disclosure_context"]
+        if not context.get("available"):
+            return {}
+        return {
+            row["local_electorate_name"]: row["match_scope"]
+            for row in context["matched_local_electorates"]
+        }
+
+    # Townsville City matches its own rows but NOT "Town of Weipa" (cross-prefix).
+    townsville_scopes = _scopes_for("Townsville City")
+    assert townsville_scopes == {
+        "Townsville City": "exact_area",
+        "Townsville City Division 4": "child_area",
+    }, townsville_scopes
+    assert "Town of Weipa" not in townsville_scopes
+    assert "Weipa Town" not in townsville_scopes
+
+    # Weipa Town matches "Town of Weipa" via alias_area + its own exact name; must
+    # NOT pick up Townsville City rows even though "town" appears in both.
+    weipa_scopes = _scopes_for("Weipa Town")
+    assert weipa_scopes == {
+        "Town of Weipa": "alias_area",
+        "Weipa Town": "exact_area",
+    }, weipa_scopes
+    assert "Townsville City" not in weipa_scopes
+    assert "Townsville City Division 4" not in weipa_scopes
+
+    # Sunshine Coast Regional matches its own rows but must NOT swallow
+    # "Sunshine Coast Hinterland Regional" (a distinct council that shares a prefix).
+    sunshine_scopes = _scopes_for("Sunshine Coast Regional")
+    assert sunshine_scopes == {
+        "Sunshine Coast Regional": "exact_area",
+        "Sunshine Coast Regional Division 2": "child_area",
+    }, sunshine_scopes
+    assert "Sunshine Coast Hinterland Regional" not in sunshine_scopes
+
+    # Sunshine Coast Hinterland Regional must match its own row only.
+    hinterland_scopes = _scopes_for("Sunshine Coast Hinterland Regional")
+    assert hinterland_scopes == {
+        "Sunshine Coast Hinterland Regional": "exact_area",
+    }, hinterland_scopes
+    assert "Sunshine Coast Regional" not in hinterland_scopes
+    assert "Sunshine Coast Regional Division 2" not in hinterland_scopes
+
+    # Mareeba Shire / Shire of Mareeba pair: alias forms with the trailing/leading
+    # qualifier swapped. Both must resolve to the Mareeba Shire electorate.
+    mareeba_scopes = _scopes_for("Mareeba Shire")
+    assert mareeba_scopes == {
+        "Mareeba Shire": "exact_area",
+        "Shire of Mareeba": "alias_area",
+    }, mareeba_scopes
+
+    # Cairns Regional should match its own + child but NOT Mareeba (no shared base).
+    cairns_scopes = _scopes_for("Cairns Regional")
+    assert cairns_scopes == {
+        "Cairns Regional": "exact_area",
+        "Cairns Regional Division 1": "child_area",
+    }, cairns_scopes
+    assert "Mareeba Shire" not in cairns_scopes
+    assert "Shire of Mareeba" not in cairns_scopes
+
+
 def test_load_display_land_mask_reuses_only_valid_aims_cache(
     integration_db: IntegrationDatabase,
     tmp_path: Path,
@@ -3173,6 +3355,31 @@ def test_campaign_support_stays_separate_from_direct_money_totals(
     assert map_properties["current_representative_lifetime_campaign_support_event_count"] == 1
     assert map_properties["current_representative_lifetime_reported_amount_total"] == 1250.0
     assert map_properties["current_representative_campaign_support_reported_total"] == 5000.0
+
+    # Headline umbrella count must be >= the sum of the family breakdowns surfaced in the
+    # frontend "Records Linked To This Representative" panel, so that future SQL changes
+    # cannot silently desync the headline from its breakdown. Equality holds for this
+    # fixture because the seed only emits money + campaign_support; in production the
+    # umbrella may also include private_interest, organisational_role, and other families.
+    breakdown_sum = (
+        map_properties["current_representative_lifetime_money_event_count"]
+        + map_properties["current_representative_lifetime_benefit_event_count"]
+        + map_properties["current_representative_lifetime_campaign_support_event_count"]
+    )
+    assert (
+        map_properties["current_representative_lifetime_influence_event_count"]
+        >= breakdown_sum
+    ), (
+        "Headline current_representative_lifetime_influence_event_count must be >= sum of "
+        "money + benefit + campaign_support breakdowns shown in the UI."
+    )
+    assert (
+        map_properties["current_representative_lifetime_influence_event_count"]
+        == breakdown_sum
+    ), (
+        "For this controlled fixture (money + campaign_support only), the umbrella headline "
+        "must equal the sum of money + benefit + campaign_support breakdowns."
+    )
 
     representative_response = client.get(f"/api/representatives/{integration_db.person_id}")
     assert representative_response.status_code == 200

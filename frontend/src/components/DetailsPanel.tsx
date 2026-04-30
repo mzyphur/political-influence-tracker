@@ -691,14 +691,16 @@ export function DetailsPanel({
         <h3>Records Linked To This Representative</h3>
         <p className="scope-caption">
           Published rows are source-backed records that have not been rejected by review.
-          Counts are descriptive and do not imply wrongdoing.
+          Counts are descriptive and do not imply wrongdoing. The umbrella total covers
+          every disclosed record family below — money, benefits, campaign support, plus
+          declared private interests and organisational roles.
         </p>
         <div className="fact-grid">
           <Fact
             icon={<CheckCircle2 size={17} />}
-            label="Published records"
+            label="All disclosed records (any type)"
             value={properties.current_representative_lifetime_influence_event_count.toLocaleString("en-AU")}
-            tooltip="Source-backed rows linked to the current representative and not rejected by review. This is a disclosed-record count, not a wrongdoing claim."
+            tooltip="Umbrella count of all source-backed, non-rejected records linked to the current representative across every event family (money, benefits, campaign support, private interests, organisational roles, and any other declared types). It is the sum of the family breakdowns shown below; campaign support is included in the count but excluded from any reported-money total. Not a wrongdoing claim."
           />
           <Fact
             icon={<Banknote size={17} />}
@@ -1286,8 +1288,16 @@ function partyExposureDetail(summary: {
 }) {
   const periodScope =
     summary.event_period_scope === "all_loaded_reviewed_party_entity_receipts"
-      ? "all loaded reviewed party/entity receipt records"
-      : summary.event_period_scope?.replaceAll("_", " ");
+      ? "numerator scope: all loaded reviewed party/entity receipt records"
+      : summary.event_period_scope
+        ? `numerator scope: ${summary.event_period_scope.replaceAll("_", " ")}`
+        : null;
+  const repScope =
+    summary.representative_scope === "current_office_term_party_membership"
+      ? "denominator scope: current office-term party representatives only (asymmetric — see methodology)"
+      : summary.representative_scope
+        ? `denominator scope: ${summary.representative_scope.replaceAll("_", " ")}`
+        : null;
   return [
     `${summary.event_count.toLocaleString("en-AU")} reviewed party/entity receipt records`,
     `${formatMoney(summary.party_context_reported_amount_total)} loaded-period party context`,
@@ -1295,6 +1305,7 @@ function partyExposureDetail(summary: {
       ? `equal share across ${summary.allocation_denominator.toLocaleString("en-AU")} current party representatives`
       : summary.allocation_method.replaceAll("_", " "),
     periodScope,
+    repScope,
     `${summary.input_source_document_count.toLocaleString("en-AU")} source documents`,
     voteDateSpan(summary.first_event_date, summary.last_event_date),
     summary.claim_scope

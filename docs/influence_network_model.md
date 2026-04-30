@@ -178,6 +178,48 @@ Current API graph scaffold:
   - Includes `claim_scope = analytical equal-share exposure ... not a disclosed
     personal receipt` for frontend display.
 
+## Denominator Asymmetry in `equal_current_representative_share`
+
+The first allocation method shipped on the API,
+`equal_current_representative_share`, is deliberately a rough exposure index. It
+has a known asymmetry between its numerator and denominator that consumers must
+keep in mind. The asymmetry is surfaced as both `event_period_scope` (numerator)
+and `representative_scope` (denominator) chips in the response and in the UI
+detail line for each row.
+
+- Numerator (`event_period_scope = all_loaded_reviewed_party_entity_receipts`):
+  every reviewed party/entity money receipt currently loaded into the database,
+  with no time window. If the project loads several decades of AEC annual returns,
+  the numerator includes all of them.
+- Denominator (`representative_scope = current_office_term_party_membership`):
+  the count of distinct people whose `office_term.term_end IS NULL` for that
+  party. Only the current head-count.
+
+Because the numerator is a long historical record while the denominator is a
+single cross-section, the resulting per-representative figure is **not** a
+"how much money each MP saw during their service" estimate. A wave-election
+party that recently doubled its head-count will show a smaller per-rep figure
+than a same-receipts party with stable membership; a party that recently lost
+seats will show a larger one. The figure is useful only as a rough exposure
+index and is labelled "Est. exposure" on every UI surface that exposes it.
+
+The intentionally simpler current behaviour is acceptable because:
+
+- The numerator and denominator are both faithfully labelled.
+- The frontend never sums this estimate with direct or campaign-support
+  records.
+- The party-context reported amount total (the numerator) is exposed alongside
+  the equal-share figure so a careful consumer can reproduce the calculation.
+
+A future enhancement would compute the denominator over the union of office
+terms active during the receipt window (`representative_scope =
+union_of_office_terms_during_receipts`). That option preserves the historical
+numerator and matches it with the historical denominator. It is more honest but
+costs an extra join per request and an additional `denominator_period_scope`
+sensitivity column that exposes the min/max of plausible denominators. The
+field name is reserved for this enhancement when it lands; until then the
+current asymmetry is the documented method.
+
 ## UI Rules
 
 - Direct disclosed records appear first and keep source links visible.
