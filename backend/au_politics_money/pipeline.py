@@ -37,6 +37,11 @@ from au_politics_money.ingest.aec_election import (
     summarize_aec_election_zip,
 )
 from au_politics_money.ingest.aec_public_funding import normalize_aec_public_funding
+from au_politics_money.ingest.aec_register_entities import (
+    AECRegisterFetchError,
+    CLIENT_TYPES as AEC_REGISTER_CLIENT_TYPES,
+    fetch_register_of_entities,
+)
 from au_politics_money.ingest.aph_decision_records import (
     extract_aph_decision_record_index,
     fetch_aph_decision_record_documents,
@@ -354,6 +359,31 @@ def _qld_export_metadata_paths_from_summary(summary_path: Path) -> dict[str, Pat
     return metadata_paths
 
 
+def _make_aec_register_fetch_step(client_type: str, *, take: int) -> Callable[[], Any]:
+    """Wrap fetch_register_of_entities so a per-client_type AEC trip failure
+    does not abort the federal pipeline. The AEC live endpoint occasionally
+    returns 5xx for one client_type while others succeed; the pipeline
+    captures the per-step failure in the manifest and continues.
+    """
+
+    def _step() -> dict[str, Any]:
+        try:
+            summary_path = fetch_register_of_entities(client_type, take=take)
+            return {
+                "client_type": client_type,
+                "summary_path": str(summary_path),
+                "status": "succeeded",
+            }
+        except AECRegisterFetchError as exc:
+            return {
+                "client_type": client_type,
+                "status": "failed",
+                "error": str(exc),
+            }
+
+    return _step
+
+
 def run_federal_foundation_pipeline(
     *,
     smoke: bool = False,
@@ -515,6 +545,15 @@ def run_federal_foundation_pipeline(
 
     steps.append(("classify_entities", classify_entity_names))
     steps.append(("discover_official_identifier_sources", discover_official_identifier_sources))
+
+    aec_register_take = 25 if smoke else 200
+    for client_type in AEC_REGISTER_CLIENT_TYPES:
+        steps.append(
+            (
+                f"fetch_aec_register_of_entities_{client_type}",
+                _make_aec_register_fetch_step(client_type, take=aec_register_take),
+            )
+        )
     if include_official_identifier_bulk:
         steps.append(
             (

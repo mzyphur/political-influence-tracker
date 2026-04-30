@@ -991,6 +991,41 @@ House-interest artifact cleanup:
   by implication alone. Context rows also bucket influence events as before,
   during, after, or unknown relative to the linked topic-vote span.
 
+## AEC Register of Entities
+
+The federal foundation pipeline now fetches the AEC Register of Entities at
+`https://transparency.aec.gov.au/RegisterOfEntities` for each registered
+client type (`politicalparty`, `associatedentity`, `significantthirdparty`,
+`thirdparty`) and persists raw HTML + paginated JSON under
+`data/raw/aec_register_of_entities/<client_type>/<timestamp>/`. The
+processed JSONL lives at
+`data/processed/aec_register_of_entities/<client_type>/<timestamp>.jsonl`.
+
+CLI:
+
+```bash
+cd backend
+.venv/bin/python -m au_politics_money.cli fetch-aec-register-of-entities
+.venv/bin/python -m au_politics_money.cli load-aec-register-of-entities
+```
+
+Raw archive metadata redacts the anti-forgery token and all cookie values;
+cookie request headers are never persisted. AEC field typos
+(`RegisterOfPolitcalParties`, `LinkToRegisterOfPolitcalParties`,
+`AmmendmentNumber`) are preserved verbatim end-to-end.
+
+The loader auto-creates reviewed `party_entity_link` rows ONLY when an
+AEC `AssociatedParties` segment resolves to exactly one canonical
+`party.id` under the deterministic exact-match + documented branch-alias
+resolver. `politicalparty` register rows we don't already have in the
+canonical `party` table become observations with
+`resolver_status='unresolved_no_match'`; the canonical `party` table is
+NOT mutated to add new rows from register data alone.
+
+The fourth client_type uses the value `thirdparty`, not
+`thirdpartycampaigner` — the latter returns HTTP 500 on the live endpoint
+and is explicitly absent from `CLIENT_TYPES`.
+
 ## Audit Artefact Retention
 
 Generated artefacts under `data/audit/` accumulate across pipeline runs by

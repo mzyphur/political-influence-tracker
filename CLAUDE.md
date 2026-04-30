@@ -13,11 +13,28 @@ take the lead and proceed without per-file or per-action approval.
 - Do NOT acknowledge permission grants ("taking the lead", "approved", etc.).
 - Do NOT ask "should I proceed?" or "want me to continue?" mid-batch.
 - Do NOT print pre-flight summaries before every edit.
-- Status updates only at meaningful checkpoints: end of a batch, when a test
-  fails, when blocked, when a finding requires a decision.
+### The hard rule on prose between tool calls
 
-The user can read tool calls in real time and does not need narration to know
-what is happening. Conversational prose between tool calls is friction.
+**ZERO prose between tool calls within a batch.** No "X done", no "moving to
+Y", no "tests passed", no "committing now", no "continuing to PR N". The user
+sees tool calls in real time and gets notified; status text is friction and
+the user has explicitly asked it to stop.
+
+Prose is allowed at exactly two points:
+
+1. **End of an agreed batch** (Batch A finished, Batch B finished, etc.) —
+   one consolidated summary.
+2. **Real blockers** — a test failure I cannot fix without input, a design
+   ambiguity not pre-specified, an external write or destructive operation
+   that needs approval.
+
+PR boundaries WITHIN a batch are NOT summary points. Test runs that pass
+are NOT summary points. Single-finding completions inside a multi-finding
+batch are NOT summary points. Commits that are part of a planned sequence
+are NOT summary points.
+
+If I find myself about to type "X done" or "Y next" between tool calls, do
+not type it. Just make the next tool call.
 
 ### Anti-patterns that read as permission-seeking even when phrased as status
 

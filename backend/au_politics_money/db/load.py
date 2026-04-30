@@ -9126,6 +9126,7 @@ def load_processed_artifacts(
     include_vote_divisions: bool = False,
     include_postcode_crosswalk: bool = True,
     include_party_entity_links: bool = True,
+    include_aec_register_of_entities: bool = True,
     reapply_reviews: bool = True,
 ) -> dict[str, Any]:
     with connect(database_url) as conn:
@@ -9207,6 +9208,26 @@ def load_processed_artifacts(
             summary["vote_divisions"] = load_they_vote_for_you_divisions(conn)
         if include_postcode_crosswalk:
             summary["postcode_electorate_crosswalk"] = load_postcode_electorate_crosswalk(conn)
+        if include_aec_register_of_entities:
+            from au_politics_money.db.aec_register_loader import (
+                latest_jsonl as _aec_register_latest_jsonl,
+                load_aec_register_of_entities as _load_aec_register_of_entities,
+            )
+            from au_politics_money.ingest.aec_register_entities import (
+                CLIENT_TYPES as _AEC_REGISTER_CLIENT_TYPES,
+            )
+
+            aec_register_summaries: dict[str, dict[str, Any]] = {}
+            for aec_client_type in _AEC_REGISTER_CLIENT_TYPES:
+                if _aec_register_latest_jsonl(aec_client_type) is None:
+                    aec_register_summaries[aec_client_type] = {
+                        "skipped_reason": "no_processed_jsonl",
+                    }
+                    continue
+                aec_register_summaries[aec_client_type] = _load_aec_register_of_entities(
+                    conn, client_type=aec_client_type
+                )
+            summary["aec_register_of_entities"] = aec_register_summaries
         if include_party_entity_links:
             from au_politics_money.db.party_entity_suggestions import (
                 materialize_party_entity_link_candidates,

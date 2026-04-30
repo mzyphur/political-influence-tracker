@@ -1,6 +1,21 @@
 # Reproducibility and Auto-Update Standard
 
-Last updated: 2026-04-29
+Last updated: 2026-05-01
+
+> **AEC Register of Entities ingestion (added 2026-05-01).** The federal
+> foundation pipeline now fetches the official AEC Register of Entities
+> for `politicalparty`, `associatedentity`, `significantthirdparty`, and
+> `thirdparty` client types. Anti-forgery tokens and cookie values are
+> redacted from raw archive metadata; AEC field typos
+> (`RegisterOfPolitcalParties`, `LinkToRegisterOfPolitcalParties`,
+> `AmmendmentNumber`) are preserved verbatim. The loader auto-creates
+> reviewed `party_entity_link` rows only when an `AssociatedParties`
+> segment resolves to exactly one canonical `party.id` via deterministic
+> exact-match or documented branch-alias rules. See `docs/operations.md`
+> and `docs/influence_network_model.md` for the full method and the
+> attribution caveats baked into every auto-reviewed link's
+> `evidence_note`.
+
 
 ## Core Rule
 

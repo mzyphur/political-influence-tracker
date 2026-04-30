@@ -213,6 +213,7 @@ def test_default_load_refreshes_official_identifiers_before_influence_events(mon
         include_vote_divisions=False,
         include_postcode_crosswalk=False,
         include_party_entity_links=False,
+        include_aec_register_of_entities=False,
         include_nsw_aggregates=False,
         reapply_reviews=False,
     )

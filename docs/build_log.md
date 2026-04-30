@@ -1,5 +1,70 @@
 # Build Log
 
+## 2026-05-01 (AEC Register of Entities ingestion)
+
+Completed:
+
+- Probed the live AEC Register of Entities endpoint at
+  `transparency.aec.gov.au/RegisterOfEntities` to confirm shape before
+  designing a parser. Findings: GET → token extraction → POST flow, one
+  token + one anti-forgery cookie reused across paginated POSTs in a
+  session, JSON `{Data: [...], Total: <int>, ...}` shape, and crucially
+  the working third-party `clientType` value is `thirdparty` not
+  `thirdpartycampaigner` (the latter returns HTTP 500). Recorded the
+  finding and the AEC field-name typos (`RegisterOfPolitcalParties`,
+  `LinkToRegisterOfPolitcalParties`, `AmmendmentNumber`) so downstream
+  loaders preserve them verbatim.
+- Added Batch C PR 1: fetch + raw archive module
+  (`backend/au_politics_money/ingest/aec_register_entities.py`) plus four
+  source registry entries, a `fetch-aec-register-of-entities` CLI command,
+  and 18 mock-HTTP unit tests. Anti-forgery token + cookie values are
+  redacted from raw archive metadata; the `Cookie` request header is
+  never persisted. Refuses to publish empty observation sets, fails loudly
+  on HTTP error / non-JSON / missing token / multiple distinct tokens / a
+  hard 50-page pagination cap. Live test_aec_register_entities suite
+  passes 18/18.
+- Added Batch C PR 2: schema 033 (registration-observation table),
+  deterministic branch resolver
+  (`backend/au_politics_money/ingest/aec_register_branch_resolver.py`),
+  loader (`backend/au_politics_money/db/aec_register_loader.py`), CLI
+  `load-aec-register-of-entities`, plus 30 resolver unit tests and 7
+  Postgres integration tests. Implements the dev's C-rule per client_type:
+  `politicalparty` → entity + identifier only (no auto party_entity_link;
+  unresolved register rows are NOT auto-promoted to canonical `party`
+  rows); `associatedentity` → reviewed `party_entity_link` ONLY when the
+  AssociatedParties segment resolves to exactly one canonical `party.id`
+  via exact name/short_name match, the documented branch alias rules
+  (ALP/Liberal/Greens/Nationals state branches → canonical parent), or a
+  parenthetical short-name alias; `significantthirdparty` /
+  `thirdparty` → entity + identifier only regardless of AssociatedParties
+  content. Reviewed links carry `method='official'`,
+  `confidence='exact_identifier'`, `reviewer='system:aec_register_of_entities'`,
+  and an evidence_note recording the AEC client_id, raw segment, resolver
+  rule, and the explicit attribution-limit caveat. Multi-segment
+  AssociatedParties produce one idempotent link per resolved party.
+  Individual-name segments (`Allegra Spender`, `Dr Monique Ryan`, etc.)
+  never auto-link. Multi-row matches (e.g. duplicate ALP rows in the local
+  party table) fail closed as `unresolved_multiple_matches`. The loader
+  is idempotent across re-runs and an integration test asserts that
+  direct-representative money totals are byte-identical before and after.
+- Added Batch C PR 3: pipeline integration. The federal foundation
+  pipeline now runs `fetch_aec_register_of_entities_<client_type>` for all
+  four client types after the lobbyist register fetch, with smoke runs
+  using `take=25` per client_type. Per-client_type fetch failures are
+  captured in the manifest without aborting the pipeline.
+  `load_processed_artifacts` now also loads any present AEC Register
+  JSONL artefacts via a new `include_aec_register_of_entities=True`
+  default flag, exposing per-client_type loader summaries on the load
+  result.
+
+Verification:
+
+- 30/30 resolver unit tests passing.
+- 7/7 Postgres loader integration tests passing.
+- Full backend pytest 306/306 passing (with Postgres integration enabled).
+- ruff clean across new modules + cli.py + pipeline.py + load.py.
+- Frontend production build still clean.
+
 ## 2026-04-30 (Batch A — adversarial-review fixes)
 
 Completed:

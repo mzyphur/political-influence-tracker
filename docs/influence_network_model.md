@@ -178,6 +178,51 @@ Current API graph scaffold:
   - Includes `claim_scope = analytical equal-share exposure ... not a disclosed
     personal receipt` for frontend display.
 
+## AEC Register of Entities as the Source-Backed Origin of `party_entity_link`
+
+Reviewed `party_entity_link` rows are the structural input to the
+party-mediated exposure surface, the influence graph's reviewed-party path,
+and the party profile money-flow surfaces. Until the AEC Register of
+Entities ingestion, the local DB had **zero** reviewed links and these
+surfaces rendered empty in production despite their plumbing being
+complete.
+
+The AEC Register of Entities is the official public registry of registered
+political parties, associated entities, significant third parties, and
+third parties. Each `associatedentity` row carries an explicit
+`AssociatedParties` text field listing the parent party (often by state
+branch). This is the source-backed origin from which we can produce
+deterministic reviewed `party_entity_link` rows without human review per
+row, while still respecting the C-rule: only resolve segments that map
+unambiguously to one canonical `party.id`.
+
+The deterministic resolver:
+
+1. Exact normalized match against `party.name` / `party.short_name`.
+2. Documented branch-alias rules (ALP/Liberal/Greens/Nationals state
+   branches → canonical parent).
+3. Parenthetical short-form alias (`Australian Labor Party (ALP)` →
+   match by `ALP` short_name).
+
+Multi-row matches (e.g. duplicate ALP rows in the local party table) fail
+closed as `unresolved_multiple_matches`. Individual-name segments fail
+closed as `unresolved_individual_segment`. No fuzzy similarity is used.
+
+Auto-created links carry `method='official'`,
+`confidence='exact_identifier'`, `reviewer='system:aec_register_of_entities'`,
+and an evidence_note that records the AEC `ClientIdentifier`, raw
+`AssociatedParties` segment, the resolver rule that fired, and the
+attribution caveat: *"Official AEC branch/party relationship resolved to
+canonical app party for display/network context; not proof of personal
+receipt or candidate-specific support."*
+
+The resolver is implemented in
+`backend/au_politics_money/ingest/aec_register_branch_resolver.py` and the
+loader in `backend/au_politics_money/db/aec_register_loader.py`, with
+integration tests in `backend/tests/test_aec_register_loader.py` that
+explicitly assert direct-representative money totals do not change after a
+load.
+
 ## Denominator Asymmetry in `equal_current_representative_share`
 
 The first allocation method shipped on the API,
