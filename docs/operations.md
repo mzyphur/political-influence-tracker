@@ -496,6 +496,23 @@ New backend virtual environments created by the weekly runner and CI install
 with `backend/requirements.lock` as a constraints file. Update that file
 intentionally when dependency upgrades are part of the work.
 
+### Lockfile Regeneration
+
+`backend/requirements.lock` is a pip-compile-style constraints file pinned for
+CI and weekly-runner reproducibility. It must not be hand-edited. When direct
+dependencies in `backend/pyproject.toml` change, regenerate the lock with:
+
+```bash
+cd backend
+make lock
+```
+
+This runs `python -m piptools compile pyproject.toml --extra dev -o requirements.lock`
+inside the project venv. `pip-tools` is declared as a dev dependency in
+`pyproject.toml`, so a fresh `make install` is sufficient to enable `make lock`.
+Lockfile diffs should be reviewed alongside the dependency change that motivated
+them and committed as a single intentional reproducibility update.
+
 The weekly state/local runner refreshes the implemented jurisdiction adapters
 (`qld nsw act nt sa tas vic wa` by default), writes each non-mutating pipeline
 manifest path into `data/audit/logs/weekly_state_local_<jurisdiction>_<timestamp>.manifest.log`,
@@ -973,6 +990,35 @@ House-interest artifact cleanup:
   record exists, so money/gift/interest sectors are not linked to policy topics
   by implication alone. Context rows also bucket influence events as before,
   during, after, or unknown relative to the linked topic-vote span.
+
+## Audit Artefact Retention
+
+Generated artefacts under `data/audit/` accumulate across pipeline runs by
+design — every run writes timestamped JSONL/summary files so prior reproductions
+remain inspectable. This grows quickly (review-queue exports are often >1MB
+each, weekly cadence × multiple queues × full year ≈ several GB). Retention
+policy:
+
+- `data/audit/pipeline_runs/` — keep all manifests indefinitely. They are small
+  JSON files and they anchor every other artefact's reproducibility chain.
+- `data/audit/review_queues/` — keep the latest 30 timestamped exports of each
+  queue (`benefit-events`, `entity-classifications`, `official-match-candidates`,
+  `sector-policy-links`, `party-entity-links`). Older artefacts move to
+  `data/audit/review_queues/archive/<YYYYMMDD>/` either by hand or by a periodic
+  cleanup job. Never delete the most recent export of any queue.
+- `data/audit/review_bundles/` — keep all summary JSON files; the heavy data is
+  inside the referenced queue exports, not the bundle itself.
+- `data/audit/review_imports/` and `data/audit/review_replays/` — keep all
+  files, since they are append-only audit records of decisions applied to the
+  database.
+- `data/audit/sector_policy_link_suggestions/` — same retention rule as
+  `review_queues/` (latest 30, then archive).
+- `data/audit/logs/` — keep the latest 90 days of weekly-runner log files;
+  archive older with the date prefix.
+
+The whole `data/audit/` tree is gitignored, so retention is purely an operational
+storage decision; it does not affect reproducibility because the canonical
+record is the timestamped manifest plus the source-document SHA-256 chain.
 
 ## Operational Checks
 

@@ -1,4 +1,4 @@
-.PHONY: install test lint fetch-core discover-core roster aec-annual-summary aec-money pdf-text senate-interests classify-entities pipeline pipeline-smoke db-up db-load api-dev
+.PHONY: install test lint lock fetch-core discover-core roster aec-annual-summary aec-money pdf-text senate-interests classify-entities pipeline pipeline-smoke db-up db-load api-dev
 
 install:
 	python3 -m venv .venv
@@ -9,6 +9,14 @@ test:
 
 lint:
 	.venv/bin/ruff check .
+
+# Regenerate requirements.lock from pyproject.toml. Run this whenever direct
+# dependencies change in pyproject.toml. Requires pip-tools (a dev dependency
+# declared in pyproject.toml [project.optional-dependencies].dev). Lockfile
+# diffs should be treated as intentional reproducibility changes; do not
+# hand-edit requirements.lock.
+lock:
+	.venv/bin/python -m piptools compile pyproject.toml --extra dev -o requirements.lock
 
 fetch-core:
 	.venv/bin/python -m au_politics_money.cli fetch-source aec_transparency_downloads
