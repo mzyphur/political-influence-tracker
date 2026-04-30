@@ -406,6 +406,42 @@ SOURCES: tuple[SourceRecord, ...] = (
         notes="Official Australian and New Zealand industry classification.",
     ),
     SourceRecord(
+        source_id="abs_indicator_api",
+        name="ABS Indicator API",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="economic_indicator_api",
+        url="https://api.data.abs.gov.au/indicators",
+        expected_format="json",
+        update_frequency="release_calendar_1130_aest",
+        priority="medium",
+        notes=(
+            "Official public ABS Indicator API for headline market-moving statistics. "
+            "Production-suitable; requires `ABS_API_KEY`; rate-limited to 10 calls/sec "
+            "per key. Headline indicators are published at 11:30am AEST on release day. "
+            "Reuse/licence terms must be re-confirmed against current ABS terms before "
+            "public data redistribution."
+        ),
+    ),
+    SourceRecord(
+        source_id="abs_data_api",
+        name="ABS Data API (SDMX, beta)",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="statistical_data_api",
+        url="https://data.api.abs.gov.au/rest/",
+        expected_format="sdmx_xml_json_csv",
+        update_frequency="dataflow_dependent",
+        priority="medium",
+        notes=(
+            "Official ABS Data API serving detailed SDMX statistics. Beta service; "
+            "availability not guaranteed; subject to change. Keyless since 29 Nov 2024 "
+            "(register-of-interest model). Distinct from the ABS Indicator API: do not "
+            "send `ABS_API_KEY` here. Reuse/licence terms must be re-confirmed against "
+            "current ABS terms before public data redistribution."
+        ),
+    ),
+    SourceRecord(
         source_id="nsw_electoral_disclosures",
         name="NSW Electoral Commission Disclosures",
         jurisdiction="New South Wales",

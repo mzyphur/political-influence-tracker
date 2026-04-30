@@ -33,6 +33,14 @@ Current local safeguards:
   corpus release, maintain a takedown/withdrawal procedure that can identify and
   delete affected raw XML, processed JSONL, review exports, and database rows by
   ABN/ACN/source metadata.
+- The ABS Indicator API key (`ABS_API_KEY`) is for the ABS Indicator API only
+  (headline market-moving statistics at https://api.data.abs.gov.au/indicators).
+  Do not send it to the ABS Data API (https://data.api.abs.gov.au/rest/), which
+  has been keyless since 29 Nov 2024 and uses a register-of-interest model. Both
+  endpoints must be implemented as separate ingest paths so the key cannot leak
+  into Data API request URLs or headers. Indicator API rate limit: 10 calls/sec
+  per key. Headline indicators publish at 11:30am AEST on release day; polling
+  more frequently than the rate limit will be throttled.
 
 Before public release:
 
