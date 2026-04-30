@@ -25,7 +25,7 @@ DOCKER_COMPOSE := /opt/homebrew/bin/docker-compose
 .PHONY: help bootstrap reproduce-federal reproduce-federal-smoke verify \
         api-dev frontend-dev test test-backend test-frontend lint \
         db-up db-down db-ready db-load \
-        fetch-aec-register fetch-postcode-crosswalk \
+        fetch-aec-register fetch-postcode-crosswalk expand-postcode-seed \
         load-aec-register load-postcode-crosswalk \
         clean-data clean-state-of-the-world
 
@@ -53,6 +53,12 @@ help:
 	@echo "                            finder using the seed list."
 	@echo "  make load-postcode-crosswalk"
 	@echo "                            Load the latest postcode crosswalk JSONL."
+	@echo "  make expand-postcode-seed [SEED_FILE=path] [EXPAND_POSTCODE_SEED_FLAGS=--max-postcodes=200]"
+	@echo "                            Wrapper for scripts/expand_postcode_seed.sh."
+	@echo "                            Reads a postcode seed file (one postcode per line),"
+	@echo "                            fetches each from the live AEC Electorate Finder,"
+	@echo "                            normalises, and reloads the local crosswalk tables."
+	@echo "                            Use a capped run first; respect AEC endpoint etiquette."
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make test                 Run backend + frontend tests."
@@ -119,6 +125,9 @@ fetch-postcode-crosswalk:
 load-postcode-crosswalk:
 	cd $(BACKEND) && .venv/bin/dotenv -f .env run -- \
 		.venv/bin/au-politics-money load-postcode-electorate-crosswalk
+
+expand-postcode-seed:
+	bash $(PROJECT_ROOT)/scripts/expand_postcode_seed.sh $(SEED_FILE) $(EXPAND_POSTCODE_SEED_FLAGS)
 
 # --- Verification ----------------------------------------------------------
 
