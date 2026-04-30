@@ -193,7 +193,9 @@ _BRANCH_ALIAS_RULES: tuple[BranchAliasRule, ...] = (
     BranchAliasRule(
         rule_id="liberal_party_state_division_to_liberal_parent_v1",
         pattern=re.compile(
-            r"^Liberal Party of Australia\s*\((?:ACT|NSW|QLD|SA|TAS|VIC|WA)"
+            r"^Liberal Party of Australia\s*\((?:ACT|N\.S\.W\.|NSW|QLD|S\.A\.|SA|"
+            r"TAS|VIC|W\.A\.|WA|Victorian|Tasmanian|"
+            r"South Australian|Western Australian)"
             r"(?:\s+Division)?\)\s*$",
             re.IGNORECASE,
         ),
@@ -201,6 +203,88 @@ _BRANCH_ALIAS_RULES: tuple[BranchAliasRule, ...] = (
         description=(
             "AEC publishes Liberal state divisions as separate parties. Resolved "
             "to canonical Liberal Party. Not a claim about LNP-affiliated members."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="liberal_party_state_division_punctuated_v1",
+        pattern=re.compile(
+            # AEC also publishes Liberal state divisions in comma- or hyphen-
+            # delimited form, e.g. "Liberal Party of Australia, NSW Division",
+            # "Liberal Party of Australia - ACT Division",
+            # "Liberal Party of Australia - Tasmanian Division".
+            r"^Liberal Party of Australia\s*[,\-]\s*(?:ACT|N\.S\.W\.|NSW|QLD|S\.A\.|SA|"
+            r"TAS|VIC|W\.A\.|WA|Victorian|Tasmanian|"
+            r"South Australian|Western Australian|New South Wales)"
+            r"(?:\s+Division)?\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Liberal Party",
+        description=(
+            "AEC also publishes Liberal state divisions in comma- or hyphen-"
+            "delimited form (e.g. 'Liberal Party of Australia, NSW Division'). "
+            "Resolved to canonical Liberal Party."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="liberal_party_wa_division_inc_v1",
+        pattern=re.compile(
+            # AEC publishes the WA Liberals as "Liberal Party (W.A. Division)"
+            # or "Liberal Party (W.A. Division) Inc[.]?". The trailing "Inc"
+            # is part of the registered company structure but does not change
+            # the canonical party identity.
+            r"^Liberal Party\s*\(W\.A\.\s*Division\)\s*Inc\.?\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Liberal Party",
+        description=(
+            "AEC publishes the WA Liberals with an 'Inc' suffix as the "
+            "registered association name; resolved to canonical Liberal Party."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="liberal_party_of_australia_long_form_v1",
+        pattern=re.compile(
+            # The AEC's federal long-form name is "Liberal Party of
+            # Australia"; the local DB stores the canonical row as
+            # "Liberal Party". Map the long form to the canonical row.
+            r"^Liberal Party of Australia\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Liberal Party",
+        description=(
+            "AEC's federal long-form name 'Liberal Party of Australia' "
+            "resolved to canonical local 'Liberal Party' row."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="liberal_national_party_of_queensland_long_form_v1",
+        pattern=re.compile(
+            # AEC publishes the LNP as "Liberal National Party of Queensland"
+            # at the federal register level (the QLD-state designator is
+            # part of the registered name, not a separate state branch). The
+            # local canonical row uses the shorter "Liberal National Party".
+            r"^Liberal National Party of Queensland\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Liberal National Party",
+        description=(
+            "AEC's 'Liberal National Party of Queensland' is the registered "
+            "federal name; resolved to canonical 'Liberal National Party' row."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="country_liberal_party_nt_short_form_v1",
+        pattern=re.compile(
+            # AEC sometimes appends a "(NT)" suffix to the Country Liberal
+            # Party name even though CLP is by definition NT-based.
+            r"^Country Liberal Party\s*\(NT\)\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Country Liberal Party",
+        description=(
+            "AEC publishes the CLP with an explicit '(NT)' suffix even though "
+            "CLP is NT-based by definition. Resolved to canonical Country "
+            "Liberal Party row."
         ),
     ),
     BranchAliasRule(
@@ -217,14 +301,46 @@ _BRANCH_ALIAS_RULES: tuple[BranchAliasRule, ...] = (
     BranchAliasRule(
         rule_id="nationals_state_branch_to_nationals_parent_v1",
         pattern=re.compile(
-            r"^National Party of Australia\s*\((?:NSW|QLD|VIC|WA|"
-            r"Victorian|Western Australian)\s*(?:Branch|Division)?\)\s*$",
+            r"^National Party of Australia\s*\((?:NSW|QLD|VIC|WA|N\.S\.W\.|"
+            r"Victorian|Western Australian|New South Wales)\s*(?:Branch|Division)?\)\s*$",
             re.IGNORECASE,
         ),
         canonical_name="National Party",
         description=(
             "AEC state Nationals branches resolved to canonical National Party. "
             "Distinct from LNP and CLP which have separate canonical rows."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="nationals_state_branch_punctuated_v1",
+        pattern=re.compile(
+            # AEC also publishes Nationals state branches in comma- or
+            # hyphen-delimited form, e.g. "National Party of Australia -
+            # N.S.W.", "National Party of Australia - Victoria".
+            r"^National Party of Australia\s*[,\-]\s*(?:NSW|QLD|VIC|WA|N\.S\.W\.|"
+            r"Victoria|Tasmania|South Australia|Western Australia|"
+            r"Victorian|Tasmanian|Queensland|New South Wales)"
+            r"(?:\s+Branch|\s+Division)?\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="National Party",
+        description=(
+            "AEC also publishes Nationals state branches in comma- or "
+            "hyphen-delimited form. Resolved to canonical National Party."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="national_party_of_australia_long_form_v1",
+        pattern=re.compile(
+            # AEC's federal long-form name is "National Party of Australia";
+            # the local DB stores the canonical row as "National Party".
+            r"^National Party of Australia\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="National Party",
+        description=(
+            "AEC's federal long-form name 'National Party of Australia' "
+            "resolved to canonical local 'National Party' row."
         ),
     ),
 )
@@ -245,12 +361,25 @@ _SHORT_FORM_PARENTHETICAL = re.compile(r"^(?P<base>.+?)\s*\((?P<short>[A-Z]{2,5}
 
 
 def _resolve_via_parenthetical_short_name(
-    segment: str, directory: PartyDirectory
-) -> PartyDirectoryRow | None:
+    segment: str,
+    directory: PartyDirectory,
+    *,
+    source_jurisdiction_id: int | None = None,
+) -> tuple[PartyDirectoryRow | None, bool]:
+    """Try to resolve a `<long name> (<SHORT>)` segment by exact match on
+    the parenthetical content against `party.short_name`.
+
+    Returns `(matched_row, used_source_jurisdiction_disambiguation)`. The
+    second element is True when more than one candidate matched the
+    parenthetical short_name and the source-jurisdiction disambiguation
+    rule narrowed the candidate set to exactly one row whose
+    `jurisdiction_id` matches the source. The rule consults a stable,
+    source-attributed integer attribute - it is not fuzzy similarity.
+    """
     cleaned = " ".join(segment.split())
     match = _SHORT_FORM_PARENTHETICAL.match(cleaned)
     if not match:
-        return None
+        return None, False
     short_norm = _normalize_party_name(match.group("short"))
     candidates = [
         row
@@ -258,8 +387,14 @@ def _resolve_via_parenthetical_short_name(
         if row.normalized_short_name and row.normalized_short_name == short_norm
     ]
     if len(candidates) == 1:
-        return candidates[0]
-    return None
+        return candidates[0], False
+    if len(candidates) > 1 and source_jurisdiction_id is not None:
+        same_juris = [
+            row for row in candidates if row.jurisdiction_id == source_jurisdiction_id
+        ]
+        if len(same_juris) == 1:
+            return same_juris[0], True
+    return None, False
 
 
 # --- individual-name detection --------------------------------------------
@@ -516,8 +651,21 @@ def resolve_segment(
         )
 
     # Stage 3: parenthetical short-form alias.
-    paren_match = _resolve_via_parenthetical_short_name(cleaned, directory)
+    paren_match, paren_disambiguated = _resolve_via_parenthetical_short_name(
+        cleaned, directory, source_jurisdiction_id=source_jurisdiction_id
+    )
     if paren_match is not None:
+        notes = {
+            "stage": "parenthetical_short_name_alias",
+            "resolver_name": RESOLVER_NAME,
+            "resolver_version": RESOLVER_VERSION,
+        }
+        if paren_disambiguated:
+            notes["source_jurisdiction_disambiguation"] = {
+                "rule_id": SOURCE_JURISDICTION_DISAMBIGUATION_RULE_ID,
+                "source_jurisdiction_id": source_jurisdiction_id,
+                "stage": "parenthetical_short_name_alias",
+            }
         return SegmentResolution(
             segment=raw,
             normalized_segment=normalized,
@@ -527,11 +675,7 @@ def resolve_segment(
             canonical_party_short_name=paren_match.short_name,
             matched_via_rule_id="parenthetical_short_name_alias_v1",
             candidate_party_ids=(paren_match.party_id,),
-            notes={
-                "stage": "parenthetical_short_name_alias",
-                "resolver_name": RESOLVER_NAME,
-                "resolver_version": RESOLVER_VERSION,
-            },
+            notes=notes,
         )
 
     # Individual-name detection (no party link, by design).

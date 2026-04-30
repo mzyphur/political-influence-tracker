@@ -424,3 +424,159 @@ def test_three_tuple_directory_is_still_supported() -> None:
     )
     assert res.resolver_status == "resolved_exact"
     assert res.canonical_party_id == 1
+
+
+# --- Extended alias rules (Batch E) -----------------------------------------
+
+
+@pytest.fixture
+def post_seed_directory() -> PartyDirectory:
+    """Mirrors the local DB AFTER migrations 034 + 035 have been applied:
+    federal short-form rows are the canonical home for the major parties,
+    plus the seeded Animal Justice / Australian Citizens / Libertarian /
+    Shooters Fishers & Farmers rows. State-jurisdiction rows are kept
+    where they exist live (jurisdiction_id=41 for QLD)."""
+    return PartyDirectory.from_rows(
+        [
+            (1, "Australian Labor Party", "ALP", 1),
+            (3, "Liberal Party", "LP", 1),
+            (6, "Liberal National Party", "LNP", 1),
+            (10, "National Party", "NATS", 1),
+            (11, "Independent", "IND", 1),
+            (66, "Katter's Australian Party", "KAP", 1),
+            (136, "Australian Greens", "AG", 1),
+            (8192, "Country Liberal Party", "CLP", 1),
+            (200001, "Animal Justice Party", "AJP", 1),
+            (200002, "Australian Citizens Party", "CITZN", 1),
+            (200003, "Libertarian Party", "LIB-DEM", 1),
+            (200004, "Shooters, Fishers and Farmers Party", "SFF", 1),
+            (152936, "Australian Labor Party", "ALP", 41),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "segment,expected_party_id,expected_rule_id",
+    [
+        # Bare federal long forms map to the canonical short-name row.
+        (
+            "Liberal Party of Australia",
+            3,
+            "liberal_party_of_australia_long_form_v1",
+        ),
+        (
+            "National Party of Australia",
+            10,
+            "national_party_of_australia_long_form_v1",
+        ),
+        (
+            "Liberal National Party of Queensland",
+            6,
+            "liberal_national_party_of_queensland_long_form_v1",
+        ),
+        # Comma- and hyphen-delimited Liberal state divisions.
+        (
+            "Liberal Party of Australia, NSW Division",
+            3,
+            "liberal_party_state_division_punctuated_v1",
+        ),
+        (
+            "Liberal Party of Australia - ACT Division",
+            3,
+            "liberal_party_state_division_punctuated_v1",
+        ),
+        (
+            "Liberal Party of Australia - Tasmanian Division",
+            3,
+            "liberal_party_state_division_punctuated_v1",
+        ),
+        # Parens with dot-abbreviated state codes that the v1 regex did not
+        # cover and parens with full state names.
+        (
+            "Liberal Party of Australia (S.A. Division)",
+            3,
+            "liberal_party_state_division_to_liberal_parent_v1",
+        ),
+        (
+            "Liberal Party of Australia (Victorian Division)",
+            3,
+            "liberal_party_state_division_to_liberal_parent_v1",
+        ),
+        # WA Liberals registered name carries an "Inc"/"Inc." suffix.
+        (
+            "Liberal Party (W.A. Division) Inc",
+            3,
+            "liberal_party_wa_division_inc_v1",
+        ),
+        (
+            "Liberal Party (W.A. Division) Inc.",
+            3,
+            "liberal_party_wa_division_inc_v1",
+        ),
+        # Hyphen-delimited Nationals state branches.
+        (
+            "National Party of Australia - N.S.W.",
+            10,
+            "nationals_state_branch_punctuated_v1",
+        ),
+        (
+            "National Party of Australia - Victoria",
+            10,
+            "nationals_state_branch_punctuated_v1",
+        ),
+        # CLP with explicit (NT) suffix.
+        (
+            "Country Liberal Party (NT)",
+            8192,
+            "country_liberal_party_nt_short_form_v1",
+        ),
+    ],
+)
+def test_extended_alias_rules_resolve_to_canonical_party(
+    segment: str,
+    expected_party_id: int,
+    expected_rule_id: str,
+    post_seed_directory: PartyDirectory,
+) -> None:
+    res = resolve_segment(segment, post_seed_directory, source_jurisdiction_id=1)
+    assert res.resolver_status == "resolved_branch"
+    assert res.canonical_party_id == expected_party_id
+    assert res.matched_via_rule_id == expected_rule_id
+
+
+@pytest.mark.parametrize(
+    "segment,expected_party_id",
+    [
+        ("Animal Justice Party", 200001),
+        ("Australian Citizens Party", 200002),
+        ("Libertarian Party", 200003),
+        ("Shooters, Fishers and Farmers Party", 200004),
+    ],
+)
+def test_seeded_canonical_parties_resolve_via_exact_match(
+    segment: str,
+    expected_party_id: int,
+    post_seed_directory: PartyDirectory,
+) -> None:
+    res = resolve_segment(segment, post_seed_directory, source_jurisdiction_id=1)
+    assert res.resolver_status == "resolved_exact"
+    assert res.canonical_party_id == expected_party_id
+
+
+def test_parenthetical_short_form_picks_federal_when_disambiguated(
+    post_seed_directory: PartyDirectory,
+) -> None:
+    """`Australian Labor Party (ALP)` previously fell through to
+    unresolved_no_match because two short_name='ALP' rows existed
+    (federal id=1 + QLD id=152936). With source-jurisdiction
+    disambiguation the parenthetical resolver now picks the federal row.
+    """
+    res = resolve_segment(
+        "Australian Labor Party (ALP)",
+        post_seed_directory,
+        source_jurisdiction_id=1,
+    )
+    assert res.resolver_status == "resolved_alias"
+    assert res.canonical_party_id == 1
+    assert res.matched_via_rule_id == "parenthetical_short_name_alias_v1"
+    assert "source_jurisdiction_disambiguation" in res.notes
