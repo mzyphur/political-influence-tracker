@@ -422,6 +422,23 @@
         font-size: 12px;
       }
 
+      pre {
+        background: rgba(20, 36, 43, 0.06);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 14px 16px;
+        font-size: 13px;
+        line-height: 1.55;
+        overflow-x: auto;
+        margin: 12px 0;
+      }
+
+      pre code {
+        background: transparent;
+        padding: 0;
+        font-size: 13px;
+      }
+
       @media (max-width: 900px) {
         .hero,
         .section-grid,
@@ -483,6 +500,7 @@
           <a href="#aec-register-pathways">AEC Register</a>
           <a href="#equal-share">Equal-share estimates</a>
           <a href="#campaign-support-tiers">Campaign support tiers</a>
+          <a href="#reproducibility">Reproduce these numbers</a>
           <a href="#claims">Claim discipline</a>
           <a href="#version">Version</a>
         </div>
@@ -992,6 +1010,103 @@
             total visually separate from direct reported totals, and the
             <code>campaign_support_summary</code> API field carries its own
             attribution caveat.
+          </p>
+        </article>
+
+        <article class="panel wide" id="reproducibility">
+          <h2>Reproduce These Numbers Yourself</h2>
+          <p>
+            Every number on this site comes from public AEC, APH, AIMS, and
+            (optional) civic-source endpoints plus parsing and loading code in
+            the project repository. There is no manual data entry, no private
+            spreadsheets, no human-curated row-by-row totals.
+          </p>
+          <p>
+            From a clean clone of the repository, the entire federal data
+            layer can be regenerated end-to-end with one command:
+          </p>
+          <pre><code>git clone &lt;repo-url&gt; au-politics
+cd au-politics
+make bootstrap        # backend venv + frontend npm deps
+make db-up            # local Postgres/PostGIS via docker-compose
+make db-ready         # block until Postgres is ready
+make reproduce-federal</code></pre>
+          <p>
+            <code>make reproduce-federal</code> runs
+            <code>scripts/reproduce_federal_from_scratch.sh</code>, which:
+          </p>
+          <ul class="claim-list allowed">
+            <li>
+              <strong>Sanity-checks the toolchain.</strong> Python / Node /
+              docker-compose / disk free.
+            </li>
+            <li>
+              <strong>Pins dependencies.</strong> The backend venv installs
+              against <code>backend/requirements.lock</code>, never against
+              floating versions.
+            </li>
+            <li>
+              <strong>Fetches every public source live.</strong> AEC annual
+              + election disclosure bulk data, AEC Register of Entities (the
+              source-backed origin of every reviewed `party_entity_link`
+              row), AEC current federal electorate boundary shapefile,
+              AIMS-clipped display geometry, APH House + Senate registers
+              of interests, APH House Votes & Proceedings + Senate Journals
+              decision-record indexes and PDFs, APH MP/Senator current
+              contacts CSVs, AEC Electorate Finder postcode crosswalk
+              entries, the Australian Government Register of Lobbyists
+              snapshot, and (optional) They Vote For You divisions/votes
+              when an API key is configured.
+            </li>
+            <li>
+              <strong>Archives raw + parsed artifacts.</strong> Every fetch
+              writes <code>data/raw/&lt;source_id&gt;/&lt;timestamp&gt;/metadata.json</code>
+              with URL, HTTP status, sha256, request/response headers,
+              redaction policy, and source-licence caveat. Every parser
+              writes <code>data/processed/&lt;dataset&gt;/&lt;timestamp&gt;.jsonl(.summary.json)</code>.
+            </li>
+            <li>
+              <strong>Records a run manifest.</strong>
+              <code>data/audit/pipeline_runs/&lt;run-id&gt;.json</code>
+              captures pipeline name, status, timestamps, runtime, Python +
+              package versions, platform, git commit, parameters, and
+              per-step output paths/errors.
+            </li>
+            <li>
+              <strong>Runs the post-load QA gate.</strong> <code>qa-serving-database</code>
+              fails the run if the federal House boundary count is not 150,
+              if any current House office term lacks a loaded boundary, if
+              parser boilerplate appears as an active influence event, if
+              an official APH division has a parsed vote-count mismatch,
+              or if official APH vote rows cannot match the current
+              roster.
+            </li>
+            <li>
+              <strong>Runs the full backend pytest suite.</strong> Postgres
+              integration tests gated behind
+              <code>AUPOL_RUN_POSTGRES_INTEGRATION=1</code>, including the
+              cross-cutting invariant that AEC-Register-derived loaders
+              must NOT change direct-representative money totals.
+            </li>
+          </ul>
+          <p>
+            For a quick local check, <code>make reproduce-federal-smoke</code>
+            runs the same chain in <code>--smoke</code> mode (House
+            interests PDF work limited to a small subset). It is for
+            CI/development only, not for public data publication.
+          </p>
+          <p>
+            Targeted entry points: <code>make fetch-aec-register</code>,
+            <code>make load-aec-register</code>,
+            <code>make fetch-postcode-crosswalk</code>,
+            <code>make load-postcode-crosswalk</code>, and
+            <code>make verify</code>.
+            Run <code>make help</code> at the repository root to see all
+            of them. The full reproducibility policy is in
+            <code>docs/reproducibility.md</code> (auto-update cadence,
+            audit retention, delete-and-rebuild test, and the publication
+            policy that distinguishes "OK for local development" from
+            "cleared for public redistribution").
           </p>
         </article>
 
