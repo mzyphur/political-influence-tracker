@@ -115,6 +115,12 @@ crosswalk rows / 127 federal House electorates).
     respectively. Expanding those would require a different seed
     source (data.gov.au POA or AEC's own electorate boundary
     intersections), under a redistribution-cleared licence.
+  - **J #4**: `frontend/public/methodology.html` extended with a
+    new `#postcode-coverage` section + nav anchor, exposing the
+    current coverage state and four known limitations (silent-skip,
+    leading-zero gap, multi-electorate ambiguity, inner-metro
+    fragmentation) to the public reader. Methodology version date
+    bumped to 2026-05-01.
 
 - **Batch I — last-mile licence verbatim + 200-postcode bulk fetch +
   exception-request letters** (commits TBD this batch):

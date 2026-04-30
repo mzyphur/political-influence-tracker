@@ -500,6 +500,7 @@
           <a href="#aec-register-pathways">AEC Register</a>
           <a href="#equal-share">Equal-share estimates</a>
           <a href="#campaign-support-tiers">Campaign support tiers</a>
+          <a href="#postcode-coverage">Postcode coverage</a>
           <a href="#reproducibility">Reproduce these numbers</a>
           <a href="#claims">Claim discipline</a>
           <a href="#version">Version</a>
@@ -1013,6 +1014,73 @@
           </p>
         </article>
 
+        <article class="panel wide" id="postcode-coverage">
+          <h2>Postcode Coverage and Limitations</h2>
+          <p>
+            The "find your federal MP" postcode search uses the AEC's
+            official Electorate Finder endpoint. Each postcode in the
+            search input is mapped to one or more federal House
+            electorates by the AEC's published service, then archived
+            into the project's
+            <code>postcode_electorate_crosswalk</code> table with the
+            full source-document attribution chain.
+          </p>
+          <p>
+            <strong>Coverage scope.</strong> The crosswalk is built
+            incrementally from a public-domain seed list and a series
+            of staged bulk runs against the AEC endpoint, sized to
+            respect AEC's service etiquette. As of the current
+            published build the crosswalk contains entries for
+            <strong>404 distinct postcodes</strong>, mapping to
+            <strong>127 of the 150 federal House seats (84.7% of
+            House-seat coverage)</strong>. Each postcode entry shows
+            the AEC source document and confidence label in the
+            search-result UI.
+          </p>
+          <p>
+            <strong>Known limitations of the current crosswalk.</strong>
+          </p>
+          <ul>
+            <li>
+              Some postcodes in the AEC's finder return no matching
+              locality (typically PO Box / large-volume-recipient
+              codes). The search UI labels these "no result" rather
+              than guessing.
+            </li>
+            <li>
+              ACT residential postcodes (0200–0299) and NT
+              residential postcodes (0800–0899) are partially
+              covered. The project's preferred public-domain (CC0)
+              postcode source stores postcodes as integers, so
+              leading-zero ranges are absent from that source.
+              Filling those territories requires a different
+              redistribution-cleared seed source. The crosswalk
+              currently has 6 ACT and 5 NT entries from the bootstrap
+              seed; expanding ACT/NT is a documented next step.
+            </li>
+            <li>
+              Some postcodes span multiple federal electorates. In
+              that case the search result labels each candidate
+              electorate "ambiguous postcode (multi-electorate)" and
+              records the candidates in
+              <code>postcode_electorate_crosswalk_unresolved</code>
+              for audit. The user is asked to refine to a suburb /
+              locality where possible.
+            </li>
+            <li>
+              Inner-metro electorates (Sydney CBD, Melbourne CBD)
+              tend to be fragmented across many small postcodes; some
+              of those electorates may not yet have a crosswalk
+              entry. Coverage of these is an explicit follow-up item.
+            </li>
+          </ul>
+          <p>
+            The project's policy is to never invent a postcode-to-
+            electorate mapping. If the AEC's finder doesn't have it,
+            the search UI shows no result rather than a guess.
+          </p>
+        </article>
+
         <article class="panel wide" id="reproducibility">
           <h2>Reproduce These Numbers Yourself</h2>
           <p>
@@ -1151,7 +1219,7 @@ make reproduce-federal</code></pre>
           <strong>Methodology version:</strong>
           <code data-methodology-version-date>2026-04-30</code>
           &middot; Internal revision marker
-          <code data-methodology-version-sha>bb4d396-dirty</code>
+          <code data-methodology-version-sha>ea9001a-dirty</code>
           (auto-injected at build time from
           <code>git rev-parse --short HEAD</code>; the committed values are a
           fallback for readers who run the dev server without first running

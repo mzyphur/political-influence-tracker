@@ -1,6 +1,6 @@
 # Build Log
 
-## 2026-05-01 (Batch J — postcode crosswalk expansion: 191 → 448 rows; 127 of 150 federal House seats surfaced)
+## 2026-05-01 (Batch J — postcode crosswalk expansion: 191 → 448 rows; 127 of 150 federal House seats surfaced; methodology page documents coverage scope + limitations)
 
 Three staged bulk-fetch PRs landed against the live AEC Electorate
 Finder, all sourced from the CC0 national seed at
@@ -58,6 +58,18 @@ project source file changed; the work is documentation + live data.
   was queried at 123).
 - Unresolved postcode candidates retained as auditable observations:
   35 → 67.
+
+- **J #4: methodology HTML documents postcode coverage scope.**
+  Added a public-facing `#postcode-coverage` section to
+  `frontend/public/methodology.html` (with nav-link entry) that
+  records the current coverage state (404 distinct postcodes / 127
+  of 150 federal House seats / 84.7%) and the four known
+  limitations: silent-skip on PO Box / large-volume-recipient
+  codes, missing leading-zero ranges (ACT 0200-0299 / NT
+  0800-0899) due to the CC0 source storing postcodes as integers,
+  multi-electorate postcodes routed to the unresolved candidates
+  table, and inner-metro fragmentation. Methodology version date
+  bumped to 2026-05-01. Frontend production build clean.
 
 **Notes for the next batch operator:**
 
