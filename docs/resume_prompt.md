@@ -151,8 +151,10 @@ Live database (Postgres at
 - **J**: three staged residential-sample postcode runs (195 + 208 +
   211 = 614 unique NEW postcodes, zero overlap) lifting the
   crosswalk from 191 → **448 rows** / 171 → **404 distinct
-  postcodes** / 123 → **127 federal House electorates (84.7%)**.
-  Pure live-data round; no source-file changes.
+  postcodes** ending at **127 of 150 federal House electorates
+  (84.7%)** (pre-Batch-J electorate count was not measured; PR 3
+  specifically added +4 vs after-PR-2). Pure live-data round; no
+  source-file changes.
 
 ## Critical architectural decisions to preserve
 

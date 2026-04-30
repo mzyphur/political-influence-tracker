@@ -1,6 +1,6 @@
 # Build Log
 
-## 2026-05-01 (Batch J — postcode crosswalk expansion: 191 → 448 rows / 123 → 127 electorates)
+## 2026-05-01 (Batch J — postcode crosswalk expansion: 191 → 448 rows; 127 of 150 federal House seats surfaced)
 
 Three staged bulk-fetch PRs landed against the live AEC Electorate
 Finder, all sourced from the CC0 national seed at
@@ -52,7 +52,10 @@ project source file changed; the work is documentation + live data.
   multi-electorate postcodes contributed multiple crosswalk rows).
 - Crosswalk-row growth: 191 → 448 (**+257 rows, +135%**).
 - Distinct postcodes in crosswalk: 171 → 404 (**+233**).
-- Distinct electorates in crosswalk: 123 → **127** (+4).
+- Distinct electorates in crosswalk at end of Batch J: **127** of
+  150 federal House seats (84.7%). The pre-Batch-J electorate count
+  was not measured; PR 3 specifically added 4 electorates (after-PR-2
+  was queried at 123).
 - Unresolved postcode candidates retained as auditable observations:
   35 → 67.
 

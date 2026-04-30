@@ -103,10 +103,12 @@ crosswalk rows / 127 federal House electorates).
     seats). Final per-state: NSW 121/37, VIC 114/31, QLD 73/27,
     WA 64/12, SA 40/9, TAS 19/5, ACT 6/3, NT 5/2.
   - Cumulative: **614 unique postcodes seeded across the three PRs,
-    zero overlap, 257 new crosswalk rows, 4 new electorates surfaced**.
-    Silent-skip rate ranged 37% to 60% per PR — the cost of using the
-    comprehensive CC0 list (Matthew Proctor) rather than a curated
-    list. Documented in `docs/build_log.md`.
+    zero overlap, +257 crosswalk rows; final electorate coverage 127
+    of 150 federal House seats (84.7%)**. (Pre-Batch-J electorate
+    count was not measured; PR 3 specifically added +4 vs after-PR-2
+    state of 123.) Silent-skip rate ranged 37% to 60% per PR — the
+    cost of using the comprehensive CC0 list (Matthew Proctor)
+    rather than a curated list. Documented in `docs/build_log.md`.
   - **Known gap recorded for the next operator**: the CC0 source
     has no leading-zero postcodes (0200-0299 ACT and 0800-0899 NT
     residential). ACT and NT coverage is stuck at 6 / 5 rows
