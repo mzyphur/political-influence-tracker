@@ -1,12 +1,89 @@
 # Source-backed AEC Electorate Finder postcode seed list.
-# This is intentionally a small bootstrap list for CI/smoke/local demos.
-# Production refreshes should use a larger reviewed postcode list.
-0800  # Darwin
-2000  # Sydney CBD
-2600  # ACT ambiguous example: Canberra and Bean
-3000  # Melbourne CBD
-4000  # Brisbane CBD
-5000  # Adelaide CBD
-6000  # Perth CBD
-7000  # Hobart CBD
+#
+# This list seeds the `fetch-aec-electorate-finder-postcodes` pipeline.
+# Each postcode is fetched against the live AEC electorate finder, the
+# response is archived under `data/raw/aec_electorate_finder_postcode_<pc>/<ts>/`
+# verbatim, and the parsed result is loaded into
+# `postcode_electorate_crosswalk` (single-electorate matches) or
+# `postcode_electorate_crosswalk_unresolved` (split or multi-electorate
+# matches).
+#
+# Curation policy:
+#   * Each line is a single 4-digit Australian postcode followed by an
+#     optional `# comment`. Lines starting with `#` are comments.
+#   * Source-backed disclosure totals do NOT depend on this list.
+#     Postcodes are a discovery aid for the public app's search box,
+#     not a money-attribution rule.
+#   * `scripts/expand_postcode_seed.sh` and `make expand-postcode-seed`
+#     consume this file directly.
+#
+# v2 seed (2026-04-30): one capital-city CBD postcode per state /
+# territory plus 1-3 regional-centre / second-city postcodes per state.
+# Targets ~80% of the population by coverage. The full ~3000-postcode
+# national seed is a deliberate maintainer step using the same wrapper
+# script — see `docs/data_sources.md` for the recommended source-list
+# providers.
 
+# --- ACT --------------------------------------------------------------
+2600  # Canberra CBD (ambiguous: Canberra + Bean)
+2602  # Dickson / Hackett / Watson / Lyneham
+2615  # Belconnen
+2900  # Tuggeranong / Greenway
+
+# --- New South Wales --------------------------------------------------
+2000  # Sydney CBD
+2010  # Surry Hills / Darlinghurst
+2030  # Vaucluse / Watsons Bay
+2090  # Mosman
+2150  # Parramatta
+2300  # Newcastle CBD
+2500  # Wollongong
+2750  # Penrith
+2800  # Orange (regional NSW)
+2480  # Lismore (Northern Rivers)
+
+# --- Northern Territory ----------------------------------------------
+0800  # Darwin CBD
+0820  # Karama / Berrimah / Casuarina
+0850  # Katherine
+0870  # Alice Springs
+
+# --- Queensland -------------------------------------------------------
+4000  # Brisbane CBD
+4067  # St Lucia (UQ)
+4101  # South Brisbane / West End
+4170  # Morningside / Cannon Hill
+4350  # Toowoomba
+4551  # Caloundra (Sunshine Coast)
+4217  # Surfers Paradise (Gold Coast)
+4810  # Townsville CBD
+4870  # Cairns
+
+# --- South Australia --------------------------------------------------
+5000  # Adelaide CBD
+5045  # Glenelg
+5090  # Para Hills
+5290  # Mount Gambier
+
+# --- Tasmania --------------------------------------------------------
+7000  # Hobart CBD
+7250  # Launceston
+7320  # Burnie / Devonport coast
+
+# --- Victoria --------------------------------------------------------
+3000  # Melbourne CBD
+3025  # Altona / Williamstown
+3056  # Brunswick
+3142  # Toorak
+3150  # Glen Waverley
+3220  # Geelong
+3350  # Ballarat
+3550  # Bendigo
+
+# --- Western Australia ----------------------------------------------
+6000  # Perth CBD
+6027  # Joondalup
+6052  # Mount Lawley
+6100  # Como / Manning
+6230  # Bunbury
+6330  # Albany

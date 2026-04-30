@@ -171,6 +171,24 @@ def _electorate_links(cell) -> list[dict[str, object]]:
     return links
 
 
+_PAGINATION_CELL_RE = re.compile(r"^\d{1,3}(?:\s+\d{1,3})*$")
+
+
+def _looks_like_pagination_row(cells: list[str]) -> bool:
+    """Return True if every non-empty cell looks like a small set of
+    pagination page numbers (the AEC GridView footer renders page
+    numbers as one or more short numeric anchors, with whitespace
+    separators when multiple anchors collapse into a single cell). The
+    cells therefore look like ``"1"``, ``"2"``, ``"1 2"``, or
+    ``"1 2 3 4"``. Without this guard the row is mistaken for a real
+    locality data row and the postcode validator raises mid-normalize.
+    """
+    nonempty = [cell for cell in cells if cell]
+    if not nonempty:
+        return False
+    return all(_PAGINATION_CELL_RE.match(cell) for cell in nonempty)
+
+
 def _table_rows(soup: BeautifulSoup) -> list[dict[str, object]]:
     table = soup.find("table", id="ContentPlaceHolderBody_gridViewLocalities")
     if table is None:
@@ -184,6 +202,9 @@ def _table_rows(soup: BeautifulSoup) -> list[dict[str, object]]:
             continue
         if not headers:
             headers = cells
+            continue
+        if _looks_like_pagination_row(cells):
+            # AEC GridView pagination footer; skip silently.
             continue
         row: dict[str, object] = {
             headers[index]: value for index, value in enumerate(cells[: len(headers)])
@@ -222,7 +243,17 @@ def parse_aec_electorate_finder_postcode_html(
     electorate_names_by_postcode: set[str] = set()
 
     for row_number, source_row in enumerate(source_rows, start=1):
-        row_postcode = _validate_postcode(str(source_row.get("Postcode", postcode) or postcode))
+        # Defensive: if a row escapes the pagination filter and lands
+        # here with a non-postcode "Postcode" cell, skip it instead of
+        # raising. Pagination rows should already be filtered by
+        # `_table_rows`, but keeping this guard means a future AEC
+        # template change cannot crash the entire normalize step on a
+        # single weird row.
+        raw_row_postcode = str(source_row.get("Postcode", postcode) or postcode)
+        try:
+            row_postcode = _validate_postcode(raw_row_postcode)
+        except ValueError:
+            continue
         if row_postcode != postcode:
             continue
         state = str(source_row.get("State", ""))

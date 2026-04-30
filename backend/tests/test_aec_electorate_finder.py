@@ -57,3 +57,41 @@ def test_parse_aec_electorate_finder_postcode_preserves_ambiguity() -> None:
 def test_parse_aec_electorate_finder_postcode_rejects_non_postcode() -> None:
     with pytest.raises(ValueError, match="four-digit"):
         parse_aec_electorate_finder_postcode_html("<html></html>", postcode="300")
+
+
+def test_parse_aec_electorate_finder_postcode_skips_pagination_footer() -> None:
+    """The AEC GridView appends a pagination footer that historically
+    parsed as a junk data row (`{State='1 2', Postcode='2'}`) and broke
+    the entire normalize step on postcodes that span multiple result
+    pages (e.g. 2800 / 2480 / 0820 / 4350 / 3350 / 6330). The parser
+    must silently skip those rows.
+    """
+    html = """
+    <html>
+      <body>
+        <table id="ContentPlaceHolderBody_gridViewLocalities">
+          <tr>
+            <th>State</th>
+            <th>Locality/Suburb</th>
+            <th>Postcode</th>
+            <th>Electorate(s)</th>
+            <th>Redistributed Electorate(s)</th>
+            <th>Other Locality(s)</th>
+          </tr>
+          <tr><td>NSW</td><td>ORANGE</td><td>2800</td>
+            <td><a href="LocalitySearchResults.aspx?filter=Calare&amp;filterby=Electorate&amp;divid=131">Calare</a></td>
+            <td></td><td></td>
+          </tr>
+          <tr>
+            <td><a href="?page=1">1</a> <a href="?page=2">2</a></td>
+            <td><a href="?page=1">1</a></td>
+            <td><a href="?page=2">2</a></td>
+          </tr>
+        </table>
+      </body>
+    </html>
+    """
+    records, summary = parse_aec_electorate_finder_postcode_html(html, postcode="2800")
+    assert summary["records"] == 1
+    assert records[0]["electorate_name"] == "Calare"
+    assert records[0]["postcode"] == "2800"
