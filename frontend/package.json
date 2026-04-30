@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/sync-methodology-version.mjs",
+    "prebuild": "node scripts/sync-methodology-version.mjs",
+    "sync:methodology-version": "node scripts/sync-methodology-version.mjs",
     "dev": "vite --host 127.0.0.1 --port 5173",
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1 --port 4173"
