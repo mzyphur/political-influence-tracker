@@ -1,28 +1,35 @@
-# Source-backed AEC Electorate Finder postcode seed list.
+# Source-backed AEC Electorate Finder postcode seed list (default).
 #
-# This list seeds the `fetch-aec-electorate-finder-postcodes` pipeline.
-# Each postcode is fetched against the live AEC electorate finder, the
-# response is archived under `data/raw/aec_electorate_finder_postcode_<pc>/<ts>/`
-# verbatim, and the parsed result is loaded into
-# `postcode_electorate_crosswalk` (single-electorate matches) or
-# `postcode_electorate_crosswalk_unresolved` (split or multi-electorate
-# matches).
+# This is the SHORT default seed used by the federal pipeline and by
+# `make reproduce-federal` / `make fetch-postcode-crosswalk`. It is
+# intentionally a curated 48-postcode list covering capital-city CBDs
+# plus 1-3 regional centres / second cities per state-territory,
+# targeting ~80% of the population by coverage. Keeping the default
+# seed small respects AEC endpoint etiquette during routine pipeline
+# runs.
 #
-# Curation policy:
-#   * Each line is a single 4-digit Australian postcode followed by an
-#     optional `# comment`. Lines starting with `#` are comments.
-#   * Source-backed disclosure totals do NOT depend on this list.
-#     Postcodes are a discovery aid for the public app's search box,
-#     not a money-attribution rule.
-#   * `scripts/expand_postcode_seed.sh` and `make expand-postcode-seed`
-#     consume this file directly.
+# A comprehensive 8957-postcode national seed sourced from Matthew
+# Proctor's CC0 Australian-postcodes dataset is available at
+# `data/seeds/aec_postcode_search_seed_full.txt`. Use it via the
+# wrapper:
 #
-# v2 seed (2026-04-30): one capital-city CBD postcode per state /
-# territory plus 1-3 regional-centre / second-city postcodes per state.
-# Targets ~80% of the population by coverage. The full ~3000-postcode
-# national seed is a deliberate maintainer step using the same wrapper
-# script — see `docs/data_sources.md` for the recommended source-list
-# providers.
+#   bash scripts/expand_postcode_seed.sh \
+#       data/seeds/aec_postcode_search_seed_full.txt \
+#       --max-postcodes=200
+#
+# (or `make expand-postcode-seed
+#   SEED_FILE=data/seeds/aec_postcode_search_seed_full.txt
+#   EXPAND_POSTCODE_SEED_FLAGS=--max-postcodes=200`).
+#
+# Stage in batches of 100-300 to respect AEC endpoint etiquette.
+# Australia Post's CSV is BLOCKED for this purpose (see
+# `docs/source_licences.md`); the comprehensive seed comes from
+# Matthew Proctor's CC0 dataset (see `docs/data_sources.md` for
+# the source-choice rationale and `scripts/build_postcode_seed_from_cc0.sh`
+# for the regenerator).
+#
+# Each line below is a single 4-digit postcode followed by an optional
+# `# comment`. Lines starting with `#` are comments.
 
 # --- ACT --------------------------------------------------------------
 2600  # Canberra CBD (ambiguous: Canberra + Bean)
