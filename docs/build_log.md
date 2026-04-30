@@ -1,8 +1,71 @@
 # Build Log
 
-## 2026-04-30
+## 2026-04-30 (Batch A — adversarial-review fixes)
 
 Completed:
+
+- Renamed the umbrella headline in the right-side details panel from
+  "Published records" to "All disclosed records (any type)" and expanded both
+  the section caption and the fact tooltip to explain that the umbrella count
+  covers every event family (money, benefits, campaign support, private
+  interests, organisational roles, and any other declared types) — not just the
+  three families shown as fact cards. The numeric value was already correct;
+  the rename addresses a top-down read where users could mistake the headline
+  for a single influence-money figure.
+- Added an integration assertion in
+  `test_campaign_support_stays_separate_from_direct_money_totals` that
+  `current_representative_lifetime_influence_event_count` is `>=` the sum of
+  `money + benefit + campaign_support` breakdowns shown in the UI, with strict
+  equality for the controlled fixture state. Future SQL changes that desync
+  the umbrella from its breakdown will fail loudly.
+- Added `test_qld_council_disclosure_context_alias_regex_matrix` covering
+  Townsville City vs Town of Weipa cross-prefix mismatch, Sunshine Coast
+  Regional vs Sunshine Coast Hinterland Regional shared-prefix separation,
+  Mareeba Shire ↔ Shire of Mareeba alias-form pairing, and Cairns Regional
+  child-area resolution. Asserts both positive and negative match outcomes
+  for each pair, so the eight alias regex branches in
+  `_qld_council_disclosure_context` cannot quietly drift into false positives.
+- Verified that `get_influence_graph` party path already excludes internal
+  party-entity flows (queries.py L5106-5112: source_entity_id NOT IN reviewed
+  party_entity_link set). The internal-flow exclusion is expressed via SQL set
+  difference rather than the explicit `internal_party_entity_flow` enum used
+  in `get_party_profile`, but it is functionally equivalent. No code change.
+- Surfaced the equal-share denominator asymmetry in the Party-Linked Money
+  Exposure UI. The party exposure detail line now renders an explicit
+  "numerator scope: all loaded reviewed party/entity receipt records" chip
+  alongside "denominator scope: current office-term party representatives only
+  (asymmetric — see methodology)" so consumers can see the scope mismatch
+  before they read the modelled value.
+- Added a "Denominator Asymmetry in `equal_current_representative_share`"
+  section to `docs/influence_network_model.md` documenting why the numerator
+  is loaded-period and the denominator is current-cross-section, what use the
+  resulting figure does and does not support, and what the future
+  `union_of_office_terms_during_receipts` enhancement would change.
+- Added `make lock` target to `backend/Makefile` that runs
+  `python -m piptools compile pyproject.toml --extra dev -o requirements.lock`
+  inside the project venv. Declared `pip-tools>=7.4` as a dev dependency in
+  `backend/pyproject.toml` so `make install` makes `make lock` runnable. Added
+  a "Lockfile Regeneration" subsection to `docs/operations.md` explaining that
+  the lock must not be hand-edited and is regenerated only via `make lock`
+  when direct dependencies change.
+- Added an "Audit Artefact Retention" section to `docs/operations.md`
+  documenting per-tree retention rules: keep all `pipeline_runs/` manifests,
+  keep latest 30 of each `review_queues/` and `sector_policy_link_suggestions/`
+  export with archive of older into `archive/<YYYYMMDD>/`, keep all
+  `review_imports/` and `review_replays/` records, keep 90 days of
+  `data/audit/logs/`. The whole `data/audit/` tree stays gitignored so this
+  is a storage decision, not a reproducibility one.
+- Added a "Run state/local smoke pipeline (QLD canary)" step to
+  `.github/workflows/federal-pipeline-smoke.yml` so QLD ECQ adapter regressions
+  are caught in CI alongside the federal pipeline smoke. Uses the same
+  Postgres service container.
+- Added project-root `CLAUDE.md` overriding the global per-action approval
+  rule for this repository. Gives the editing agent autonomy on read/write
+  within agreed plans, while still requiring approval for destructive git
+  ops, force-push, external writes, credential rotation, and live external
+  pipeline runs.
+
+
 
 - Added representative-level benefit highlights to the API and frontend. The
   representative profile now exposes source-backed summaries of declared
