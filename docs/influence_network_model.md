@@ -204,9 +204,37 @@ The deterministic resolver:
 3. Parenthetical short-form alias (`Australian Labor Party (ALP)` →
    match by `ALP` short_name).
 
-Multi-row matches (e.g. duplicate ALP rows in the local party table) fail
-closed as `unresolved_multiple_matches`. Individual-name segments fail
-closed as `unresolved_individual_segment`. No fuzzy similarity is used.
+When a stage produces more than one candidate, an additional deterministic
+disambiguation step (`source_jurisdiction_disambiguation_v1`) prefers the
+single candidate whose `party.jurisdiction_id` equals the source document's
+own jurisdiction. The AEC Register is published by a federal authority, so
+its loader passes the local Commonwealth jurisdiction id; that lets the
+resolver pick the federal-jurisdiction `Australian Labor Party` row over a
+coexisting state-jurisdiction row of the same name. The disambiguation
+consults a stable, source-attributed integer attribute and is **not fuzzy
+similarity**: it strictly narrows the candidate set to those that match the
+source's own jurisdiction. If exactly one candidate remains in that
+jurisdiction the resolver returns it (with the rule id recorded in the
+resolution notes); otherwise it continues to fail closed.
+
+Multi-row matches that the disambiguation step cannot break (e.g. two
+distinct rows in the same jurisdiction) still fail closed as
+`unresolved_multiple_matches`. Individual-name segments fail closed as
+`unresolved_individual_segment`. No fuzzy similarity is used.
+
+Federal-jurisdiction same-real-world-party row pairs (e.g. id=1
+`name='ALP'` plus id=1351 `name='Australian Labor Party'`) were a
+historical artefact of the local DB growing from two ingestion paths
+(short-form rows from federal results / TVFY ingestion; long-form rows
+from electorate-results ingestion). They were consolidated into single
+canonical rows by the one-shot data-fix migration
+`034_consolidate_federal_party_duplicates.sql`, which re-points all FK
+references from the long-form id to the short-form id, deletes the
+long-form row, and promotes the long-form display name onto the
+surviving short-form row. State-jurisdiction rows were intentionally
+left untouched. The migration is idempotent (a no-op when the long-form
+rows are absent) and is guarded by the existing direct-money invariant
+test, which would catch any change to direct-disclosed totals.
 
 Auto-created links carry `method='official'`,
 `confidence='exact_identifier'`, `reviewer='system:aec_register_of_entities'`,

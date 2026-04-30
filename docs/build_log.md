@@ -1,5 +1,92 @@
 # Build Log
 
+## 2026-04-30 (Batch D #1 — live AEC Register pipeline run + verification)
+
+Completed (3 PRs):
+
+- **PR 1: fetcher metadata fix.** Live load failed on first run with
+  `KeyError: 'body_path'` because the AEC Register fetcher's archive
+  metadata didn't include the fields that the shared
+  `db.load.upsert_source_document` helper requires (`body_path`,
+  `final_url`, `content_type`). Updated `_http_get`/`_http_post_form` to
+  return the response's final URL as a 4-tuple, added a
+  `_content_type_from_headers` helper, and made `_write_archive` inject
+  `body_path` into metadata before writing it to disk. Fixture-level
+  fetcher tests updated to construct `_FakeResponse` with a `url`
+  attribute. 18/18 unit tests still pass.
+- **PR 2: deterministic source-jurisdiction disambiguation in the
+  branch resolver.** The first live load showed 86
+  `unresolved_multiple_matches` segments out of 184 associated entities
+  because the local DB intentionally stores both federal-jurisdiction
+  and QLD-jurisdiction rows for `Australian Labor Party`,
+  `Liberal National Party`, `Independent`, and `Katter's Australian
+  Party` (state-level rows from prior QLD ECQ ingestion). Added a new
+  resolver step `source_jurisdiction_disambiguation_v1` that, when the
+  loader passes a `source_jurisdiction_id`, narrows multi-match
+  candidates to those whose `jurisdiction_id` equals the source's own
+  jurisdiction. The rule consults a stable, source-attributed integer
+  attribute — not fuzzy similarity. Multi-row matches that
+  disambiguation cannot break (two rows in the same jurisdiction) still
+  fail closed. Loader updated to look up the local Commonwealth
+  jurisdiction id (`level='federal' AND code='CWLTH'`) and pass it
+  through. 7 new resolver unit tests added (37/37 pass).
+- **PR 3: one-shot data-fix migration
+  `034_consolidate_federal_party_duplicates.sql`.** Even with
+  jurisdiction disambiguation, AEC-Register-derived links pointed to
+  federal-jurisdiction long-form rows (e.g. id=1351 `Australian Labor
+  Party`) which had ZERO active office_term references — actual MPs sit
+  on the parallel short-form rows (e.g. id=1 `ALP`). The migration
+  consolidates eight federal short/long-form duplicate pairs (ALP, IND,
+  AG, NATS, LP, LNP, ON, KAP), re-points all FK references from the
+  long-form id to the short-form id, deletes the long-form row, and
+  promotes the long-form display name onto the surviving short-form
+  row. State-jurisdiction rows are untouched. Idempotent (no-op when
+  long-form rows absent). Direct-money invariant test passed
+  unchanged.
+
+Live results post-Batch D #1:
+
+- AEC Register fetcher: 70 politicalparty / 184 associatedentity / 55
+  significantthirdparty / 44 thirdparty rows (353 total) archived
+  verbatim under `data/raw/aec_register_of_entities_*` with anti-forgery
+  token + cookie values redacted from metadata.
+- Loader: 184/184 associated-entity observations upserted; 87 unique
+  reviewed `party_entity_link` rows (86 → ALP, 1 → AG); 0
+  multi_match_segments_skipped after disambiguation (was 86 before);
+  resolver mix on associatedentity = 86 resolved_branch + 1
+  resolved_exact + 37 unresolved_individual_segment + 60
+  unresolved_no_match (the no-match segments are parties not present in
+  the local `party` table at all, e.g. *Animal Justice Party*, *Liberal
+  Party of Australia (Victorian Division)*; per the C-rule we do NOT
+  auto-create canonical party rows from this register).
+- API check: hit `_representative_party_exposure_summary` for three
+  current ALP MPs (Dr Carina Garland, Dr Gordon Reid, Dr Mike
+  Freelander). Each surfaces a non-empty summary with party_id=1
+  Australian Labor Party (ALP), event_count 4,291, party-context
+  reported total $310,815,151, equal-share modelled amount per current
+  representative ~$2.53M, denominator 123, claim-scope label
+  intact: *"Analytical equal-share exposure to all loaded reviewed
+  party/entity receipts for the current party; not a disclosed personal
+  receipt or term-bounded total."*
+- Direct-money invariant: existing
+  `test_loader_does_not_change_direct_representative_money_totals`
+  still passes; influence_event aggregate unchanged at 314,040 events
+  / $13,483,949,861.89.
+
+Files added/modified:
+
+- `backend/schema/034_consolidate_federal_party_duplicates.sql` (new)
+- `backend/au_politics_money/ingest/aec_register_entities.py`
+  (metadata + http helpers)
+- `backend/au_politics_money/ingest/aec_register_branch_resolver.py`
+  (jurisdiction disambiguation + 4-tuple PartyDirectory)
+- `backend/au_politics_money/db/aec_register_loader.py`
+  (commonwealth jurisdiction lookup + resolver call)
+- `backend/tests/test_aec_register_entities.py` (response url plumbing)
+- `backend/tests/test_aec_register_branch_resolver.py` (7 new tests)
+- `docs/influence_network_model.md` (documented disambiguation +
+  consolidation)
+
 ## 2026-05-01 (AEC Register of Entities ingestion)
 
 Completed:
