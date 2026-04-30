@@ -43,3 +43,5 @@ jobs:
         run: ruff check .
       - name: Run federal smoke pipeline
         run: python -m au_politics_money.cli run-federal-foundation-pipeline --smoke
+      - name: Run state/local smoke pipeline (QLD canary)
+        run: python -m au_politics_money.cli run-state-local-pipeline --jurisdiction qld --smoke
