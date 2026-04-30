@@ -30,9 +30,9 @@ You are continuing work on the Australian Political Influence Transparency proje
 
 Build a reproducible, source-backed Australian political influence transparency app, federal-first, that NEVER conflates direct disclosed person-level money with campaign-support records, party-mediated party/entity context, or modelled allocation. Every public claim must travel with its evidence tier and attribution limit.
 
-## What just landed (Batches C + D + E + F + G + H — federal launch readiness)
+## What just landed (Batches C + D + E + F + G + H + I — federal launch readiness)
 
-**Live data state at end of Batch G (2026-04-30):**
+**Live data state at end of Batch I (2026-05-01):**
 
 - 314,040 non-rejected `influence_event` rows; $13.48B reported total.
 - 318 `person`, 150 federal House `electorate` rows.
@@ -42,11 +42,19 @@ Build a reproducible, source-backed Australian political influence transparency 
   for Canberra).
 - **0 `unresolved_no_match`** in either `associatedentity` or
   `politicalparty` AEC Register observations.
-- **51 `postcode_electorate_crosswalk` rows** from a 48-postcode v2
-  seed (capital-city CBDs + 1-3 regional centres / second cities per
-  state-territory).
+- **191 `postcode_electorate_crosswalk` rows** (was 51 at end of
+  Batch G; lifted by Batch I #2's 200-postcode residential-sample
+  bulk fetch). 35 unresolved postcode candidates retained as
+  auditable observations. Coverage: NSW 84 / VIC 71 / QLD 12 / ACT
+  6 / WA 6 / NT 5 / TAS 4 / SA 3.
 - 358/358 backend pytest pass; ruff clean; frontend production build
   clean. Direct-money invariant test still passes.
+- All 10 sources in `docs/source_licences.md` carry verbatim
+  direct-fetch wording (or, for AIMS-eAtlas, conclusively-
+  unfetchable status with the data.gov.au verbatim "Licence Not
+  Specified" record as the load-bearing canonical).
+- APH + AEC GIS public-redistribution exception-request letters
+  drafted under `docs/letters/`, ready to sign + send.
 
 **Key architectural decisions to preserve:**
 
@@ -154,31 +162,33 @@ Build a reproducible, source-backed Australian political influence transparency 
 
 ## What's next (priority order)
 
-1. **Maintainer browser-fetch on the two licence stragglers.** Batch
-   H direct-fetched 8 of 10 sources verbatim. The two that still need
-   a browser:
-   - **AIMS Coastline 50K eAtlas page** (HTTP 403 in curl/WebFetch
-     round). data.gov.au record verbatim already captured ("Licence
-     Not Specified" → blocked).
-   - **Australia Post licensing-arrangements URL** (404 — page moved
-     or JS-rendered only). Find the new canonical URL.
-2. **Run the staged ~9000-postcode bulk fetch** when ready. Use
-   `make expand-postcode-seed
-   SEED_FILE=data/seeds/aec_postcode_search_seed_full.txt
-   EXPAND_POSTCODE_SEED_FLAGS=--max-postcodes=200`. Stage in
-   100-300 postcode batches.
+1. **Project lead sends the APH + AEC GIS exception letters.** Drafts
+   ready at `docs/letters/aph_public_redistribution_request.md` and
+   `docs/letters/aec_gis_public_redistribution_request.md`. Replies
+   archive under `docs/letters/replies/` per
+   `docs/letters/README.md`. APH (CC BY-NC-ND 4.0) is the bigger
+   blocker for public redistribution; AEC GIS is mostly written
+   confirmation that the project's use sits within the existing
+   "Derivative Product" permission. Land both before public
+   launch.
+2. **Stage further postcode batches** as needed. Batch I #2 lifted
+   to 191 crosswalk rows / 35 unresolved candidates. Recommend
+   running 2-3 more residential-range batches before public launch.
+   Build a residential-sample seed via
+   `awk '...' data/seeds/aec_postcode_search_seed_full.txt > /tmp/...`
+   to skip the 1000-1099 PO Box range that returns no AEC localities.
 3. **Methodology permalink upgrade**: when a public git mirror
-   exists, set `METHODOLOGY_REPO_URL` in the build environment.
-   Already wired by Batch G #1.
-4. **APH / AEC-GIS public-redistribution exception requests.** Both
-   sources have direct-fetch licence text now (Batch H #1). APH
-   CC BY-NC-ND 4.0 blocks parsed register-of-interests JSON for
-   public redistribution. AEC GIS direct-fetch is friendlier than
-   search-only suggested (derivatives permitted with attribution)
-   but still warrants written confirmation for public hosting.
+   exists (`git remote -v` is empty as of Batch I), set
+   `METHODOLOGY_REPO_URL` in the build environment. Hook is wired
+   by Batch G #1 — `frontend/scripts/sync-methodology-version.mjs`.
+4. **AIMS-eAtlas browser-fetch follow-up (low priority).** The
+   data.gov.au verbatim "Licence Not Specified" already drives the
+   conservative blocked status; the eAtlas SPA may have additional
+   provenance text but it isn't load-bearing for redistribution
+   policy.
 5. **User runs the Firefox visual smoke** per
    `docs/batch_d3_firefox_smoke_checklist.md` if not already done
-   in-app.
+   in-app (Batch F #2 covered the in-app browser pass).
 6. **Sub-national party seeds rollout** per
    `docs/sub_national_party_seeds_plan.md`. Three-part PR shape;
    QLD first; deferred behind state/local rollout.

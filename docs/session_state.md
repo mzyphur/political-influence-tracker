@@ -87,6 +87,32 @@ pipeline run + verification landed in three commits).
   (the actual bulk fetch is intentionally a maintainer decision, not
   an agent run). 356/356 backend pytest green. ruff clean. frontend
   build clean.
+- **Batch I — last-mile licence verbatim + 200-postcode bulk fetch +
+  exception-request letters** (commits TBD this batch):
+  - **I #1**: Australia Post canonical product page verbatim
+    (the historic `/about-us/about-our-site/our-licensing-arrangements`
+    URL is a 2026 404; current canonical is
+    `postcode.auspost.com.au/free_display.html?id=1` titled
+    "Non-commercial use only"). All ten sources in `source_licences.md`
+    now carry verbatim direct-fetch wording or conclusively-
+    unfetchable status with a verbatim record from the canonical
+    alternate (data.gov.au for AIMS Coastline 50K).
+  - **I #2**: 200-postcode residential-sample bulk fetch lifted
+    `postcode_electorate_crosswalk` rows from 51 to **191** (NSW 84 /
+    VIC 71 / QLD 12 / ACT 6 / WA 6 / NT 5 / TAS 4 / SA 3); 35
+    unresolved candidates retained as auditable observations.
+    Earlier silent-exit runs were because head-of-list CC0 postcodes
+    (1000-1099) are PO Box / large-volume-recipient codes that
+    AEC's finder returns no localities for; the residential-sample
+    script avoids that.
+  - **I #3**: methodology permalink upgrade is blocked on the
+    project being published to a public git mirror;
+    `METHODOLOGY_REPO_URL` env-var hook is wired and ready (Batch G #1).
+  - **I #4**: APH + AEC GIS public-redistribution exception-request
+    letters drafted under `docs/letters/` with a README archive
+    policy. Awaiting project-lead signature + send.
+  - **I #5**: Firefox smoke already done in the in-app browser
+    (Batch F #2); sub-national + state/local stay deferred.
 - **Batch H — direct-fetch licence verbatim + CC0 postcode seed +
   is_personality_vehicle API surface** (commits `2c6946f`, `c787130`,
   `e3a8803`):
@@ -422,7 +448,7 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: Batches D + E + F + G + H are closed; next-step menu
+## When you start: Batches D + E + F + G + H + I are closed; next-step menu
 
 The federal-launch path is structurally complete. Live data state at
 end of Batch G:
@@ -442,31 +468,34 @@ end of Batch G:
 Pick whichever item below is highest empirical value at the time you
 read this:
 
-1. **Maintainer browser-fetch round on the two licence stragglers.**
-   Batch H direct-fetched 8 of 10 sources verbatim. The two that
-   still need a maintainer with a real browser:
-   - **AIMS Coastline 50K** — eAtlas companion page returned HTTP 403
-     in the curl/WebFetch round. data.gov.au record IS verbatim
-     ("Licence Not Specified") — already captured. eAtlas may have
-     additional context worth reading directly.
-   - **Australia Post** — `/about-us/about-our-site/our-licensing-arrangements`
-     URL resolves to a 404; the page appears to have been moved or
-     made JS-rendered only. Find the new canonical URL and verbatim
-     the licensing terms before any public release that mentions
-     Australia Post.
-2. **Run the staged ~9000-postcode bulk fetch** when ready. Batch H
-   #2 landed `data/seeds/aec_postcode_search_seed_full.txt` (CC0
-   sourced) + `make expand-postcode-seed` wrapper. Stage in 100-300
-   postcode batches via `EXPAND_POSTCODE_SEED_FLAGS=--max-postcodes=200`.
-3. **Methodology page permalink upgrade.** Batch G #1 added optional
-   `METHODOLOGY_REPO_URL` env-var support. When the project gets a
-   public git mirror, set this in the build environment.
-4. **APH / AEC-GIS public-redistribution exception requests.** APH
-   CC BY-NC-ND 4.0 blocks parsed register-of-interests JSON for
-   public redistribution; AEC GIS Limited End-user Licence permits
-   derivative products with attribution but warrants explicit
-   confirmation for public hosting. Land written exceptions / clarity
-   from each agency before public launch.
+1. **Project lead sends the APH + AEC GIS exception letters.** Drafts
+   are at `docs/letters/aph_public_redistribution_request.md` and
+   `docs/letters/aec_gis_public_redistribution_request.md`, ready
+   to sign and send. Replies go under `docs/letters/replies/` per
+   `docs/letters/README.md`. APH (CC BY-NC-ND 4.0) is the bigger
+   blocker; AEC GIS is mostly seeking written confirmation that
+   the project's use sits within the existing "Derivative Product"
+   permission. Land both before public launch.
+2. **Stage further postcode batches** as needed. Batch I #2 lifted
+   to 191 crosswalk rows / 35 unresolved candidates from a 200-
+   postcode residential-sample run. The CC0 national seed at
+   `data/seeds/aec_postcode_search_seed_full.txt` has 8957 postcodes
+   total (most are PO Box / large-volume-recipient codes that AEC's
+   finder returns no localities for; build a residential-sample
+   seed if you want diverse coverage). Recommend running 2-3 more
+   residential-range batches before public launch to push toward
+   800-1000 crosswalk rows.
+3. **Methodology page permalink upgrade.** `git remote -v` shows
+   no public mirror yet. When the project publishes to GitHub /
+   GitLab / Sourcehut, set `METHODOLOGY_REPO_URL` in the build
+   environment and the marker becomes a clickable
+   `commit/<sha>` link automatically (the hook is wired and
+   idempotent — see `frontend/scripts/sync-methodology-version.mjs`).
+4. **AIMS-eAtlas browser-fetch follow-up (low priority).** The
+   data.gov.au verbatim "Licence Not Specified" already drives the
+   conservative blocked status; eAtlas might have additional
+   provenance text but it isn't load-bearing for redistribution
+   policy.
 5. **Sub-national party seeds rollout.** Plan documented in
    `docs/sub_national_party_seeds_plan.md`. Three-part PR shape.
    QLD first. Out of scope until federal launch.

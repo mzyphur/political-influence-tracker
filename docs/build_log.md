@@ -1,5 +1,74 @@
 # Build Log
 
+## 2026-05-01 (Batch I — last-mile licence verbatim + 200-postcode bulk fetch + exception-request letters)
+
+Five PRs landed:
+
+- **I #1: Australia Post + AIMS Coastline last-mile verbatim.** The
+  prior Australia Post `auspost.com.au/about-us/about-our-site/our-licensing-arrangements`
+  URL is a permanent 404 in 2026; the canonical free-tier product
+  page is now at `postcode.auspost.com.au/free_display.html?id=1`
+  and its title is literally "Non-commercial use only". `docs/source_licences.md`
+  patched with the verbatim restriction wording from that page
+  (no sub-licensing / no derivative works / no public lookup /
+  Australia Post retains all property rights). AIMS Coastline's
+  eAtlas companion remains HTTP 403 to plain HTTP clients and a JS-
+  rendered Angular SPA when accessed via Wayback; the data.gov.au
+  record's verbatim "Licence Not Specified" is the canonical source
+  and drives the conservative blocked status. The project-level
+  "Implications" block now records that all ten sources carry
+  verbatim direct-fetch wording (or, for AIMS-eAtlas, conclusively
+  unfetchable status with the data.gov.au verbatim as the
+  load-bearing record).
+- **I #2: 200-postcode residential-sample bulk fetch.** Earlier
+  staged runs against the head of the CC0 list silently produced
+  zero crosswalk rows because postcodes 1000-1099 are PO Box / large-
+  volume-recipient codes that AEC's electorate finder doesn't return
+  any localities for — the script exits 0 because there's nothing to
+  process. Built a residential-sample list (200 postcodes spaced
+  across NSW/VIC/QLD/SA/WA/TAS/ACT/NT residential ranges) and ran
+  the bulk fetch through `scripts/expand_postcode_seed.sh`. Live
+  results: **191 resolved postcode_electorate_crosswalk rows** (was
+  51), **35 unresolved postcode candidates**, 200 postcodes
+  refreshed, 26 ambiguous-postcode candidates (multi-electorate),
+  133 unique source documents upserted. Coverage now spans NSW (84)
+  / VIC (71) / QLD (12) / ACT (6) / WA (6) / NT (5) / TAS (4) / SA
+  (3).
+- **I #3: methodology permalink upgrade — blocked on a public
+  mirror URL existing.** `git remote -v` shows no remote on this
+  repo (the project hasn't been published to a public git mirror
+  yet). The `METHODOLOGY_REPO_URL` env-var hook is wired and live;
+  whoever publishes the public mirror just sets that env var in the
+  build environment and the marker becomes a clickable link.
+  Documented as the explicit unblocking step in `docs/session_state.md`.
+- **I #4: APH + AEC GIS public-redistribution exception letters.**
+  Drafted two letters under `docs/letters/`:
+  - `aph_public_redistribution_request.md` — to the Clerks of the
+    House and Senate, asking whether structured-record transformation
+    of registers of interests, MP/Senator contacts CSV, Votes &
+    Proceedings, and Senate Journals constitutes a derivative work
+    for CC BY-NC-ND 4.0, and requesting an exception or scope
+    clarification.
+  - `aec_gis_public_redistribution_request.md` — to AEC GIS,
+    confirming that the project's re-projected vector-tiled
+    publicly-served treatment of federal electorate boundary geometry
+    sits within the End-user Licence's "Derivative Product"
+    permission.
+  - `docs/letters/README.md` records the archive policy: replies go
+    under `docs/letters/replies/<recipient>_<YYYYMMDD>.{pdf,txt,html}`,
+    a summary block goes onto the corresponding draft, and
+    `docs/source_licences.md` is updated with the new licence-status
+    row.
+- **I #5: residual deferred items.** Firefox visual smoke is already
+  done in the in-app browser (Batch F #2). Sub-national party seeds
+  rollout stays deferred until state/local rollout per
+  `docs/sub_national_party_seeds_plan.md`. State/local expansion
+  (NSW/VIC after QLD) stays deferred per the dev's standing
+  direction.
+
+358/358 backend pytest pass. ruff clean. frontend production build
+clean. Direct-money invariant test still passes.
+
 ## 2026-04-30 (Batch H — direct-fetch licence verbatim + CC0 postcode seed + is_personality_vehicle API surface)
 
 Three PRs landed (`2c6946f`, `c787130`, `e3a8803`):
