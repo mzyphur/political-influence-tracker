@@ -442,6 +442,77 @@ SOURCES: tuple[SourceRecord, ...] = (
         ),
     ),
     SourceRecord(
+        source_id="aec_register_of_entities_politicalparty",
+        name="AEC Register of Entities — Political Parties",
+        jurisdiction="Commonwealth",
+        level="federal",
+        source_type="aec_register_of_entities_api",
+        url="https://transparency.aec.gov.au/RegisterOfEntities?clientType=politicalparty",
+        expected_format="html_with_xhr_json",
+        update_frequency="ongoing",
+        priority="high",
+        notes=(
+            "Official public AEC Register of Entities snapshot for registered political "
+            "parties. Fetched via GET on the page, anti-forgery token extraction, then "
+            "session-scoped POST to /RegisterOfEntities/ClientDetailsRead. Anti-forgery "
+            "cookie + token are session-disposable and MUST be redacted from raw archive "
+            "metadata before persistence. Public redistribution/licence terms to be recorded before "
+            "public data redistribution."
+        ),
+    ),
+    SourceRecord(
+        source_id="aec_register_of_entities_associatedentity",
+        name="AEC Register of Entities — Associated Entities",
+        jurisdiction="Commonwealth",
+        level="federal",
+        source_type="aec_register_of_entities_api",
+        url="https://transparency.aec.gov.au/RegisterOfEntities?clientType=associatedentity",
+        expected_format="html_with_xhr_json",
+        update_frequency="ongoing",
+        priority="high",
+        notes=(
+            "Official public AEC Register of Entities snapshot for associated entities, "
+            "the primary input for source-backed party_entity_link evidence. Each row "
+            "may carry an explicit AssociatedParties list; loaders auto-create reviewed "
+            "links only when a segment resolves to exactly one party.id under the "
+            "documented C-rule. Anti-forgery cookie + token redacted from raw archive."
+        ),
+    ),
+    SourceRecord(
+        source_id="aec_register_of_entities_significantthirdparty",
+        name="AEC Register of Entities — Significant Third Parties",
+        jurisdiction="Commonwealth",
+        level="federal",
+        source_type="aec_register_of_entities_api",
+        url="https://transparency.aec.gov.au/RegisterOfEntities?clientType=significantthirdparty",
+        expected_format="html_with_xhr_json",
+        update_frequency="ongoing",
+        priority="medium",
+        notes=(
+            "Official public AEC Register of Entities snapshot for significant third "
+            "parties. Loaders ingest as entities + identifiers only; no auto party_entity_link "
+            "creation per the C-rule, even where AssociatedParties is populated. "
+            "Anti-forgery cookie + token redacted from raw archive."
+        ),
+    ),
+    SourceRecord(
+        source_id="aec_register_of_entities_thirdparty",
+        name="AEC Register of Entities — Third Parties",
+        jurisdiction="Commonwealth",
+        level="federal",
+        source_type="aec_register_of_entities_api",
+        url="https://transparency.aec.gov.au/RegisterOfEntities?clientType=thirdparty",
+        expected_format="html_with_xhr_json",
+        update_frequency="ongoing",
+        priority="medium",
+        notes=(
+            "Official public AEC Register of Entities snapshot for third parties. The "
+            "AEC clientType value is 'thirdparty', not 'thirdpartycampaigner' (the latter "
+            "returns HTTP 500). Loaders ingest as entities + identifiers only; no auto "
+            "party_entity_link. Anti-forgery cookie + token redacted from raw archive."
+        ),
+    ),
+    SourceRecord(
         source_id="nsw_electoral_disclosures",
         name="NSW Electoral Commission Disclosures",
         jurisdiction="New South Wales",

@@ -65,6 +65,11 @@ from au_politics_money.ingest.aec_election import (
     summarize_aec_election_zip,
 )
 from au_politics_money.ingest.aec_public_funding import normalize_aec_public_funding
+from au_politics_money.ingest.aec_register_entities import (
+    CLIENT_TYPES as AEC_REGISTER_CLIENT_TYPES,
+    fetch_all_registers_of_entities,
+    fetch_register_of_entities,
+)
 from au_politics_money.ingest.aph_decision_records import (
     DECISION_RECORD_SOURCE_IDS,
     extract_aph_decision_record_index,
@@ -364,6 +369,19 @@ def fetch_they_vote_for_you_divisions_command(
         return 2
     print(str(Path(summary_path).resolve()))
     return 0
+
+
+def fetch_aec_register_of_entities_command(
+    client_type: str | None,
+    take: int,
+) -> int:
+    if client_type:
+        summary_path = fetch_register_of_entities(client_type, take=take)
+        print(str(Path(summary_path).resolve()))
+        return 0
+    result = fetch_all_registers_of_entities(take=take)
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0 if not result["errors"] else 1
 
 
 def extract_they_vote_for_you_divisions_command(fetch_summary_path: str | None) -> int:
@@ -1022,6 +1040,23 @@ def build_parser() -> argparse.ArgumentParser:
     tvfy_extract_parser = subparsers.add_parser("extract-they-vote-for-you-divisions")
     tvfy_extract_parser.add_argument("--fetch-summary-path")
 
+    aec_register_parser = subparsers.add_parser("fetch-aec-register-of-entities")
+    aec_register_parser.add_argument(
+        "--client-type",
+        choices=tuple(AEC_REGISTER_CLIENT_TYPES),
+        default=None,
+        help=(
+            "AEC Register clientType to fetch. Omit to fetch every supported "
+            "client type."
+        ),
+    )
+    aec_register_parser.add_argument(
+        "--take",
+        type=int,
+        default=200,
+        help="Page size for ClientDetailsRead POSTs (default: 200).",
+    )
+
     subparsers.add_parser("classify-entities")
 
     boundary_fetch_parser = subparsers.add_parser("fetch-current-aec-boundaries")
@@ -1465,6 +1500,8 @@ def main() -> int:
         )
     if args.command == "extract-they-vote-for-you-divisions":
         return extract_they_vote_for_you_divisions_command(args.fetch_summary_path)
+    if args.command == "fetch-aec-register-of-entities":
+        return fetch_aec_register_of_entities_command(args.client_type, args.take)
     if args.command == "classify-entities":
         return classify_entities_command()
     if args.command == "fetch-current-aec-boundaries":

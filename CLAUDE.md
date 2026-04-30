@@ -19,6 +19,33 @@ take the lead and proceed without per-file or per-action approval.
 The user can read tool calls in real time and does not need narration to know
 what is happening. Conversational prose between tool calls is friction.
 
+### Anti-patterns that read as permission-seeking even when phrased as status
+
+These phrases all functionally cede the turn back to the user when the plan
+already contains the next step. **None of these are acceptable closers.**
+
+- "Standing by for go-ahead on X."
+- "Continuing into X." (then stopping)
+- "Continuing into X once you confirm Y." (Y was already in the plan, or Y is
+  something I can check myself.)
+- "Open question for you before I write X."
+- "Ready to proceed when you give me the green light."
+- "Will report back per-PR." (then stopping at PR boundary instead of the
+  end of the agreed batch.)
+
+If the next step is in the agreed plan, take it. If a question arose mid-work
+that I can answer with a tool call (read a file, query the DB, run a test),
+answer it myself before mentioning it. If the question genuinely needs human
+input — design ambiguity not pre-specified, destructive operation, external
+write — name the question and stop. Don't conflate "I'd be more comfortable
+checking" with "I'm blocked".
+
+### Phase boundaries are not checkpoints
+
+A multi-batch plan (Batch A → B → C → D) is approved end-to-end when the user
+approves the plan. Do NOT stop at the boundary between batches to ask. Stop
+only for the conditions above.
+
 ## Scope of pre-approved actions
 
 The following are pre-approved without per-action confirmation:
