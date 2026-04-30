@@ -292,11 +292,72 @@ _BRANCH_ALIAS_RULES: tuple[BranchAliasRule, ...] = (
         pattern=re.compile(
             r"^Australian Greens\s*\((?:ACT|NSW|QLD|SA|TAS|VIC|WA|"
             r"Victorian|Tasmanian|Western Australian|South Australian|"
-            r"Queensland)\s*Branch\)\s*$",
+            r"Queensland|South Australia|New South Wales|"
+            r"Northern Territory|Australian Capital Territory)\s*"
+            r"(?:Branch)?\)\s*$",
             re.IGNORECASE,
         ),
         canonical_name="Australian Greens",
-        description="AEC state Greens branches resolved to canonical Australian Greens.",
+        description=(
+            "AEC state Greens branches resolved to canonical Australian Greens. "
+            "Now also covers the form 'Australian Greens (South Australia)' which "
+            "drops the trailing 'Branch'."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="greens_state_branch_punctuated_v1",
+        pattern=re.compile(
+            # Comma-delimited form: "Australian Greens, ACT Branch",
+            # "Australian Greens, Northern Territory Branch", etc.
+            r"^Australian Greens[,\-]\s*(?:ACT|NSW|QLD|SA|TAS|VIC|WA|"
+            r"Victorian|Tasmanian|Western Australian|South Australian|"
+            r"Queensland|South Australia|New South Wales|"
+            r"Northern Territory|Australian Capital Territory)\s*"
+            r"(?:Branch|Division)?\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Australian Greens",
+        description=(
+            "Comma- or hyphen-delimited Greens state branches "
+            "(e.g. 'Australian Greens, Northern Territory Branch')."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="greens_state_branch_unpunctuated_v1",
+        pattern=re.compile(
+            # Bare "Australian Greens Victoria" without parens, comma, or
+            # "Branch" suffix.
+            r"^Australian Greens\s+(?:Victoria|Tasmania|Queensland|"
+            r"New South Wales|South Australia|Western Australia|"
+            r"Northern Territory|Australian Capital Territory)\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Australian Greens",
+        description=(
+            "Unpunctuated Greens state branch wording (e.g. 'Australian "
+            "Greens Victoria') resolved to canonical Australian Greens."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="the_greens_short_form_to_australian_greens_v1",
+        pattern=re.compile(
+            # AEC also publishes some Greens entities under the short form
+            # "The Greens NSW" or "The Greens (WA) Inc". Resolve to the
+            # canonical Australian Greens row.
+            r"^The Greens\s*(?:[,\-]?\s*"
+            r"(?:NSW|VIC|QLD|SA|TAS|WA|ACT|NT|N\.S\.W\.|"
+            r"Victorian|Tasmanian|Queensland|"
+            r"New South Wales|South Australia|Western Australia|"
+            r"Northern Territory|Australian Capital Territory)"
+            r"|\((?:NSW|VIC|QLD|SA|TAS|WA|ACT|NT|W\.A\.|S\.A\.|N\.S\.W\.)\)"
+            r"\s*Inc\.?)?\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Australian Greens",
+        description=(
+            "AEC's 'The Greens NSW' / 'The Greens (WA) Inc' state-level "
+            "registered names map to canonical Australian Greens."
+        ),
     ),
     BranchAliasRule(
         rule_id="nationals_state_branch_to_nationals_parent_v1",
@@ -341,6 +402,92 @@ _BRANCH_ALIAS_RULES: tuple[BranchAliasRule, ...] = (
         description=(
             "AEC's federal long-form name 'National Party of Australia' "
             "resolved to canonical local 'National Party' row."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="nationals_state_branch_inc_suffix_v1",
+        pattern=re.compile(
+            # AEC publishes some Nationals state divisions with an "Inc"
+            # company-structure suffix, e.g. "National Party of Australia
+            # (S.A.) Inc.", "National Party of Australia (WA) Inc".
+            r"^National Party of Australia\s*\((?:NSW|QLD|VIC|WA|SA|TAS|"
+            r"N\.S\.W\.|S\.A\.|W\.A\.)\)\s*Inc\.?\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="National Party",
+        description=(
+            "AEC publishes some Nationals state divisions with an 'Inc' "
+            "registered-association suffix; resolved to canonical National "
+            "Party row."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="australian_federation_party_state_branch_v1",
+        pattern=re.compile(
+            # AEC publishes Australian Federation Party state branches as
+            # bare suffixed forms, e.g. "Australian Federation Party
+            # Australian Capital Territory", "... New South Wales", etc.
+            r"^Australian Federation Party\s+(?:Australian Capital Territory|"
+            r"New South Wales|Northern Territory|Queensland|South Australia|"
+            r"Tasmania|Victoria|Western Australia|"
+            r"ACT|NSW|NT|QLD|SA|TAS|VIC|WA)\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Australian Federation Party",
+        description=(
+            "AEC state Australian Federation Party branches resolved to "
+            "canonical Australian Federation Party (federal). Seeded by "
+            "schema/036."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="libertarian_party_state_branch_v1",
+        pattern=re.compile(
+            r"^Libertarian Party of\s+(?:Queensland|New South Wales|Victoria|"
+            r"Tasmania|South Australia|Western Australia|"
+            r"QLD|NSW|VIC|TAS|SA|WA|ACT|NT|"
+            r"Australian Capital Territory|Northern Territory)\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Libertarian Party",
+        description=(
+            "AEC state Libertarian Party branches (e.g. 'Libertarian Party "
+            "of Queensland') resolved to canonical Libertarian Party "
+            "(federal). Seeded by schema/035."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="affordable_housing_now_to_sustainable_australia_v1",
+        pattern=re.compile(
+            # AEC publishes the Sustainable Australia Party under the
+            # registered name "Affordable Housing Now - Sustainable
+            # Australia Party". Resolve to the canonical seeded row.
+            r"^Affordable Housing Now\s*[\-]\s*Sustainable Australia Party\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Sustainable Australia Party",
+        description=(
+            "AEC's registered 'Affordable Housing Now - Sustainable "
+            "Australia Party' name resolved to the seeded canonical "
+            "Sustainable Australia Party row."
+        ),
+    ),
+    BranchAliasRule(
+        rule_id="health_environment_accountability_rights_transparency_paren_v1",
+        pattern=re.compile(
+            # AEC publishes the registered name with a parenthetical short
+            # form: "Health Environment Accountability Rights Transparency
+            # (HEART)". Resolve to the canonical row whose name omits the
+            # short form.
+            r"^Health Environment Accountability Rights Transparency"
+            r"\s*\(HEART\)\s*$",
+            re.IGNORECASE,
+        ),
+        canonical_name="Health Environment Accountability Rights Transparency",
+        description=(
+            "AEC's 'Health Environment Accountability Rights Transparency "
+            "(HEART)' parenthetical short-form name resolved to the seeded "
+            "canonical row."
         ),
     ),
 )

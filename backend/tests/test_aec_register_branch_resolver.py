@@ -580,3 +580,170 @@ def test_parenthetical_short_form_picks_federal_when_disambiguated(
     assert res.canonical_party_id == 1
     assert res.matched_via_rule_id == "parenthetical_short_name_alias_v1"
     assert "source_jurisdiction_disambiguation" in res.notes
+
+
+# --- Batch F second-wave alias rules + politicalparty long-tail seeds ----
+
+
+@pytest.fixture
+def post_v2_seed_directory() -> PartyDirectory:
+    """Mirrors the local DB after migrations 034 + 035 + 036 + the
+    `_v1` resolver rules. Adds Australian Federation Party, Family First
+    Party Australia, The Great Australian Party, Better Together Party,
+    Indigenous - Aboriginal Party of Australia, Socialist Alliance,
+    Sustainable Australia Party, Power 2 People, and Health Environment
+    Accountability Rights Transparency on top of `post_seed_directory`'s
+    parties.
+    """
+    return PartyDirectory.from_rows(
+        [
+            (1, "Australian Labor Party", "ALP", 1),
+            (3, "Liberal Party", "LP", 1),
+            (6, "Liberal National Party", "LNP", 1),
+            (10, "National Party", "NATS", 1),
+            (11, "Independent", "IND", 1),
+            (66, "Katter's Australian Party", "KAP", 1),
+            (136, "Australian Greens", "AG", 1),
+            (8192, "Country Liberal Party", "CLP", 1),
+            (200001, "Animal Justice Party", "AJP", 1),
+            (200002, "Australian Citizens Party", "CITZN", 1),
+            (200003, "Libertarian Party", "LIB-DEM", 1),
+            (200004, "Shooters, Fishers and Farmers Party", "SFF", 1),
+            (200005, "Australian Federation Party", "AFP", 1),
+            (200006, "Family First Party Australia", "FFP", 1),
+            (200007, "The Great Australian Party", "TGAP", 1),
+            (200008, "Better Together Party", "BTP", 1),
+            (200009, "Indigenous - Aboriginal Party of Australia", "IAPA", 1),
+            (200010, "Socialist Alliance", "SA", 1),
+            (200011, "Sustainable Australia Party", "SUSAUS", 1),
+            (200012, "Power 2 People", "P2P", 1),
+            (
+                200013,
+                "Health Environment Accountability Rights Transparency",
+                "HEART",
+                1,
+            ),
+            (152936, "Australian Labor Party", "ALP", 41),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "segment,expected_party_id,expected_rule_id",
+    [
+        # Greens variants the v1 rule did not catch.
+        (
+            "Australian Greens (South Australia)",
+            136,
+            "greens_state_branch_to_australian_greens_parent_v1",
+        ),
+        (
+            "Australian Greens, Australian Capital Territory Branch",
+            136,
+            "greens_state_branch_punctuated_v1",
+        ),
+        (
+            "Australian Greens, Northern Territory Branch",
+            136,
+            "greens_state_branch_punctuated_v1",
+        ),
+        (
+            "Australian Greens, Tasmanian Branch",
+            136,
+            "greens_state_branch_punctuated_v1",
+        ),
+        (
+            "Australian Greens Victoria",
+            136,
+            "greens_state_branch_unpunctuated_v1",
+        ),
+        (
+            "The Greens NSW",
+            136,
+            "the_greens_short_form_to_australian_greens_v1",
+        ),
+        (
+            "The Greens (WA) Inc",
+            136,
+            "the_greens_short_form_to_australian_greens_v1",
+        ),
+        # Nationals state divisions with Inc suffix.
+        (
+            "National Party of Australia (S.A.) Inc.",
+            10,
+            "nationals_state_branch_inc_suffix_v1",
+        ),
+        (
+            "National Party of Australia (WA) Inc",
+            10,
+            "nationals_state_branch_inc_suffix_v1",
+        ),
+        # Australian Federation Party state suffixes.
+        (
+            "Australian Federation Party Australian Capital Territory",
+            200005,
+            "australian_federation_party_state_branch_v1",
+        ),
+        (
+            "Australian Federation Party Western Australia",
+            200005,
+            "australian_federation_party_state_branch_v1",
+        ),
+        # Libertarian Party state branches.
+        (
+            "Libertarian Party of Queensland",
+            200003,
+            "libertarian_party_state_branch_v1",
+        ),
+        # Sustainable Australia Party "Affordable Housing Now" alias.
+        (
+            "Affordable Housing Now - Sustainable Australia Party",
+            200011,
+            "affordable_housing_now_to_sustainable_australia_v1",
+        ),
+        # HEART parenthetical short-form name.
+        (
+            "Health Environment Accountability Rights Transparency (HEART)",
+            200013,
+            "health_environment_accountability_rights_transparency_paren_v1",
+        ),
+    ],
+)
+def test_second_wave_alias_rules_resolve_to_canonical_party(
+    segment: str,
+    expected_party_id: int,
+    expected_rule_id: str,
+    post_v2_seed_directory: PartyDirectory,
+) -> None:
+    res = resolve_segment(
+        segment, post_v2_seed_directory, source_jurisdiction_id=1
+    )
+    assert res.resolver_status == "resolved_branch"
+    assert res.canonical_party_id == expected_party_id
+    assert res.matched_via_rule_id == expected_rule_id
+
+
+@pytest.mark.parametrize(
+    "segment,expected_party_id",
+    [
+        ("Australian Federation Party", 200005),
+        ("Family First Party Australia", 200006),
+        ("The Great Australian Party", 200007),
+        ("Better Together Party", 200008),
+        ("Indigenous - Aboriginal Party of Australia", 200009),
+        ("Socialist Alliance", 200010),
+        ("Sustainable Australia Party", 200011),
+        ("Power 2 People", 200012),
+        ("Health Environment Accountability Rights Transparency", 200013),
+    ],
+)
+def test_v2_seeded_canonical_parties_resolve_via_exact_match(
+    segment: str,
+    expected_party_id: int,
+    post_v2_seed_directory: PartyDirectory,
+) -> None:
+    res = resolve_segment(
+        segment, post_v2_seed_directory, source_jurisdiction_id=1
+    )
+    assert res.resolver_status == "resolved_exact"
+    assert res.canonical_party_id == expected_party_id
