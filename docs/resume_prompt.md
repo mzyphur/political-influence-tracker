@@ -153,8 +153,13 @@ Live database (Postgres at
   crosswalk from 191 → **448 rows** / 171 → **404 distinct
   postcodes** ending at **127 of 150 federal House electorates
   (84.7%)** (pre-Batch-J electorate count was not measured; PR 3
-  specifically added +4 vs after-PR-2). Pure live-data round; no
-  source-file changes.
+  specifically added +4 vs after-PR-2). PR 4 added a public-facing
+  `#postcode-coverage` section to the methodology page disclosing
+  the coverage scope and four known limitations (silent-skip on
+  PO Box / large-volume-recipient codes, missing leading-zero
+  ranges 0200-0299 ACT / 0800-0899 NT, multi-electorate postcodes,
+  inner-metro fragmentation). Methodology version bumped to
+  2026-05-01.
 
 ## Critical architectural decisions to preserve
 
