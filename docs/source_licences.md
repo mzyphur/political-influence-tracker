@@ -196,56 +196,50 @@ also documented as ingestion targets in `docs/data_sources.md`.
 - **Verified at:** https://www.naturalearthdata.com/about/terms-of-use/, directly fetched on 2026-04-30 (curl-archived locally; verbatim text extracted from saved HTML).
 - **Page-fetch status:** successful
 
-## Australia Post — postcode locality CSV
+## Australia Post — postcode locality CSV (verbatim from product page)
 
 Considered as a comprehensive seed source for postcode-electorate
 crosswalk expansion; explicitly **NOT** ingested at this time.
 
-- **Licence (verbatim):** Could not be extracted on 2026-04-30. The
-  curl-fetched page at the cited URL returned an HTML body whose
-  `<title>` is "404 - Australia Post" and whose visible text reads
-  "The page you are looking for does not exist. Please check the URL
-  for any possible spelling errors. If you are still having trouble,
-  try searching our site for the information you need." The page also
-  carries Australia Post's standard Acknowledgement of Country but no
-  licensing arrangements text. The licence URL appears to have been
-  moved, retired, or to be served only after JavaScript rendering by
-  Australia Post's site framework. Prior search-confirmed wording is
-  retained below as a working summary, but it is **NOT verbatim** from
-  a live Australia Post page on 2026-04-30.
-- **Licence (working summary, search-confirmed prior to this round —
-  not verbatim, NOT verified against the live page on 2026-04-30):**
-  Limited, revocable, non-exclusive licence to download and use
-  postcodes for non-commercial reference only. Commercial use requires
-  a paid licence. Sub-licensing, sale, redistribution, or use to power
-  any publicly available postcode lookup is expressly prohibited.
-- **Required attribution:** Could not be extracted verbatim on
-  2026-04-30 (page returned 404). Working summary (search-confirmed
-  prior round, not verbatim): Australia Post retains all property
-  rights; reproduction without permission is prohibited.
-- **Redistribution status (this project):** **blocked**. The block
-  stands regardless of whether the licence URL is live, because the
-  project's standing conservative rule treats unverifiable / removed
-  publisher pages as no-redistribution-permission.
-- **Notes:** This source cannot be embedded in a publicly redistributed
-  dataset or used to power a public postcode finder. Do **not** seed
-  this project's postcode list from the free Australia Post CSV. Use
-  ABS POA boundaries + the AEC's own postcode finder + community-
-  curated CC0 lists (e.g. Matthew Proctor's Australian-postcodes
-  CC0 dataset on GitHub) as alternative seed sources, and document
-  the choice here before running the bulk fetch. Action item for a
-  maintainer with a browser: the saved HTML at the cited URL appears
-  to be a heavy JS-rendered Australia Post site shell that returns a
-  404 to plain HTTP clients; render the page in a real browser, find
-  the current canonical URL for the licensing arrangements page, and
-  re-extract the verbatim licence wording before public release.
-- **Verified at:** https://auspost.com.au/about-us/about-our-site/our-licensing-arrangements,
-  directly fetched on 2026-04-30 (curl-archived locally; saved HTML
-  resolved to a 404 page — see Page-fetch status below).
-- **Page-fetch status:** fetch failed (HTTP body resolves to a "404 -
-  Australia Post" page; page may have been moved, retired, or be
-  client-rendered only — needs a maintainer with a browser to confirm
-  before publication)
+The original `/about-us/about-our-site/our-licensing-arrangements`
+URL returns a 404 in 2026 (the page has moved or been retired). The
+canonical free-tier product page is now at
+https://postcode.auspost.com.au/free_display.html?id=1 and that
+page's title is literally "Non-commercial use only". Verbatim text
+below is from that page (Batch I direct-fetch, 2026-05-01).
+
+- **Licence (verbatim):** "The contents of the Database are subject
+  to change without notice and remain at all times the property of
+  Australia Post."
+- **Required attribution:** No specific attribution requirement is
+  stated on the product page; Australia Post retains all property
+  rights and prohibits reproduction without permission (verbatim
+  prohibition wording captured below).
+- **Redistribution status (this project):** **blocked**.
+- **Notes (verbatim restrictions from the product page):**
+  - "The user must not use the Postcode Booklet for the benefit of
+    any third party, for reward or to commercialise in any way."
+  - "To sub-license, sell, lend, rent, transfer, lease or grant any
+    rights for the Postcode Booklet to any person, company,
+    organisation, agency, or business entity."
+  - "To create a Product or other derivative works from Postcode
+    Booklet."
+  - "To combine, embed, alter or modify the Postcode Booklet with or
+    in other products, software or systems."
+
+  Public-readable summary: this source cannot be embedded in any
+  publicly redistributed dataset or used to power a public postcode
+  finder. Do **not** seed this project's postcode list from the free
+  Australia Post CSV. Use ABS POA boundaries + the AEC's own
+  postcode finder + community-curated CC0 lists (e.g. Matthew
+  Proctor's Australian-postcodes CC0 dataset on GitHub — see
+  `docs/data_sources.md`) as alternative seed sources.
+- **Verified at:** https://postcode.auspost.com.au/free_display.html?id=1
+  — directly fetched 2026-05-01 (WebFetch; product page returned
+  verbatim restriction wording). The historic
+  `/about-us/about-our-site/our-licensing-arrangements` URL is a
+  404 as of 2026-05-01.
+- **Page-fetch status:** successful (current canonical product page).
 
 ---
 
@@ -277,16 +271,24 @@ before any public data release:
    just needs-follow-up: an unspecified licence is conservatively
    treated as all-rights-reserved. Substitute with Natural Earth
    coastline (public domain) before any public release.
-5. **Direct-page verification status (2026-04-30 round).** AEC
-   website, AEC GIS, APH, ABS, TVFY, MapTiler ×2, OSM, and Natural
-   Earth entries above carry verbatim direct-fetch wording.
-   The eAtlas companion of AIMS Coastline 50K is HTTP 403 and the
-   Australia Post licensing-arrangements page resolves to a 404 in
-   this round (the URL appears to have been moved or made
-   JS-rendered only); both sources retain the prior search-confirmed
-   wording explicitly flagged as not-yet-verbatim. A maintainer with
-   a browser must re-fetch from any new canonical URLs before
-   publication.
+5. **Direct-page verification status (2026-05-01 round).** All ten
+   sources now carry verbatim direct-fetch licence wording:
+   AEC website (CC-BY 4.0), AEC GIS (Limited End-user Licence with
+   derivative-product permission), APH (CC BY-NC-ND 4.0
+   International), ABS (CC-BY 4.0), AIMS Coastline 50K
+   (verbatim "Licence Not Specified" via data.gov.au), TVFY (ODbL),
+   MapTiler ×2 (proprietary), OSM (ODbL), Natural Earth (public
+   domain), and Australia Post (verbatim non-commercial-only
+   restriction wording from the canonical product page at
+   `postcode.auspost.com.au/free_display.html?id=1`; the historic
+   `auspost.com.au/about-us/.../our-licensing-arrangements` URL is a
+   404 as of 2026-05-01 and has been retired). The only remaining
+   browser-fetch follow-up is the eAtlas companion of AIMS Coastline
+   50K, whose origin returns HTTP 403 to plain HTTP clients and
+   whose Wayback Machine snapshot is the SPA shell only — but the
+   data.gov.au record alone is sufficient because its verbatim
+   "Licence Not Specified" already drives the conservative blocked
+   status.
 
 The project's general public-redistribution policy continues to be
 "conservative until verified". Local development and reproducibility
