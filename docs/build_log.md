@@ -1,5 +1,71 @@
 # Build Log
 
+## 2026-04-30 (Batch G — licence capture + permalink env-var + candidate-vehicle seed + postcode parser fix + v2 seed + sub-national plan)
+
+Seven changes landed:
+
+- **G #1: methodology permalink env-var.** `frontend/scripts/sync-methodology-version.mjs`
+  now reads `METHODOLOGY_REPO_URL`. When set, the SHA marker is wrapped
+  in an `<a href="${url}/commit/${sha}">` (with a `-dirty` suffix kept
+  in link text but stripped from the URL). Fully idempotent — placeholder
+  regexes are non-greedy so a later run with a different URL re-wraps
+  cleanly, and a re-run without the env var strips the link.
+- **G #2: candidate-vehicle party seed migration 037.** Adds the four
+  AEC-registered "candidate-vehicle" / personality registered names
+  ("Dai Le & Frank Carbone W.S.C.", "Kim for Canberra", "Tammy Tyrrell
+  for Tasmania", "votefusion.org for big ideas") as federal canonical
+  rows with explicit `is_personality_vehicle` metadata flag. Drops
+  `unresolved_no_match` to **0 across all client_types** (was 4
+  politicalparty + 1 associatedentity). Reviewed `party_entity_link`
+  count 147 → 148.
+- **G #2 reviewer follow-up.** Added regression test
+  `test_no_office_term_references_personality_vehicle_party_row`. The
+  test seeds a personality-vehicle party row directly in the
+  integration schema (the fixture order means migration 037
+  short-circuits during fixture setup) and asserts no `office_term`
+  references it. If a future loader ever links an MP's office_term
+  to one of the personality-vehicle parties without first wiring the
+  flag through the API, this test fails closed.
+- **G #3: source-licence doc.** New `docs/source_licences.md` records
+  per-source licence terms, attribution wording, and redistribution
+  status for AEC website / AEC GIS / APH / AIMS Coastline 50K / ABS /
+  TVFY / MapTiler / OpenStreetMap / Natural Earth / Australia Post.
+  Critical findings flagged on AEC GIS (Limited End-user Licence —
+  needs follow-up before public redistribution), APH (CC BY-NC-ND
+  3.0 AU — derivative work restrictions), Australia Post (blocked for
+  public postcode lookup), AIMS (licence string still unverified).
+  README now links to the doc.
+- **G #4: postcode parser pagination-row fix.** Live AEC Electorate
+  Finder responses for high-population postcodes (2800, 2480, 0820,
+  0850, 0870, 4350, 3350, 6330) include a paginated GridView footer
+  the parser was mistaking for a data row, raising `ValueError:
+  Expected a four-digit Australian postcode, got '2'` mid-normalize.
+  Added `_PAGINATION_CELL_RE` + `_looks_like_pagination_row()` filter
+  in `_table_rows()` and a defensive `try/except ValueError` skip in
+  the per-row loop. New unit test
+  `test_parse_aec_electorate_finder_postcode_skips_pagination_footer`
+  pins the fix.
+- **G #4: postcode v2 seed.** Replaced the bootstrap 8-postcode seed
+  list with a curated 48-postcode v2 seed covering capital-city CBDs
+  + 1-3 regional centres / second cities per state-territory. Live
+  fetch + load yielded 51 crosswalk rows (was 9), 8 unresolved
+  postcode candidates (electorate names from AEC that don't match the
+  loaded boundary table — left as auditable observations). Wrapper at
+  `scripts/expand_postcode_seed.sh` and `make expand-postcode-seed`
+  remain available for the future ~3000-postcode national seed.
+- **G #5: sub-national party seeds rollout design doc.** New
+  `docs/sub_national_party_seeds_plan.md` records the deferred design
+  for state-jurisdiction party-mediated exposure: seed migrations per
+  state, dual resolver invocations (federal + state), API
+  jurisdiction filter on `_representative_party_exposure_summary`,
+  and the test-coverage requirements per state-rollout PR. QLD is
+  the first target because QLD ECQ data is already loaded; NSW / VIC
+  / others follow the deferred state/local rollout.
+
+358/358 backend pytest pass (was 356; +2 new tests). ruff clean.
+frontend production build clean. Direct-money invariant test still
+passes.
+
 ## 2026-04-30 (Batch F — methodology auto-stamp + visual smoke + politicalparty long tail + postcode-expansion path)
 
 Four PRs landed:
