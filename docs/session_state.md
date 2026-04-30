@@ -129,26 +129,71 @@ postcode results with the full attribution caveat and confidence
 labels intact. Existing tests still pass (2 parser tests + 1 loader
 integration test). No new code required.
 
-### Batch D #3 — frontend visual smoke (Firefox only)
+### Batch D #3 — frontend visual smoke (Firefox only) — code-side audit DONE; user smoke pending
 
-Click through map → details panel → party profile → influence graph for
-a few representative MPs. Confirm new party-exposure data renders
-correctly post-Batch-C; confirm "Est. exposure" prefix is visible;
-confirm denominator-asymmetry chip shows up; confirm council/state map
-paths still work.
+Code-side audit found no regressions: `Est. exposure` prefix renders
+via `DetailsPanel.tsx:882`; denominator-asymmetry chip renders as
+`denominator scope: current office-term party representatives only
+(asymmetric — see methodology)` via `DetailsPanel.tsx:1297`;
+`equal share across N current party representatives` line via
+`DetailsPanel.tsx:1305`; `claim_scope` sentence rendered via
+`DetailsPanel.tsx:1311`; postcode result selection note carries the
+full source-backed-candidate caveat via `App.tsx:2247`.
 
-### Batch D #4 — pre-launch claim-discipline sweep
+Visual smoke in Firefox is human-side work the agent cannot perform.
+The eyes-on companion checklist for the user lives at
+`docs/batch_d3_firefox_smoke_checklist.md` (commit `4e516fd`) and
+covers: setup commands, ordered checklist for current ALP / AG /
+other-party MPs, postcode search smoke, methodology-page anchor
+checks, claim-discipline copy spot-checks, council/state-level map
+paths.
 
-Grep frontend for UI text that could be misread as causal/wrongdoing
-("received from", "took money from", "donated by … to", "improper",
-"corrupt"). Replace with neutral evidence-tier language.
+### Batch D #4 — pre-launch claim-discipline sweep — DONE
 
-### Batch D #5 — methodology page
+Grepped `frontend/src/` for causal/wrongdoing language ("received
+from", "took money from", "donated by …", "improper", "corrupt", and
+related variants). Found one inconsistent state/local record headline
+where `App.tsx:1678` was returning `"${source} gave an annual gift to
+${recipient}"` for NT annual-gift rows; every other branch in the
+function uses the more neutral "disclosed … to" / "disclosed … from"
+framing. Replaced with `"${source} disclosed an annual gift to
+${recipient}"` and added an inline comment explaining that donative
+verbs ("gave"/"got") read as causal claims and the source data is a
+disclosed annual return rather than an observed transfer.
 
-Render `docs/influence_network_model.md` +
-`docs/campaign_support_attribution.md` + `docs/theory_of_influence.md`
-as a public-facing methodology section with versioned permalinks.
-Journalists/academics will look for this first.
+All remaining mentions of "improper" / "wrongdoing" / "causation" in
+the frontend are in explicit negating positions — exactly the framing
+the project requires. Strong claim-discipline microcopy already in
+place ("Not a wrongdoing claim", "do not claim causation or improper
+conduct", "Equal-share values are analytical exposure estimates only",
+"Est. exposure" prefix, "denominator scope" chip) was left intact.
+Frontend build clean. Commit `2a14408`.
+
+### Batch D #5 — methodology page — DONE
+
+Extended `frontend/public/methodology.html` with three new sections
+covering the methodology that landed in Batch C/D:
+
+- **`#aec-register-pathways`**: exact-name match → branch alias rules
+  → source-jurisdiction disambiguation → fail-closed-on-residual-
+  ambiguity, plus a note on the one-shot federal-row consolidation
+  migration.
+- **`#equal-share`**: numerator/denominator definitions for
+  `equal_current_representative_share`, why the per-rep figure is
+  rough, and the UI rule that every surface prefixes with "Est.
+  exposure" and ships the denominator chip.
+- **`#campaign-support-tiers`**: summarises
+  `docs/campaign_support_attribution.md` for public readers and
+  reinforces that public election funding paid to a party is not a
+  personal receipt.
+
+Footer updated to reference the correct three source documents
+(`influence_network_model.md`, `theory_of_influence.md`,
+`campaign_support_attribution.md` — replacing the stale
+`research_standards.md` pointer) and carry a versioned permalink:
+methodology version `2026-04-30`, repo revision `3f40524`. Top nav
+updated with anchors for the new sections + the version footer.
+Frontend production build clean. Commit `4a4f1af`.
 
 ## Critical constraints (from CLAUDE.md and dev direction)
 

@@ -895,6 +895,14 @@
               by exact normalized name.
             </li>
             <li>
+              <strong>Parenthetical short-form alias.</strong> A segment that
+              embeds an explicit short_name in parentheses such as
+              <code>Australian Labor Party (ALP)</code> resolves to the party
+              whose <code>short_name</code> matches the parenthetical content
+              exactly. No similarity matching - the short form must already
+              exist in the local <code>party.short_name</code> column.
+            </li>
+            <li>
               <strong>Source-jurisdiction disambiguation.</strong> When more than
               one row matches and they only differ by jurisdiction, the resolver
               prefers the row whose <code>jurisdiction_id</code> equals the
@@ -1027,8 +1035,8 @@
         <p class="version-line">
           <strong>Methodology version:</strong>
           <code>2026-04-30</code>
-          &middot; Repo revision <code>3f40524</code> (Batch D #5 - this
-          page now also covers AEC Register pathways, source-jurisdiction
+          &middot; Internal revision marker <code>3f40524</code> (Batch D #5 -
+          this page now also covers AEC Register pathways, source-jurisdiction
           disambiguation, federal-party-row consolidation, and equal-share
           denominator asymmetry).
         </p>
@@ -1039,10 +1047,12 @@
           <code>docs/campaign_support_attribution.md</code>
         </p>
         <p class="version-line">
-          The repository revision identifier above is intended as a stable
-          permalink for this version of the methodology. Each future
-          methodology change should bump the date and the revision so older
-          captures remain auditable.
+          The revision marker above is the short git SHA at the time this
+          page was last edited. It is an internal anchor, not a public
+          repository URL - if the project later publishes a public mirror,
+          this marker can be wrapped in an &lt;a&gt; tag pointing at the
+          matching commit. Each methodology change should bump both the
+          date and the marker so older captures remain auditable.
         </p>
       </footer>
     </main>
