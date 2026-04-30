@@ -2,6 +2,12 @@
 
 This file overrides the global `~/CLAUDE.md` for this repository only.
 
+> **Continuing a session?** Read [`docs/session_state.md`](docs/session_state.md)
+> first. It is the single source of truth for where we are and what's
+> next, including any Batch-D items currently in flight, known gotchas,
+> and live verification commands. The file is updated whenever a batch
+> closes; trust it over assumptions from `git log` alone.
+
 ## Autonomy
 
 The user has explicitly granted full read/write/edit autonomy on this
