@@ -306,13 +306,35 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: pick up at Batch D #1
+## When you start: Batch D is closed; next-step menu
 
-The next thing to do is the live AEC Register pipeline run + verification
-above. If the verification checklist passes cleanly, move to Batch D #2
-(postcode crosswalk). If it surfaces a duplicate-party-row blocker,
-spike a one-shot party-table dedup migration before continuing.
+The federal-launch path is structurally complete. Pick whichever item
+below is highest empirical value at the time you read this:
 
-Do not stop at PR boundaries within Batch D to ask. Stop only on:
+1. **User runs the Firefox visual smoke** per
+   `docs/batch_d3_firefox_smoke_checklist.md` (commit `4e516fd`). If
+   anything regresses visually, log it and fix. Until this is run,
+   the only Batch D item with an unverified human-side signal is
+   D #3.
+2. **Expand the postcode seed list.**
+   `data/seeds/aec_postcode_search_seed.txt` currently has only 8
+   bootstrap postcodes. Production refresh should cover at least
+   every Australian postcode that maps to a federal electorate
+   (~3000+). Pipeline supports the expanded list out of the box.
+3. **Methodology page link in the markdown footer.** The static page
+   carries a `2026-04-30 / 3f40524` revision marker. When the
+   project gets a public git mirror, wrap the marker in an
+   `<a href="…/commit/3f40524">` so it becomes a real permalink.
+4. **Source-licence capture.** Repo currently uses the conservative
+   "to be recorded before public data redistribution" wording. Land
+   verified terms before any public redistribution.
+5. **State/local expansion** (NSW/VIC after QLD) — DEFERRED until
+   after federal launch per the dev's standing direction. Do not
+   let state/local work delay the May 2026 federal release unless
+   it exposes a reusable data-model flaw.
+
+Operating constraints below still apply.
+
+Do not stop at PR boundaries within a batch to ask. Stop only on:
 test failure, real ambiguity not in this file, destructive operation
 needing approval, or external write needing approval.

@@ -30,39 +30,94 @@ You are continuing work on the Australian Political Influence Transparency proje
 
 Build a reproducible, source-backed Australian political influence transparency app, federal-first, that NEVER conflates direct disclosed person-level money with campaign-support records, party-mediated party/entity context, or modelled allocation. Every public claim must travel with its evidence tier and attribution limit.
 
-## What just landed (Batch C)
+## What just landed (Batches C + D — federal launch readiness)
 
-The AEC Register of Entities ingestion is now end-to-end:
+- **Batch C — AEC Register of Entities ingestion** (commits `b9978b7`,
+  `ba479c6`, `1e1fe0d`): fetcher with token redaction + cookie-value
+  redaction + AEC field-typo preservation; deterministic branch
+  resolver (no fuzzy similarity); loader with the dev's C-rule per
+  client_type; schema 033; pipeline + `load_processed_artifacts`
+  wiring; 55 backend tests covering fetcher / resolver / loader and a
+  cross-cutting direct-money invariant.
+- **Batch D #1 — live AEC Register run + dedup + disambiguation** (5
+  commits `901c5c1` → `68c2e74`): fetcher metadata fix
+  (`body_path`/`final_url`/`content_type`); deterministic
+  source-jurisdiction disambiguation rule
+  (`source_jurisdiction_disambiguation_v1`) added to the resolver
+  with `jurisdiction_id` threaded into `PartyDirectory`; one-shot
+  data-fix migration `034_consolidate_federal_party_duplicates.sql`
+  consolidating eight federal short/long-form duplicate pairs into
+  single canonical rows (state-jurisdiction rows untouched);
+  reviewer-feedback fixes: `get_or_create_party` now uses
+  `COALESCE(party.short_name, EXCLUDED.short_name)` so the curated
+  `short_name='ALP'` etc. is not clobbered on next pipeline run;
+  `_commonwealth_jurisdiction_id` raises on ambiguous seeds rather
+  than silently picking lower id. Live DB: 87 unique reviewed
+  `party_entity_link` rows (86 → ALP, 1 → AG); current ALP MPs now
+  surface non-empty `party_exposure_summary` with event_count 4,291,
+  party-context total $310M, equal-share modelled per current rep
+  ~$2.53M, denominator 123. Direct-money invariant unchanged
+  (314,040 events / $13.48B).
+- **Batch D #2 — postcode crosswalk live verification** (commit
+  `2aedaaa`): pipeline already wired; live re-fetch of 8 seed
+  postcodes produced 9 crosswalk rows / 1 ambiguous postcode (2600
+  ACT → Canberra + Bean) / 0 unresolved. Search API returns postcode
+  results with full attribution caveat + boundary/current-member
+  context labels + per-result confidence (0.5 ambiguous, 1.0
+  unambiguous). No new code needed.
+- **Batch D #3 — frontend visual smoke** (commit `4e516fd`):
+  code-side audit confirmed no regressions in render paths
+  (`Est. exposure` prefix, denominator-asymmetry chip, postcode
+  result rendering, claim-discipline microcopy). Eyes-on Firefox
+  smoke is human-side work the agent cannot perform; checklist for
+  the user lives at `docs/batch_d3_firefox_smoke_checklist.md`.
+- **Batch D #4 — claim-discipline sweep** (commit `2a14408`): grepped
+  `frontend/src/` for causal/wrongdoing language. Found one outlier
+  in `App.tsx:1678` where the NT annual-gift headline used the active
+  "gave" verb while every other state/local headline used "disclosed"
+  framing; replaced with `"${source} disclosed an annual gift to
+  ${recipient}"` and added an inline comment. All remaining mentions
+  of "improper" / "wrongdoing" / "causation" are in explicit negating
+  positions, which is the framing the project requires.
+- **Batch D #5 — methodology page** (commits `4a4f1af`, `d69405d`):
+  extended `frontend/public/methodology.html` with three new
+  sections — `#aec-register-pathways` (4-stage resolver including
+  parenthetical short-form alias and source-jurisdiction
+  disambiguation), `#equal-share` (numerator/denominator scope, Est.
+  exposure UI rule), `#campaign-support-tiers` (link to
+  `docs/campaign_support_attribution.md` per-tier rules); footer
+  refreshed with the correct three source docs and a versioned
+  internal-revision marker `2026-04-30 / 3f40524`. Reviewer-feedback
+  fix: parenthetical-alias step added to the enumeration, and the
+  permalink wording re-named to "internal revision marker" to stop
+  overstating what the bare git SHA is.
 
-- **Fetcher** (`backend/au_politics_money/ingest/aec_register_entities.py`) GETs the register page → extracts the anti-forgery token → POSTs `ClientDetailsRead` with the token, paginates, persists raw HTML + per-page JSON under `data/raw/aec_register_of_entities/<client_type>/<timestamp>/`. Anti-forgery token + cookie values are redacted from raw archive metadata; the cookie request header is never persisted. AEC field typos preserved verbatim end-to-end (`RegisterOfPolitcalParties`, `LinkToRegisterOfPolitcalParties`, `AmmendmentNumber`).
-- **Resolver** (`backend/au_politics_money/ingest/aec_register_branch_resolver.py`) deterministically maps an `AssociatedParties` segment to exactly one canonical `party.id` via Stage 1 exact normalized match → Stage 2 documented branch alias rules (ALP/Liberal/Greens/Nationals state branches → canonical parent) → Stage 3 parenthetical short-name alias. No fuzzy similarity. Multi-row matches fail closed as `unresolved_multiple_matches`.
-- **Loader** (`backend/au_politics_money/db/aec_register_loader.py`) implements the dev's C-rule: `politicalparty` → entity + identifier only; `associatedentity` → reviewed `party_entity_link` ONLY when the resolver yields a unique party; `significantthirdparty`/`thirdparty` → entity + identifier only regardless of `AssociatedParties` content. Auto-reviewed links carry `method='official'`, `confidence='exact_identifier'`, `reviewer='system:aec_register_of_entities'`, plus full evidence-note + attribution-limit metadata.
-- **Schema 033** preserves every register-row observation distinct (don't dedupe by `ClientIdentifier` — preserve when `FinancialYear`/`ReturnId`/etc. differ).
-- **Pipeline + load_processed_artifacts** wired so weekly federal runs fetch all four client types automatically and full database loads invoke the loader by default.
-- **Tests**: 18 fetcher unit tests (mocked HTTP), 30 resolver unit tests (no DB), 7 Postgres integration tests including the cross-cutting invariant that direct-representative money totals are byte-identical before and after a load. Full backend pytest 306/306 passing. Ruff clean. Frontend build clean.
+## What's next
 
-## What's next: Batch D #1 — live AEC Register pipeline run + verification
+The federal-launch path is structurally complete. Suggested next
+moves, in priority order:
 
-Highest empirical value, smallest effort. Proves Batch C works against production data and surfaces any blockers (especially whether duplicate `party` rows for ALP/Independent/etc. cause too many `unresolved_multiple_matches` to make the surface useful).
-
-Steps (also in `docs/session_state.md`):
-
-1. Make sure local Postgres is up via `docker-compose up -d` against `backend/docker-compose.yml`. Wait for `pg_isready` to confirm.
-2. Apply migrations: `cd backend && .venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money migrate-postgres`.
-3. Fetch all four client types from the live AEC endpoint: `.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money fetch-aec-register-of-entities`.
-4. Load the JSONL into the DB: `.venv/bin/dotenv -f .env run -- .venv/bin/au-politics-money load-aec-register-of-entities`.
-5. Capture the `reviewed_party_entity_links_upserted` and `resolver_status_counts` from the loader output.
-6. Query: `SELECT count(*) FROM party_entity_link WHERE review_status='reviewed' AND method='official'` to confirm a non-trivial number landed.
-7. Query: `SELECT resolver_status, count(*) FROM aec_register_of_entities_observation GROUP BY resolver_status` to see the resolution mix. Expect lots of `resolved_branch` for ALP, plus some `unresolved_multiple_matches` because of duplicate party rows in the local DB.
-8. Pick a current ALP MP, hit `GET /api/representatives/{id}`, and confirm `party_exposure_summary` is non-empty.
-9. If the duplicate-party problem blocks too many auto-resolutions, the next sub-task is a one-shot `party`-table dedup migration. Known duplicates in the local DB include `Australian Labor Party` (ids 1351 + 152936), `Liberal National Party` (1460 + 152939), `Independent` (1389 + 153001), `Katter's Australian Party` (1692 + 152969).
-
-After #1 lands cleanly, continue through Batch D in order:
-
-- **#2** Postcode crosswalk ingestion (schemas 022–025 are in but unfed; `aec_electorate_finder.py` is partially wired).
-- **#3** Frontend visual smoke in **Firefox** (not Chrome — user preference). Click through map → details panel → party profile → influence graph for ALP/LP/GRN MPs. Confirm the new "Est. exposure" lines and the denominator-asymmetry chip render. Confirm council/state map paths still work.
-- **#4** Pre-launch claim-discipline sweep: grep frontend for any UI text that could be misread as causal/wrongdoing ("received from", "took money from", "donated by … to", "improper", "corrupt"). Replace with neutral evidence-tier wording.
-- **#5** Methodology page: render `docs/influence_network_model.md` + `docs/campaign_support_attribution.md` + `docs/theory_of_influence.md` as a public-facing methodology section with versioned permalinks.
+1. **User runs the Firefox visual smoke** per
+   `docs/batch_d3_firefox_smoke_checklist.md`. If anything regresses
+   visually, log it and fix.
+2. **Expand the postcode seed list.** `data/seeds/aec_postcode_search_seed.txt`
+   currently has 8 bootstrap postcodes. Production refresh should
+   cover at least every postcode that maps to a federal electorate
+   (~3000+ Australian postcodes). The pipeline supports the
+   expanded list out of the box; just feed a larger
+   `--postcodes-file`.
+3. **Methodology page link in the markdown footer.** The static page
+   carries a `2026-04-30 / 3f40524` marker. When the project gets a
+   public git mirror, wrap the marker in an `<a href="…/commit/3f40524">`
+   so it becomes a real permalink.
+4. **Source-licence capture.** The repo currently uses "official public
+   AEC register; public redistribution/licence terms to be recorded
+   before public data redistribution." Land verified terms before any
+   public data redistribution.
+5. **State/local expansion** (NSW/VIC after QLD). Deferred until after
+   federal launch per the dev's standing direction; do NOT let
+   state/local work delay the May 2026 federal release unless it
+   exposes a reusable data-model flaw.
 
 ## Critical operating constraints (will be enforced; user has pushed back hard)
 
@@ -97,6 +152,14 @@ cd frontend && npm run build
 
 ## Now go
 
-Start with Batch D #1: bring up local Postgres, run the AEC Register fetch + load against the live endpoint, verify the checklist in `docs/session_state.md`, capture the result counts, and continue through Batch D #2 → #5 without stopping at PR or sub-task boundaries unless a real blocker appears. Update `docs/session_state.md` and `docs/build_log.md` whenever a batch closes.
+Batch D is closed. Pick whichever next-step item from the list above
+is highest empirical value at the time you read this. If the user's
+prompt directs you to a specific item, do that first. If you are
+spinning up cold with no instruction, default to encouraging the user
+to run the Firefox visual smoke (item #1) before any other work, since
+no agent can do that and a regression there blocks public launch.
 
-If anything in `docs/session_state.md` contradicts this prompt, **trust `docs/session_state.md`** — it's the authoritative record.
+Update `docs/session_state.md` and `docs/build_log.md` whenever a
+new batch or task closes. If anything in `docs/session_state.md`
+contradicts this prompt, **trust `docs/session_state.md`** — it's
+the authoritative record.
