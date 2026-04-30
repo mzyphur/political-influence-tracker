@@ -875,7 +875,11 @@ export function DetailsPanel({
               {partyExposureSummary.map((summary) => (
                 <SignalRow
                   key={`${summary.party_id}:${summary.chamber}:${summary.electorate_name}`}
-                  label={summary.party_short_name || summary.party_name}
+                  label={
+                    summary.is_personality_vehicle
+                      ? `${summary.party_short_name || summary.party_name} · personal electoral vehicle`
+                      : summary.party_short_name || summary.party_name
+                  }
                   value={
                     summary.modelled_amount_total !== null &&
                     summary.modelled_amount_total !== undefined
@@ -1284,6 +1288,8 @@ function partyExposureDetail(summary: {
   event_period_scope?: string | null;
   representative_scope?: string | null;
   party_context_label?: string | null;
+  is_personality_vehicle?: boolean;
+  affiliated_person_hint?: string | null;
   claim_scope: string;
 }) {
   const periodScope =
@@ -1298,7 +1304,13 @@ function partyExposureDetail(summary: {
       : summary.representative_scope
         ? `denominator scope: ${summary.representative_scope.replaceAll("_", " ")}`
         : null;
+  const personalityChip = summary.is_personality_vehicle
+    ? `personal electoral vehicle${
+        summary.affiliated_person_hint ? ` for ${summary.affiliated_person_hint}` : ""
+      } — not an ideological federal party`
+    : null;
   return [
+    personalityChip,
     `${summary.event_count.toLocaleString("en-AU")} reviewed party/entity receipt records`,
     `${formatMoney(summary.party_context_reported_amount_total)} loaded-period party context`,
     summary.allocation_denominator

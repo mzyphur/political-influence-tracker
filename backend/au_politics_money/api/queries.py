@@ -4595,7 +4595,18 @@ def _representative_party_exposure_summary(
             ) AS state_or_territory,
             office_term.term_start,
             COALESCE(current_counts.current_representative_count, 0)
-                AS current_representative_count
+                AS current_representative_count,
+            -- `is_personality_vehicle` flag is set on party rows seeded
+            -- by `schema/037_seed_candidate_vehicle_party_rows.sql` to
+            -- distinguish AEC-registered electoral vehicles for
+            -- specific candidates (e.g. "Kim for Canberra") from
+            -- ideological federal parties. The frontend renders these
+            -- with a distinct label so a public reader is not led to
+            -- treat the registered name as a conventional party.
+            (party.metadata->>'is_personality_vehicle' = 'true')
+                AS is_personality_vehicle,
+            party.metadata->>'affiliated_person_hint'
+                AS affiliated_person_hint
         FROM office_term
         JOIN party ON party.id = office_term.party_id
         LEFT JOIN electorate ON electorate.id = office_term.electorate_id
@@ -4673,6 +4684,10 @@ def _representative_party_exposure_summary(
                 "event_period_scope": "all_loaded_reviewed_party_entity_receipts",
                 "representative_scope": "current_office_term_party_membership",
                 "party_context_label": "loaded-period reviewed party/entity receipts",
+                "is_personality_vehicle": bool(
+                    party.get("is_personality_vehicle")
+                ),
+                "affiliated_person_hint": party.get("affiliated_person_hint"),
                 "claim_scope": (
                     "Analytical equal-share exposure to all loaded reviewed party/entity "
                     "receipts for the current party; not a disclosed personal receipt "

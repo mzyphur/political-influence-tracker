@@ -679,44 +679,35 @@ def _seed_qld_alp_party(conn) -> int:
         return int(cur.fetchone()[0])
 
 
-def test_no_office_term_references_personality_vehicle_party_row(
+def test_personality_vehicle_party_row_surfaces_flag_in_api(
     integration_db: IntegrationDatabase,  # noqa: F811
 ) -> None:
-    """Regression guard for the candidate-vehicle / personality-registered-
-    name party seed (migration 037).
+    """Regression guard for the candidate-vehicle / personality-
+    registered-name party seed (migration 037), updated in Batch H to
+    use the now-wired API flag.
 
-    Migration 037 adds federal canonical `party` rows for "Dai Le & Frank
-    Carbone W.S.C.", "Kim for Canberra", "Tammy Tyrrell for Tasmania",
-    and "votefusion.org for big ideas" with explicit
-    `metadata->>'is_personality_vehicle' = 'true'` (or `false` for the
-    Fusion row) and `seed_source = 'schema/037_*.sql'`.
+    Migration 037 adds federal canonical `party` rows for personality
+    vehicles ("Dai Le & Frank Carbone W.S.C.", "Kim for Canberra",
+    "Tammy Tyrrell for Tasmania", and "votefusion.org for big ideas")
+    with explicit `metadata->>'is_personality_vehicle'` and
+    `metadata->>'affiliated_person_hint'` keys.
 
-    The C-rule requires that downstream loaders never silently link a
-    representative's `office_term.party_id` to one of these personality-
-    vehicle rows without explicit human review. If a future loader does
-    so without first adding a UI affordance that distinguishes
-    personality-vehicle parties from ideological ones, the API will
-    render e.g. "Dai Le & Frank Carbone W.S.C." next to that
-    representative's `party_exposure_summary` with no visible distinction
-    from ALP/LP — exactly the conflation the C-rule was written to
-    prevent.
-
-    This test fails closed if it spots ANY office_term row pointing at a
-    party seeded by migration 037, regardless of whether the
-    is_personality_vehicle flag is true or false. A maintainer who
-    legitimately wants to model a personality-vehicle's MP must update
-    this test in the same PR that wires the API flag through.
+    Batch H wired both keys through
+    `_representative_party_exposure_summary` so a future loader
+    legitimately linking an MP's `office_term` to a personality-vehicle
+    row no longer renders that party as if it were ideological. This
+    test now asserts the wiring: when an office_term references a
+    personality-vehicle party, the API surfaces the flag so the
+    frontend can render a distinct chip.
     """
+    from au_politics_money.api.queries import (
+        _representative_party_exposure_summary,
+    )
+
     with connect(integration_db.url) as conn:
         with conn.cursor() as cur:
-            # Seed a personality-vehicle party row directly here. The
-            # `_seed_minimal_influence_graph` fixture creates the
-            # Commonwealth jurisdiction AFTER migrations run, so
-            # migration 037 short-circuits during fixture setup
-            # (it requires the jurisdiction to already exist). Doing the
-            # insert here makes the regression real for every CI run
-            # rather than skipping silently when the fixture order
-            # leaves the seed empty.
+            # Seed a personality-vehicle party row + an office_term that
+            # references it, so the API surface is exercised end-to-end.
             cur.execute(
                 "SELECT id FROM jurisdiction WHERE code = 'CWLTH'"
             )
@@ -731,7 +722,8 @@ def test_no_office_term_references_personality_vehicle_party_row(
                     jsonb_build_object(
                         'seed_source',
                         'schema/037_seed_candidate_vehicle_party_rows.sql',
-                        'is_personality_vehicle', true
+                        'is_personality_vehicle', true,
+                        'affiliated_person_hint', 'Pytest McTestface'
                     )
                 )
                 RETURNING id
@@ -739,47 +731,127 @@ def test_no_office_term_references_personality_vehicle_party_row(
                 (cwlth_id,),
             )
             personality_party_id = int(cur.fetchone()[0])
-            conn.commit()
 
+            # Seed a separate non-personality party row so the API
+            # surface clearly differentiates the two cases.
             cur.execute(
                 """
-                SELECT
-                    p.id,
-                    p.name,
-                    p.metadata->>'is_personality_vehicle'
-                        AS is_personality_vehicle,
-                    count(ot.id) AS office_term_count
-                FROM party p
-                LEFT JOIN office_term ot ON ot.party_id = p.id
-                WHERE p.metadata->>'seed_source' =
-                    'schema/037_seed_candidate_vehicle_party_rows.sql'
-                GROUP BY p.id, p.name, p.metadata
-                ORDER BY p.id
+                INSERT INTO party (name, short_name, jurisdiction_id, metadata)
+                VALUES (
+                    'Pytest Ideological Party',
+                    'PYTEST-IP',
+                    %s,
+                    jsonb_build_object(
+                        'seed_source', 'pytest_inline_ideological',
+                        'is_personality_vehicle', false
+                    )
+                )
+                RETURNING id
+                """,
+                (cwlth_id,),
+            )
+            int(cur.fetchone()[0])  # ideological control row, not asserted on directly
+
+            # Re-point the existing fixture office_term at the
+            # personality-vehicle party so the API surface returns it.
+            cur.execute(
+                "UPDATE office_term SET party_id = %s WHERE person_id = %s",
+                (personality_party_id, integration_db.person_id),
+            )
+            conn.commit()
+
+            # We need at least one reviewed party_entity_link + one
+            # influence_event so `_representative_party_exposure_summary`
+            # returns the row (it filters out parties with no events).
+            # The integration_db fixture already seeded a baseline event
+            # — we just need a party_entity_link to that event's entity.
+            cur.execute(
+                """
+                INSERT INTO party_entity_link (
+                    party_id, entity_id, link_type, method, confidence,
+                    review_status, reviewer, reviewed_at,
+                    evidence_note, metadata
+                )
+                VALUES (
+                    %s, %s, 'exact_party_entity', 'official',
+                    'exact_identifier', 'reviewed',
+                    'pytest:personality_vehicle_test', now(),
+                    'Pytest fixture link', '{}'::jsonb
+                )
+                ON CONFLICT (party_id, entity_id, link_type) DO NOTHING
+                """,
+                (personality_party_id, integration_db.entity_id),
+            )
+
+            # `_party_reviewed_money_summary` joins on
+            # `influence_event.recipient_entity_id` — the integration
+            # fixture's existing event uses the entity on the SOURCE
+            # side, so add a recipient-side event so the summary surface
+            # has something to roll up.
+            cur.execute(
+                "SELECT id FROM jurisdiction WHERE code = 'CWLTH'"
+            )
+            cwlth_id = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                SELECT id FROM source_document
+                WHERE source_id = 'pytest-source' LIMIT 1
                 """
             )
-            rows = cur.fetchall()
+            source_document_id = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                INSERT INTO influence_event (
+                    external_key, event_family, event_type,
+                    recipient_entity_id, recipient_raw_name,
+                    jurisdiction_id, amount, amount_status, event_date,
+                    chamber, disclosure_system, evidence_status,
+                    extraction_method, review_status,
+                    description, source_document_id, source_ref,
+                    missing_data_flags, metadata
+                )
+                VALUES (
+                    'pytest:personality-vehicle:recipient-event',
+                    'money', 'donation_or_gift',
+                    %s, 'Pytest Personality Vehicle Party',
+                    %s, 4242.42, 'reported', '2026-04-01', 'house',
+                    'pytest fixture', 'official_record_parsed',
+                    'fixture_seed', 'not_required',
+                    'Pytest fixture event with party as recipient.',
+                    %s, 'pytest-pv-recipient', '[]'::jsonb, '{}'::jsonb
+                )
+                """,
+                (integration_db.entity_id, cwlth_id, source_document_id),
+            )
+            conn.commit()
 
-    assert rows, (
-        "No personality-vehicle party rows were found, even after the "
-        "test's manual insert. Did the `seed_source` metadata key change?"
+        summary = _representative_party_exposure_summary(
+            conn, person_id=integration_db.person_id
+        )
+
+    assert summary, (
+        "_representative_party_exposure_summary returned no rows for the "
+        "personality-vehicle party; the API surface is not picking up "
+        "the seeded row even though an office_term references it."
     )
-    offending = [
-        (party_id, party_name, is_pv, count)
-        for party_id, party_name, is_pv, count in rows
-        if int(count or 0) > 0
+    pv_rows = [
+        row for row in summary if int(row.get("party_id") or 0) == personality_party_id
     ]
-    assert not offending, (
-        "office_term rows are linked to a personality-vehicle party row "
-        "seeded by migration 037 without a UI/API affordance to "
-        "distinguish personality-vehicle parties from ideological ones. "
-        f"Offending parties: {offending}. Either propagate "
-        "is_personality_vehicle through the API surface (see "
-        "queries.py:_representative_party_exposure_summary), or update "
-        "this test in the same PR that intentionally adds the link."
+    assert pv_rows, (
+        f"Personality-vehicle party id {personality_party_id} is "
+        "missing from the API response."
     )
-    assert personality_party_id in {int(row[0]) for row in rows}, (
-        "Test's seeded personality-vehicle row is missing from the "
-        "post-insert query — there is a search_path / schema problem."
+    pv = pv_rows[0]
+    assert pv.get("is_personality_vehicle") is True, (
+        "API response is missing or has the wrong value for "
+        "is_personality_vehicle on a personality-vehicle row. "
+        f"Got: {pv.get('is_personality_vehicle')!r}. Without this flag "
+        "the frontend cannot distinguish a personal electoral vehicle "
+        "from an ideological party."
+    )
+    assert pv.get("affiliated_person_hint") == "Pytest McTestface", (
+        "API response is missing or has the wrong "
+        "affiliated_person_hint. Frontend chip text relies on this."
     )
 
 

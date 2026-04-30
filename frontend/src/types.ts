@@ -408,6 +408,16 @@ export type RepresentativePartyExposureSummary = {
   event_period_scope: string;
   representative_scope: string;
   party_context_label: string;
+  /** True when the underlying party row is an AEC-registered electoral
+   * vehicle for a specific candidate (e.g. "Kim for Canberra") rather
+   * than an ideological federal party. The frontend should render
+   * these with a distinct chip so a public reader is not led to
+   * treat the registered name as a conventional party. */
+  is_personality_vehicle: boolean;
+  /** Optional hint at the affiliated person's name(s), populated by
+   * `schema/037_seed_candidate_vehicle_party_rows.sql` for personality-
+   * vehicle parties. Display alongside the chip when present. */
+  affiliated_person_hint: string | null;
   claim_scope: string;
 };
 
