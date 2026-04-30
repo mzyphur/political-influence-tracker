@@ -1676,7 +1676,11 @@ function stateLocalRecordHeadline(row: StateLocalSummaryRecord): string {
     return `${row.recipient_name || "Recipient not identified"} disclosed annual receipt from ${source}`;
   }
   if (row.flow_kind === "nt_annual_gift") {
-    return `${source} gave an annual gift to ${row.recipient_name || "recipient not identified"}`;
+    // Neutralized from "gave an annual gift" to match the
+    // "disclosed … to" framing the rest of the function uses. Donative
+    // verbs like "gave"/"got" can read as a causal claim; the data is a
+    // disclosed annual return, not an observed transfer.
+    return `${source} disclosed an annual gift to ${row.recipient_name || "recipient not identified"}`;
   }
   if (row.flow_kind === "nt_annual_receipt") {
     return `${row.recipient_name || "Recipient not identified"} disclosed receipt from ${source}`;
