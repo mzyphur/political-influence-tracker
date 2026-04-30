@@ -384,6 +384,25 @@ def fetch_aec_register_of_entities_command(
     return 0 if not result["errors"] else 1
 
 
+def load_aec_register_of_entities_command(client_type: str | None) -> int:
+    from au_politics_money.db.aec_register_loader import (
+        latest_jsonl,
+        load_aec_register_of_entities,
+    )
+    from au_politics_money.ingest.aec_register_entities import CLIENT_TYPES
+
+    summaries: dict[str, dict] = {}
+    targets = (client_type,) if client_type else CLIENT_TYPES
+    with connect() as conn:
+        for ct in targets:
+            if latest_jsonl(ct) is None:
+                summaries[ct] = {"skipped_reason": "no_processed_jsonl"}
+                continue
+            summaries[ct] = load_aec_register_of_entities(conn, client_type=ct)
+    print(json.dumps(summaries, indent=2, sort_keys=True))
+    return 0
+
+
 def extract_they_vote_for_you_divisions_command(fetch_summary_path: str | None) -> int:
     summary_path = extract_they_vote_for_you_divisions(
         Path(fetch_summary_path) if fetch_summary_path else None
@@ -1057,6 +1076,17 @@ def build_parser() -> argparse.ArgumentParser:
         help="Page size for ClientDetailsRead POSTs (default: 200).",
     )
 
+    aec_register_load_parser = subparsers.add_parser("load-aec-register-of-entities")
+    aec_register_load_parser.add_argument(
+        "--client-type",
+        choices=tuple(AEC_REGISTER_CLIENT_TYPES),
+        default=None,
+        help=(
+            "AEC Register clientType to load. Omit to load every client_type "
+            "that has a processed JSONL artefact."
+        ),
+    )
+
     subparsers.add_parser("classify-entities")
 
     boundary_fetch_parser = subparsers.add_parser("fetch-current-aec-boundaries")
@@ -1502,6 +1532,8 @@ def main() -> int:
         return extract_they_vote_for_you_divisions_command(args.fetch_summary_path)
     if args.command == "fetch-aec-register-of-entities":
         return fetch_aec_register_of_entities_command(args.client_type, args.take)
+    if args.command == "load-aec-register-of-entities":
+        return load_aec_register_of_entities_command(args.client_type)
     if args.command == "classify-entities":
         return classify_entities_command()
     if args.command == "fetch-current-aec-boundaries":
