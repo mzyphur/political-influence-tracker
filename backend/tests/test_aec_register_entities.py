@@ -122,12 +122,19 @@ def test_source_id_mapping_covers_every_client_type() -> None:
 
 
 class _FakeResponse:
-    def __init__(self, status: int, body: bytes, headers: dict[str, str]):
+    def __init__(
+        self,
+        status: int,
+        body: bytes,
+        headers: dict[str, str],
+        url: str | None = None,
+    ):
         self.status = status
         self._body = body
         self.headers = _Headers(headers)
         self.fp = BytesIO(body)
         self.code = status
+        self.url = url
 
     def read(self) -> bytes:
         return self._body
@@ -184,6 +191,7 @@ class _FakeOpener:
             entry["response"]["status"],
             entry["response"]["body"],
             entry["response"].get("headers", {}),
+            url=entry["response"].get("final_url", url),
         )
 
 

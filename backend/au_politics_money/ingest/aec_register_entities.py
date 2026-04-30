@@ -167,7 +167,9 @@ def _redact_request_params(params: dict[str, str]) -> dict[str, str]:
     return sanitised
 
 
-def _http_get(opener: OpenerDirector, url: str, *, timeout: int = 60) -> tuple[int, bytes, dict[str, str]]:
+def _http_get(
+    opener: OpenerDirector, url: str, *, timeout: int = 60
+) -> tuple[int, bytes, dict[str, str], str]:
     request = Request(
         url,
         headers={
@@ -176,10 +178,13 @@ def _http_get(opener: OpenerDirector, url: str, *, timeout: int = 60) -> tuple[i
     )
     try:
         with opener.open(request, timeout=timeout) as response:
-            return response.status, response.read(), dict(response.headers.items())
+            final_url = getattr(response, "url", None) or url
+            return response.status, response.read(), dict(response.headers.items()), final_url
     except HTTPError as exc:
         body = exc.read() if exc.fp is not None else b""
-        return exc.code, body, dict(exc.headers.items()) if exc.headers else {}
+        headers = dict(exc.headers.items()) if exc.headers else {}
+        final_url = getattr(exc, "url", None) or url
+        return exc.code, body, headers, final_url
     except URLError as exc:
         raise AECRegisterFetchError(f"GET {url} failed: {exc}") from exc
 
@@ -191,7 +196,7 @@ def _http_post_form(
     *,
     referer: str,
     timeout: int = 60,
-) -> tuple[int, bytes, dict[str, str]]:
+) -> tuple[int, bytes, dict[str, str], str]:
     body = urlencode(fields).encode("utf-8")
     request = Request(
         url,
@@ -206,12 +211,24 @@ def _http_post_form(
     )
     try:
         with opener.open(request, timeout=timeout) as response:
-            return response.status, response.read(), dict(response.headers.items())
+            final_url = getattr(response, "url", None) or url
+            return response.status, response.read(), dict(response.headers.items()), final_url
     except HTTPError as exc:
         body_err = exc.read() if exc.fp is not None else b""
-        return exc.code, body_err, dict(exc.headers.items()) if exc.headers else {}
+        headers = dict(exc.headers.items()) if exc.headers else {}
+        final_url = getattr(exc, "url", None) or url
+        return exc.code, body_err, headers, final_url
     except URLError as exc:
         raise AECRegisterFetchError(f"POST {url} failed: {exc}") from exc
+
+
+def _content_type_from_headers(headers: dict[str, str] | None) -> str | None:
+    if not headers:
+        return None
+    for key, value in headers.items():
+        if key.lower() == "content-type":
+            return value
+    return None
 
 
 def _write_archive(
@@ -224,6 +241,12 @@ def _write_archive(
     target_dir.mkdir(parents=True, exist_ok=True)
     body_path = target_dir / artifact_name
     body_path.write_bytes(body)
+    # Inject body_path into metadata so downstream loaders that share the
+    # generic upsert_source_document helper (which requires
+    # metadata["body_path"]) can find the on-disk artefact without the
+    # caller having to thread the path back through.
+    metadata = dict(metadata)
+    metadata["body_path"] = str(body_path.resolve())
     metadata_path = target_dir / f"{artifact_name}.metadata.json"
     metadata_path.write_text(
         json.dumps(metadata, indent=2, sort_keys=True, default=str) + "\n",
@@ -410,14 +433,18 @@ def fetch_register_of_entities(
 
     # Step 1: GET the register page, archive raw HTML, extract token.
     page_url = PAGE_URL_TEMPLATE.format(client_type=client_type)
-    page_status, page_body, page_response_headers = _http_get(opener, page_url, timeout=timeout)
+    page_status, page_body, page_response_headers, page_final_url = _http_get(
+        opener, page_url, timeout=timeout
+    )
     page_metadata: dict[str, Any] = {
         "source": asdict(source),
         "fetched_at": timestamp,
         "phase": "register_page_get",
         "url": page_url,
+        "final_url": page_final_url,
         "http_status": page_status,
         "http_response_headers": _redact_headers(page_response_headers),
+        "content_type": _content_type_from_headers(page_response_headers),
         "cookies_after_response": _cookie_inventory(jar),
         "content_length": len(page_body),
         "sha256": hashlib.sha256(page_body).hexdigest(),
@@ -461,7 +488,7 @@ def fetch_register_of_entities(
             "take": str(take),
             "__RequestVerificationToken": token,
         }
-        post_status, post_body, post_response_headers = _http_post_form(
+        post_status, post_body, post_response_headers, post_final_url = _http_post_form(
             opener,
             DETAILS_URL,
             params,
@@ -473,8 +500,10 @@ def fetch_register_of_entities(
             "fetched_at": timestamp,
             "phase": "client_details_read_post",
             "url": DETAILS_URL,
+            "final_url": post_final_url,
             "http_status": post_status,
             "http_response_headers": _redact_headers(post_response_headers),
+            "content_type": _content_type_from_headers(post_response_headers),
             "cookies_after_response": _cookie_inventory(jar),
             "content_length": len(post_body),
             "sha256": hashlib.sha256(post_body).hexdigest(),
