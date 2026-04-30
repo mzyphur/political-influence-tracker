@@ -82,10 +82,14 @@ try {
 
 const html = readFileSync(targetHtmlPath, "utf8");
 
+// The placeholder regexes accept ANY inner content (including a previously-
+// injected <a> wrapper) so the script is fully idempotent: a later run
+// without `METHODOLOGY_REPO_URL` will strip the link, a later run with a
+// different URL will re-wrap, and a re-run with the same URL is a no-op.
 const dateRegex =
-  /(<code\s+data-methodology-version-date[^>]*>)([^<]*)(<\/code>)/;
+  /(<code\s+data-methodology-version-date[^>]*>)([\s\S]*?)(<\/code>)/;
 const shaRegex =
-  /(<code\s+data-methodology-version-sha[^>]*>)([^<]*)(<\/code>)/;
+  /(<code\s+data-methodology-version-sha[^>]*>)([\s\S]*?)(<\/code>)/;
 
 if (!dateRegex.test(html) || !shaRegex.test(html)) {
   console.warn(
@@ -95,19 +99,40 @@ if (!dateRegex.test(html) || !shaRegex.test(html)) {
   process.exit(0);
 }
 
+// Optional: if `METHODOLOGY_REPO_URL` is set in the environment, wrap the
+// short SHA in an `<a href="${repoUrl}/commit/${sha}">` so a public reader
+// can click straight through to the underlying commit. The anchor lives
+// INSIDE the existing `<code data-methodology-version-sha>` tag so the
+// CSS hook still applies. A trailing "-dirty" is stripped before building
+// the URL (a dirty working tree has no remote commit) but stays in the
+// link text so the reader can still see the warning.
+const repoUrlRaw = (process.env.METHODOLOGY_REPO_URL || "").trim();
+const repoUrl = repoUrlRaw.replace(/\/+$/, "");
+let shaInner = shortSha;
+if (repoUrl) {
+  const cleanShortSha = shortSha.replace(/-dirty$/, "");
+  shaInner =
+    `<a href="${repoUrl}/commit/${cleanShortSha}" rel="noreferrer" ` +
+    `target="_blank">${shortSha}</a>`;
+}
+
 const updated = html
   .replace(dateRegex, `$1${currentDate}$3`)
-  .replace(shaRegex, `$1${shortSha}$3`);
+  .replace(shaRegex, `$1${shaInner}$3`);
 
 if (updated === html) {
   console.log(
     `sync-methodology-version: methodology.html already up to date ` +
-      `(${currentDate} / ${shortSha}).`
+      `(${currentDate} / ${shortSha}` +
+      (repoUrl ? ` linked to ${repoUrl}` : "") +
+      `).`
   );
 } else {
   writeFileSync(targetHtmlPath, updated, "utf8");
   console.log(
     `sync-methodology-version: methodology.html stamped with ` +
-      `${currentDate} / ${shortSha}.`
+      `${currentDate} / ${shortSha}` +
+      (repoUrl ? ` (linked to ${repoUrl})` : "") +
+      `.`
   );
 }

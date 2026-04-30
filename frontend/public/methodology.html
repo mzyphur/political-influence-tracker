@@ -1151,11 +1151,15 @@ make reproduce-federal</code></pre>
           <strong>Methodology version:</strong>
           <code data-methodology-version-date>2026-04-30</code>
           &middot; Internal revision marker
-          <code data-methodology-version-sha>bec1334-dirty</code>
+          <code data-methodology-version-sha>fe73b43-dirty</code>
           (auto-injected at build time from
           <code>git rev-parse --short HEAD</code>; the committed values are a
           fallback for readers who run the dev server without first running
-          <code>npm run sync:methodology-version</code>).
+          <code>npm run sync:methodology-version</code>; setting
+          <code>METHODOLOGY_REPO_URL=&lt;public-mirror-url&gt;</code> in the
+          environment makes the SHA a clickable
+          <code>commit/&lt;sha&gt;</code> link to whichever public mirror
+          hosts this repository).
         </p>
         <p class="version-line">
           <strong>Document sources at this revision:</strong>
