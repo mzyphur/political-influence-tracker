@@ -42,44 +42,48 @@ public release.
 Covers the Transparency Register, Register of Entities, public
 funding records, and the Electorate Finder result pages.
 
-- **Licence:** Creative Commons Attribution 4.0 International
-  (CC-BY 4.0), with exceptions for the Commonwealth Coat of Arms,
-  AEC logos, and third-party content.
-- **Required attribution:** "© Commonwealth of Australia (Australian
-  Electoral Commission)" plus a CC-BY 4.0 attribution statement.
+- **Licence (verbatim):** "The AEC has applied the Creative Commons
+  Attribution 4.0 International Licence to all material on this website
+  with the exception of: the Commonwealth Coat of Arms; AEC's logos;
+  AEC's maps; and content supplied by third parties."
+- **Required attribution (verbatim):** "© Commonwealth of Australia
+  2017"
 - **Redistribution status (this project):** ready (for the
-  website-content portion only).
-- **Notes:** Does NOT cover GIS spatial data — see the next entry for
-  electorate-boundary GIS terms. Confirm that any specific
-  Transparency Register download page does not carry a stricter
-  clause.
+  website-content portion only — see the next entry for GIS spatial
+  data).
+- **Notes:** "Use of material subject to the Licence must not assert
+  or imply any connection with, or endorsement by, the AEC unless with
+  express prior written permission." (verbatim).
 - **Verified at:** https://www.aec.gov.au/footer/copyright.htm —
-  search-confirmed 2026-04-30, requires direct page re-read before
-  publication.
+  directly fetched 2026-04-30 (WebFetch).
 
 ## AEC — GIS data (electorate boundaries, electorate-finder spatial layers)
 
-- **Licence:** Limited End-user Licence (proprietary). Allows
-  load/display/print/reproduce for personal use or use within your
-  organisation only. Creating "Derivative Products" in which the data
-  is altered, abridged, or supplemented is prohibited. Required
-  notice: "© Commonwealth of Australia (Australian Electoral
-  Commission) [year]".
-- **Required attribution:** "© Commonwealth of Australia (Australian
-  Electoral Commission) [year]".
+- **Licence (verbatim — grant of licence):** "non-exclusive,
+  non-transferable licence" to "load, display, print and reproduce
+  views obtained from the Data" and to "develop Derivative Product
+  from the Data."
+- **Required attribution (verbatim):** "© Commonwealth of Australia
+  (Australian Electoral Commission) 2026". For derivative products:
+  "This product (XXXX) incorporates data that is: © Commonwealth of
+  Australia (Australian Electoral Commission) 2026".
 - **Redistribution status (this project):** **needs-follow-up** before
   public redistribution.
-- **Notes:** Hosting the AEC's electorate boundary geometry as part of
-  this project's public map likely qualifies as creating a derivative
-  product and may exceed the limited licence. Options: request
-  written permission from AEC, substitute with a redistribution-
-  friendly equivalent (e.g. ABS POA + ABS-published electorate
-  geographies), or restrict the public site to point-in-polygon look-
-  ups against AEC servers rather than redistributing the geometry.
+- **Notes:** Direct-page review confirms derivative products ARE
+  permitted under the licence (with attribution), and licensees may
+  "distribute the Data or the Derivative Product to End-users" and
+  "sublicense the Licensee's rights outlined in this clause, subject
+  to the terms of this Licence." This is friendlier than the prior
+  search-only summary suggested. The page also disclaims warranty
+  ("gives no warranty regarding the Data's accuracy, completeness,
+  currency or suitability for any particular purpose"). Before public
+  release a maintainer should still confirm that the project's
+  specific use (live tile rendering of polygons + downloadable
+  GeoJSON of the same polygons) sits within the "Derivative Product"
+  permission.
 - **Verified at:** https://www.aec.gov.au/electorates/gis/licence.htm
   and https://www.aec.gov.au/electorates/gis/GIS_Data_Download_Data_Licence.htm —
-  search-confirmed 2026-04-30, requires direct page re-read before
-  publication.
+  directly fetched 2026-04-30 (WebFetch).
 
 ## APH (Parliament of Australia)
 
@@ -87,44 +91,37 @@ Covers MP/Senator contacts, House Register of Members' Interests,
 Senate Register of Senators' Interests, Hansard, House Votes &
 Proceedings, Senate Journals.
 
-- **Licence:** Creative Commons Attribution-NonCommercial-NoDerivatives
-  3.0 Australia (CC BY-NC-ND 3.0 AU).
-- **Required attribution:** "© Commonwealth of Australia" with a link
-  to the licence deed at
-  https://creativecommons.org/licenses/by-nc-nd/3.0/au/
+- **Licence (verbatim):** "CC BY-NC-ND 4.0 Deed | Attribution-
+  NonCommercial-NoDerivs 4.0 International". (Note: the project's
+  prior search-only verification listed this as 3.0 Australia; the
+  direct-page fetch shows the current version on the APH site is
+  the 4.0 International deed. Either way the NC-ND restrictions are
+  the load-bearing constraint for this project.)
+- **Required attribution (verbatim):** "General content from this
+  website should be attributed as _Parliament of Australia website._"
 - **Redistribution status (this project):** **needs-follow-up /
   blocked** for derivative or commercial use.
-- **Notes:** NC-ND restrictions are material. Republishing parsed
-  registers of interests as JSON, or any modification of MP contact
-  CSV, is a derivative work and is NOT permitted under this licence.
-  If the project is non-commercial AND publishes verbatim files only,
-  attribution may suffice. Any transformation, joining, or
+- **Notes:** Direct-page review confirms two binding restrictions:
+  (1) "NoDerivs" means no modifications allowed; (2) material is
+  restricted to "non-commercial purposes". The page also says users
+  are "free to copy and communicate material on this website in its
+  current form". Republishing parsed registers of interests as JSON,
+  or any modification of MP contact CSV, is a derivative work and is
+  NOT permitted under this licence. Any transformation, joining, or
   commercial-adjacent use needs a written exception from the
-  Department of the House of Representatives or the Department of the
-  Senate (whichever owns the source dataset).
+  Department of the House of Representatives or the Department of
+  the Senate (whichever owns the source dataset).
 - **Verified at:** https://www.aph.gov.au/Help/Disclaimer_Privacy_Copyright —
-  search-confirmed 2026-04-30, requires direct page re-read.
+  directly fetched 2026-04-30 (WebFetch).
 
 ## AIMS Australian Coastline 50K — coastline polygons (eAtlas / NESP MaC)
 
-- **Licence:** Not confirmed in this verification round. The eAtlas
-  catalogue listing has historically been recorded as "Not Specified"
-  in this project. The data.gov.au record ("Australian Coastline 50K
-  2024 NESP MaC 3.17, AIMS") exists but the explicit licence string
-  was not surfaced in the search-only verification pass.
-- **Required attribution:** Unknown. Tentative: "Australian Institute
-  of Marine Science (AIMS) — Australian Coastline 50K, NESP Marine
-  and Coastal Hub Project 3.17", pending confirmation.
-- **Redistribution status (this project):** **needs-follow-up** before
-  public redistribution. Treat as all-rights-reserved if the
-  catalogue still lists "Not Specified".
-- **Notes:** The project currently uses this layer only as a
-  *display-clip* for the federal map (the official AEC boundary
-  geometry is unchanged). Substitute with Natural Earth coastline at
-  the same scale if the AIMS terms cannot be cleared.
-- **Verified at:** https://eatlas.org.au/data/uuid/c0a9c98b-6ca5-4dfd-a96a-d54f30c5b614
-  and https://www.data.gov.au/data/dataset/australian-coastline-50k-2024-nesp-mac-3-17-aims —
-  search-only, 2026-04-30; needs direct page review.
+- **Licence (verbatim, data.gov.au record):** "Licence Not Specified". Each individual resource (Source code GitHub, shapefile downloads — Full / Split / Simplified V1-1, ORCID IDs, PNG, supplementary HTML) is also explicitly tagged "License Not Specified" on the data.gov.au page. The dataset's "Additional Info" block restates: "Licence    Not Specified".
+- **Required attribution (verbatim — page-stated provenance, NOT a formal licence-mandated attribution string):** Page metadata attributes the dataset as "Australian Coastline 50K 2024 (NESP MaC 3.17, AIMS)" with "Organisation: Australian Ocean Data Network" and "Contact Point: Australian Ocean Data Network m.hammerton@aims.gov.au". The dataset description names the originating project: "This dataset was created as part of the NESP MaC 3.17 northern Australian Reef mapping project." No formal attribution clause is published on the page because no licence is specified.
+- **Redistribution status (this project):** **blocked**. Treat as all-rights-reserved per the project's standing rule that "Licence Not Specified" is conservatively read as no public-redistribution permission until clarified by AIMS / NESP. The eAtlas mirror (https://eatlas.org.au/data/uuid/c0a9c98b-6ca5-4dfd-a96a-d54f30c5b614) returned HTTP 403 on direct fetch on 2026-04-30 and could not be re-verified.
+- **Notes:** The project currently uses this layer only as a *display-clip* for the federal map (the official AEC boundary geometry is unchanged). Because the data.gov.au record explicitly lists "Licence Not Specified" — which is a conservative-redistribution flag, not an open licence — substitute with Natural Earth coastline at the same scale (public domain, page-verified above) before public release. The page provides extensive provenance text (Sentinel-2 imagery 2022–2024, NDWI thresholding, 90% of polygons within 20 m of high-resolution imagery, EOT20 tide model) that supports citation but does not grant redistribution rights.
+- **Verified at:** https://www.data.gov.au/data/dataset/australian-coastline-50k-2024-nesp-mac-3-17-aims, directly fetched on 2026-04-30 (curl-archived locally; verbatim text extracted from saved HTML). Companion page https://eatlas.org.au/data/uuid/c0a9c98b-6ca5-4dfd-a96a-d54f30c5b614 returned HTTP 403 on the same fetch attempt and remains unconfirmed.
+- **Page-fetch status:** successful (data.gov.au); fetch failed HTTP 403 (eatlas.org.au companion page)
 
 ## ABS (Australian Bureau of Statistics)
 
@@ -132,19 +129,28 @@ Currently used only for cited datasets (e.g. POA boundaries when the
 postcode crosswalk path is wired); ABS Indicator and Data APIs are
 also documented as ingestion targets in `docs/data_sources.md`.
 
-- **Licence:** Creative Commons Attribution 4.0 International
-  (CC BY 4.0), with exceptions for the Commonwealth Coat of Arms,
-  ABS logo, trademarks, unit-record microdata, and third-party
-  content.
-- **Required attribution:** "Source: Australian Bureau of Statistics"
-  or "Source: ABS" if unmodified; "Based on Australian Bureau of
-  Statistics data" or "Based on ABS data" if modified or derived.
+- **Licence (verbatim):** "All material presented on this website is
+  provided under a Creative Commons Attribution 4.0 International
+  licence".
+- **Required attribution (verbatim):** "Material obtained from this
+  website is to be attributed to this department." Direct-page
+  review notes that the page directs users to consult ABS's
+  "Attributing ABS material" and "How to cite ABS sources" pages for
+  the specific unmodified-vs-modified attribution wording. Until a
+  maintainer pulls those pages directly, use the prior search-
+  confirmed wording: "Source: Australian Bureau of Statistics" /
+  "Source: ABS" if unmodified; "Based on Australian Bureau of
+  Statistics data" / "Based on ABS data" if modified or derived.
 - **Redistribution status (this project):** ready.
-- **Notes:** Pin the version year of the dataset (e.g. ASGS 2021 POA)
-  in the citation. Standard CC-BY notice (link to licence) must
-  accompany the data.
+- **Notes:** Excluded from the CC licence (verbatim list from the
+  page): the Commonwealth Coat of Arms; the ABS logo; material
+  protected by trademark; unit record data (microdata); third-party
+  supplied content; sub-brands (DataLab, SEAD); Aboriginal and
+  Torres Strait Islander brand artwork; Census branding and artwork;
+  OSCA branding and artwork. Pin the version year of the dataset
+  used (e.g. ASGS 2021 POA) in the citation.
 - **Verified at:** https://www.abs.gov.au/website-privacy-copyright-and-disclaimer —
-  search-confirmed 2026-04-30.
+  directly fetched 2026-04-30 (WebFetch).
 
 ## They Vote For You (TVFY / OpenAustralia) — divisions API
 
@@ -165,73 +171,81 @@ also documented as ingestion targets in `docs/data_sources.md`.
 
 ## MapTiler — map tiles
 
-- **Licence:** Proprietary commercial terms. Bulk/batch tile download
-  and stitching are prohibited; resale, sublicence, and
-  redistribution are prohibited without a written agreement.
-- **Required attribution:** "© MapTiler" hyperlinked to
-  https://www.maptiler.com/copyright/, always visible in the map UI
-  (mobile may use a one-tap popup). On the Free Account tier the
-  MapTiler logo must also be visible.
-- **Redistribution status (this project):** ready for runtime use only;
-  redistribution blocked.
-- **Notes:** Tiles must be requested live from MapTiler servers per
-  their terms — do NOT cache or rehost tiles. The frontend already
-  carries the visible "© MapTiler © OpenStreetMap contributors"
-  attribution.
-- **Verified at:** https://www.maptiler.com/copyright/ and
-  https://www.maptiler.com/terms/ — search-confirmed 2026-04-30.
+- **Licence (verbatim — Grant of License + No Commercial Derivative Work, from /terms/):** "The Services provided to the Customer, including third-party content, are licensed to the Customer, not sold. All worldwide intellectual property and proprietary rights therein and related thereto, including, without limitation, all patents, copyrights, trademarks, trade secrets, moral rights, sui generis rights and other right in databases, and all rights arising from or pertaining to the foregoing rights, are and will remain the exclusive property of MapTiler or respective third-party supplier(s). MapTiler reserves all rights not expressly granted." And: "You may not resell or redistribute, rent, lease, lend, sell or sublicense our Products or any part thereof without a written agreement from MapTiler." And: "Beyond what is specified in the Terms or agreed between you and MapTiler in a custom license, you may not produce commercial derivative works from MapTiler Services. This includes, but is not limited to, the training of machine learning algorithms for feature extraction or any other purpose; or to improve the accuracy of other satellite imagery via algorithmic processing or any other method. The production of derivative vector datasets for non-commercial purposes or for OpenStreetMap is permitted." And: "It is expressly prohibited to manipulate or modify map content, in the form of vectors, pixels or underlying metadata."
+- **Required attribution (verbatim — from /copyright/ and /terms/):** From the copyright page: "Our maps must always visibly show attributtion: © MapTiler © OpenStreetMap contributors". From the Terms section 6 ("Map Data Attribution"): "When using Map Content, the Customer is required to add '© MapTiler' (with Free Account the MapTiler logo) when displaying maps. This should hyperlink to https://www.maptiler.com/copyright/" — and — "If the Map Data being used is based on OpenStreetMap data, the Customer is required to add '© OpenStreetMap' when displaying maps. This should hyperlink to: https://www.openstreetmap.org/copyright". On attribution visibility: "The attribution must always be visible and readable on any screen or medium. On small screens (mobile phones), the attribution may be available behind a contextual popup window displaying only the attribution itself - openable with one click/tap from a map."
+- **Redistribution status (this project):** ready for runtime use only; redistribution blocked.
+- **Notes:** Tiles must be requested live from MapTiler servers per their terms — do NOT cache or rehost tiles. The frontend already carries the visible "© MapTiler © OpenStreetMap contributors" attribution. The /copyright/ page also identifies many country-specific upstream sources (e.g. UK OS Crown copyright, swisstopo, ESA Copernicus, Maxar, USGS, NLS Finland CC BY 4.0, NSW Spatial Services 2023, IGN France, CC0 jurisdictions) — each carries its own attribution string that MapTiler aggregates under the single "© MapTiler" credit per its written agreement with MapTiler AG.
+- **Verified at:** https://www.maptiler.com/copyright/ and https://www.maptiler.com/terms/, directly fetched on 2026-04-30 (curl-archived locally; verbatim text extracted from saved HTML).
+- **Page-fetch status:** successful
 
 ## OpenStreetMap — base data behind MapTiler
 
-- **Licence:** Open Database License (ODbL). Pre-2012-09-12 data also
-  available under CC-BY-SA 2.0.
-- **Required attribution:** "© OpenStreetMap contributors" with a
-  hyperlink to https://www.openstreetmap.org/copyright. For databases
-  derived from OSM, include the ODbL text or a link to it in a
-  discoverable location (readme/metadata).
-- **Redistribution status (this project):** ready, with share-alike
-  conditions if redistributing OSM-derived data.
-- **Notes:** Displaying MapTiler tiles inherits the OSM attribution
-  requirement. If the project also extracts OSM features into its own
-  database, the share-alike clause attaches.
-- **Verified at:** https://www.openstreetmap.org/copyright —
-  search-confirmed 2026-04-30.
+- **Licence (verbatim):** "OpenStreetMap is open data, licensed under the Open Data Commons Open Database License (ODbL) by the OpenStreetMap Foundation (OSMF). In summary: You are free to copy, distribute, transmit and adapt our data, as long as you credit OpenStreetMap and its contributors. If you alter or build upon our data, you may distribute the result only under the same license. The full legal code at Open Data Commons explains your rights and responsibilities. Our documentation is licensed under the Creative Commons Attribution-ShareAlike 2.0 license (CC BY-SA 2.0)."
+- **Required attribution (verbatim):** "Where you use OpenStreetMap data, you are required to do the following two things: Provide credit to OpenStreetMap by displaying our attribution notice. Make clear that the data is available under the Open Database License." Also: "Generally speaking, to make clear that the data is available under the Open Database License, you may link to this copyright page. If you are distributing OSM in data form, please name and link directly to the license(s). In media where links are not possible (e.g. printed works), please include the full URL on the page, e.g. https://www.openstreetmap.org/copyright."
+- **Redistribution status (this project):** ready, with share-alike conditions if redistributing OSM-derived data.
+- **Notes:** Displaying MapTiler tiles inherits the OSM attribution requirement. The OSM page also notes Australia-specific upstream provenance: "Incorporates or developed using Administrative Boundaries © Geoscape Australia licensed by the Commonwealth of Australia under Creative Commons Attribution 4.0 International licence (CC BY 4.0)." If this project extracts OSM features into its own database, the share-alike clause attaches and any redistributed database must itself be ODbL-licensed.
+- **Verified at:** https://www.openstreetmap.org/copyright, directly fetched on 2026-04-30 (curl-archived locally; verbatim text extracted from saved HTML).
+- **Page-fetch status:** successful
 
 ## Natural Earth — fallback country/coastline boundaries
 
-- **Licence:** Public domain. No permission required, attribution is
-  "unnecessary" but suggested.
-- **Required attribution:** None required. Suggested citation: "Made
-  with Natural Earth. Free vector and raster map data @
-  naturalearthdata.com."
+- **Licence (verbatim):** "All versions of Natural Earth raster + vector map data found on this website are in the public domain. You may use the maps in any manner, including modifying the content and design, electronic dissemination, and offset printing. The primary authors, Tom Patterson and Nathaniel Vaughn Kelso, and all other contributors renounce all financial claim to the maps and invites you to use them for personal, educational, and commercial purposes. No permission is needed to use Natural Earth. Crediting the authors is unnecessary."
+- **Required attribution (verbatim):** None required. The page states crediting is "unnecessary" but offers two suggested citations: short text — "Made with Natural Earth."; long text — "Made with Natural Earth. Free vector and raster map data @ naturalearthdata.com."
 - **Redistribution status (this project):** ready.
-- **Notes:** Cleanest option for a redistributable boundary fallback.
-  Pin the scale used (1:10m, 1:50m, or 1:110m).
-- **Verified at:** https://www.naturalearthdata.com/about/terms-of-use/ —
-  search-confirmed 2026-04-30.
+- **Notes:** The page also disclaims warranty: "The authors provide Natural Earth as a public service and are not responsible for any problems relating to accuracy, content, design, and how it is used." Several upstream third-party data releases are quoted on the page (The Washington Post, EC JRC IES, XNR Productions, International Mapping Associates, Wikidata CC0); each is a non-exclusive licence to Natural Earth for the sole purpose of creating a world base map. Pin the scale used (1:10m, 1:50m, or 1:110m).
+- **Verified at:** https://www.naturalearthdata.com/about/terms-of-use/, directly fetched on 2026-04-30 (curl-archived locally; verbatim text extracted from saved HTML).
+- **Page-fetch status:** successful
 
 ## Australia Post — postcode locality CSV
 
 Considered as a comprehensive seed source for postcode-electorate
 crosswalk expansion; explicitly **NOT** ingested at this time.
 
-- **Licence:** Limited, revocable, non-exclusive licence to download
-  and use postcodes for non-commercial reference only. Commercial
-  use requires a paid licence. Sub-licensing, sale, redistribution,
-  or use to power any publicly available postcode lookup is expressly
-  prohibited.
-- **Required attribution:** Australia Post retains all property
+- **Licence (verbatim):** Could not be extracted on 2026-04-30. The
+  curl-fetched page at the cited URL returned an HTML body whose
+  `<title>` is "404 - Australia Post" and whose visible text reads
+  "The page you are looking for does not exist. Please check the URL
+  for any possible spelling errors. If you are still having trouble,
+  try searching our site for the information you need." The page also
+  carries Australia Post's standard Acknowledgement of Country but no
+  licensing arrangements text. The licence URL appears to have been
+  moved, retired, or to be served only after JavaScript rendering by
+  Australia Post's site framework. Prior search-confirmed wording is
+  retained below as a working summary, but it is **NOT verbatim** from
+  a live Australia Post page on 2026-04-30.
+- **Licence (working summary, search-confirmed prior to this round —
+  not verbatim, NOT verified against the live page on 2026-04-30):**
+  Limited, revocable, non-exclusive licence to download and use
+  postcodes for non-commercial reference only. Commercial use requires
+  a paid licence. Sub-licensing, sale, redistribution, or use to power
+  any publicly available postcode lookup is expressly prohibited.
+- **Required attribution:** Could not be extracted verbatim on
+  2026-04-30 (page returned 404). Working summary (search-confirmed
+  prior round, not verbatim): Australia Post retains all property
   rights; reproduction without permission is prohibited.
-- **Redistribution status (this project):** **blocked**.
+- **Redistribution status (this project):** **blocked**. The block
+  stands regardless of whether the licence URL is live, because the
+  project's standing conservative rule treats unverifiable / removed
+  publisher pages as no-redistribution-permission.
 - **Notes:** This source cannot be embedded in a publicly redistributed
   dataset or used to power a public postcode finder. Do **not** seed
   this project's postcode list from the free Australia Post CSV. Use
   ABS POA boundaries + the AEC's own postcode finder + community-
   curated CC0 lists (e.g. Matthew Proctor's Australian-postcodes
   CC0 dataset on GitHub) as alternative seed sources, and document
-  the choice here before running the bulk fetch.
-- **Verified at:** https://auspost.com.au/about-us/about-our-site/our-licensing-arrangements —
-  search-confirmed 2026-04-30.
+  the choice here before running the bulk fetch. Action item for a
+  maintainer with a browser: the saved HTML at the cited URL appears
+  to be a heavy JS-rendered Australia Post site shell that returns a
+  404 to plain HTTP clients; render the page in a real browser, find
+  the current canonical URL for the licensing arrangements page, and
+  re-extract the verbatim licence wording before public release.
+- **Verified at:** https://auspost.com.au/about-us/about-our-site/our-licensing-arrangements,
+  directly fetched on 2026-04-30 (curl-archived locally; saved HTML
+  resolved to a 404 page — see Page-fetch status below).
+- **Page-fetch status:** fetch failed (HTTP body resolves to a "404 -
+  Australia Post" page; page may have been moved, retired, or be
+  client-rendered only — needs a maintainer with a browser to confirm
+  before publication)
 
 ---
 
@@ -256,14 +270,23 @@ before any public data release:
 3. **Australia Post** is non-commercial reference only and explicitly
    blocks public postcode lookups. Do NOT seed the postcode crosswalk
    from this source.
-4. **AIMS Coastline 50K** licence string was not confirmed in this
-   verification round. Read directly off the eAtlas / data.gov.au
-   record and either capture the licence verbatim here or substitute
-   with Natural Earth before any public release.
-5. **WebSearch verification is not a substitute for direct page
-   review.** Every entry above carries a 2026-04-30 search-confirm
-   stamp; before publication, replace each `Verified at` line with a
-   live-fetched timestamp + verbatim licence string.
+4. **AIMS Coastline 50K** is now confirmed verbatim as
+   "Licence Not Specified" on the data.gov.au record (the eAtlas
+   companion page returned HTTP 403 in the 2026-04-30 verification
+   round). Status is now **blocked** for public redistribution, not
+   just needs-follow-up: an unspecified licence is conservatively
+   treated as all-rights-reserved. Substitute with Natural Earth
+   coastline (public domain) before any public release.
+5. **Direct-page verification status (2026-04-30 round).** AEC
+   website, AEC GIS, APH, ABS, TVFY, MapTiler ×2, OSM, and Natural
+   Earth entries above carry verbatim direct-fetch wording.
+   The eAtlas companion of AIMS Coastline 50K is HTTP 403 and the
+   Australia Post licensing-arrangements page resolves to a 404 in
+   this round (the URL appears to have been moved or made
+   JS-rendered only); both sources retain the prior search-confirmed
+   wording explicitly flagged as not-yet-verbatim. A maintainer with
+   a browser must re-fetch from any new canonical URLs before
+   publication.
 
 The project's general public-redistribution policy continues to be
 "conservative until verified". Local development and reproducibility
