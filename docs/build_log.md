@@ -1,5 +1,118 @@
 # Build Log
 
+## 2026-05-01 (Batch R — sub-national rollout activation: state-branch dual-call resolver + loader fan-out + API jurisdiction surface; UX redesign of gifts/hospitality panel)
+
+Two threads landed in this stretch:
+
+### Sub-national rollout activation (Batch R PRs 1+2+3, commit f20b477)
+
+Lifts the deferred sub-national rollout from
+`docs/sub_national_party_seeds_plan.md` to first activation. The
+federal launch path is unchanged; this work ENABLES state-
+jurisdiction party-mediated exposure to be surfaced as a peer of
+(not a replacement for) federal exposure.
+
+* **PR 1 — state-branch detection + dual-call resolver.** New
+  `detect_state_branch(segment)` matches AEC-published wordings
+  ("(Queensland)", "(QLD Branch)", "(State of Queensland)",
+  "(Victorian Division)", "(NSW Branch)", etc.) against a closed
+  list of trailing-parenthetical patterns. Restricted to trailing
+  positions to avoid catching incidental state names inside an
+  entity's full name (e.g. "Bank of Western Australia" is NOT a WA
+  branch). New `resolve_segment_with_state_branch(...)` runs the
+  existing federal resolver AND a second resolution pass biased
+  toward the detected state's jurisdiction_id when a state-branch
+  suffix is found. 27 new pure-function tests pin every recognized
+  wording, the incidental-mention negative cases, and all
+  CompositeResolution paths.
+* **PR 2 — loader emits dual links.** `aec_register_loader` now
+  builds a `_state_jurisdiction_id_by_code(conn)` mapping once per
+  call and threads it through `resolve_segment_with_state_branch`.
+  Each successfully-resolved state segment produces a SECOND
+  reviewed `party_entity_link` row pointing at the state-
+  jurisdiction party_id with the same entity_id. Result dict gains
+  `state_party_entity_links_upserted` so the operator can see how
+  many state-side links each load produced.
+* **PR 3 — API surfaces party.jurisdiction_{id,code,level,name} +
+  frontend chip.** `_representative_party_exposure_summary` SQL
+  gains a LEFT JOIN on `jurisdiction` and projects four new fields
+  per row. New `partyJurisdictionChip()` helper in the frontend
+  maps a non-federal jurisdiction to a human-friendly badge
+  ("NSW state", "QLD state", etc.) and federal rows return null
+  (federal is the implicit default; no chip clutter on the
+  current federal-launch surface).
+
+**Live integration smoke** (real AEC Register reload against the
+dev DB):
+
+* 209 federal reviewed `party_entity_link` rows touched (existing
+  148 refreshed-in-place + new federal-side resolver matches).
+* **22 QLD state-jurisdiction links emitted as peers** — all to
+  QLD ALP (id=152936), as the AEC Register's "Australian Labor
+  Party (State of Queensland)" wording is the dominant published
+  state-branch form for the QLD-juridiction-rows currently seeded.
+* Federal links unchanged; the 22 QLD links coexist via the
+  `(party_id, entity_id, link_type)` unique constraint. No cross-
+  jurisdiction conflation: a regression test asserts the federal-
+  MP API surface returns federal rows ONLY (the office-term-
+  anchored query never pulls state-jurisdiction rows for a federal
+  MP).
+
+The new `state_party_entity_links_upserted` counter will track
+state-side activity on every future loader run. Other states (NSW,
+VIC, etc.) will start producing state-side links automatically once
+state-jurisdiction party rows are seeded for them; the dual-call
+resolver and loader fan-out are already state-agnostic by design.
+
+### Gifts/Hospitality panel UX redesign (commits eecd85c, a65a55f)
+
+Provider-first scannable cards with click-to-expand. Replaces the
+prior dual-pivot ("Benefit forms" then "Named providers") layout
+that forced the reader to mentally re-join the same dataset.
+
+* `BenefitProviderCard` component renders one expandable card per
+  named provider with:
+  * Closed view: provider name, total record count, single-line
+    summary (forms + date span + reported value if any).
+  * Open view: distinct benefit-form chips (subtypes preferred,
+    types fallback), reported-amount line, loaded-date-span line,
+    missing-fields note when applicable, partial-review status
+    only when informative, and the project's standing claim-
+    discipline caveat.
+* `BenefitOrphanCard` surfaces records the source PDF didn't
+  attach to a commercial provider as a single "Provider not
+  disclosed in source" card. Records are NEVER hidden — claim-
+  discipline rule.
+* "Pending review" microcopy dropped from the public surface when
+  every record carries the flag (universal noise). Replaced with
+  `partialReviewDetail()` that surfaces the count only when SOME
+  but not ALL records are reviewed — when the flag actually
+  conveys signal.
+* Section heading shortened from "Gifts, Travel & Hospitality
+  Highlights" to "Gifts, Travel & Hospitality" ("Highlights" was
+  redundant — the section IS the highlights).
+* Bug-fix follow-up (`a65a55f`): fixed the per-form chip count
+  computation. The API returns `event_types` and `event_subtypes`
+  as INDEPENDENTLY DEDUPED arrays (via `array_agg(DISTINCT ...)`),
+  not parallel record-by-record arrays. The original
+  pairing-by-index produced misleading "× 1" counts. Replaced with
+  `deriveProviderFormChips()` that emits distinct-form chips
+  without misleading counts; a small footnote ("N records spanning
+  M distinct benefit forms.") gives the breadth context.
+* Verified visually in the running browser with multi-form-per-
+  provider data (Bridget McKenzie's Qantas record, two distinct
+  forms — lounge access + private flights).
+
+### Quality gates
+
+* Backend pytest: **389/389** (was 362; +27 new state-branch + dual-
+  call + loader + jurisdiction-regression tests).
+* Backend ruff: clean.
+* Frontend production build: clean (304.8 KB JS / 101.4 KB CSS).
+* Direct-money invariant test
+  (`test_loader_does_not_change_direct_representative_money_totals`)
+  still passes — dual-call resolver does not touch direct money.
+
 ## 2026-05-01 (Batches M + N + O + P — autonomous public-mirror polish + observability + docs)
 
 Four batches landed in one extended autonomous run, all pushed to

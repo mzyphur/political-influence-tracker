@@ -80,18 +80,23 @@ disclosed person-level money with campaign-support records, party-
 mediated party/entity context, or modelled allocation. Every public
 claim must travel with its evidence tier and attribution limit.
 
-## Current state (live, end of Batches M + N + O + P — 2026-05-01)
+## Current state (live, end of Batch R — 2026-05-01)
 
-**Public-mirror fully hardened.** Public GitHub mirror at
+**Sub-national rollout activated for QLD.** State-branch dual-call
+resolver + loader fan-out emit state-jurisdiction `party_entity_link`
+rows as peers of federal links. Live integration smoke: 22 QLD
+state links emitted (all to QLD ALP id=152936) alongside the 148
+unchanged federal links. API + frontend now surface
+`party_jurisdiction_{id,code,level,name}` per row.
+
+**Gifts & Hospitality panel redesigned.** Provider-first scannable
+cards with click-to-expand. Drops the universal "pending review"
+microcopy noise. Replaces the prior dual-pivot layout. Visually
+verified in the running browser.
+
+Public mirror unchanged: live at
 [https://github.com/mzyphur/political-influence-tracker](https://github.com/mzyphur/political-influence-tracker)
-is live, AGPL-3.0, with CI green on every push. Auto-generated
-`/docs` Swagger page is publicly useful (9 tags, per-endpoint
-summaries). New `/api/stats` reader-facing snapshot endpoint.
-Weekly `pip-audit` + `npm audit` security workflow. Cache headers
-on read-heavy endpoints. Public-facing FAQ + worked example.
-Frontend a11y + SEO + Open Graph + robots.txt. CHANGELOG.md.
-APH + AEC GIS provisionally cleared per project-lead direction.
-Backend pytest 362/362.
+under AGPL-3.0 with CI green. Backend pytest **389/389**.
 
 **Public mirror is live** at
 [https://github.com/mzyphur/political-influence-tracker](https://github.com/mzyphur/political-influence-tracker)
@@ -185,6 +190,27 @@ Live database (Postgres at
   ranges 0200-0299 ACT / 0800-0899 NT, multi-electorate postcodes,
   inner-metro fragmentation). Methodology version bumped to
   2026-05-01.
+- **R**: sub-national rollout activation + gifts/hospitality UX
+  redesign. Three pieces:
+  (i) state-branch dual-call resolver — `detect_state_branch()`
+  matches AEC-published state-branch wordings deterministically;
+  `resolve_segment_with_state_branch()` runs federal + state
+  resolution as peers (commit `f20b477`);
+  (ii) loader fan-out — emits a second `party_entity_link` row
+  pointing at the state-jurisdiction party_id when a state-branch
+  segment resolves successfully. Live smoke against real AEC
+  data: 22 QLD state links emitted, all to QLD ALP. Federal links
+  unchanged. No cross-jurisdiction conflation;
+  (iii) API surface + frontend chip — `party_jurisdiction_{id,code,
+  level,name}` projected on every party-exposure row;
+  `partyJurisdictionChip()` renders a non-federal jurisdiction
+  badge when present. Federal rows return null (federal is the
+  implicit default — no chip clutter).
+  Plus the gifts/hospitality panel UX redesign (commits `eecd85c`,
+  `a65a55f`): provider-first scannable cards with click-to-expand;
+  dropped the universal "pending review" noise; replaced the
+  dual-pivot layout. Verified visually in the running browser.
+
 - **M + N + O + P**: autonomous public-mirror polish run. Four
   batches in one extended session, all pushed and CI-green.
   M: rich OpenAPI/Swagger metadata + new `/api/stats` reader-facing

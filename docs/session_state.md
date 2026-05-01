@@ -5,12 +5,14 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-05-01** (end of Batches M + N + O + P —
-autonomous public-mirror polish run; OpenAPI metadata + new
-`/api/stats` endpoint + dependabot + FAQ + worked example +
-weekly security workflow + cache headers + CHANGELOG + frontend
-a11y / SEO / robots.txt all landed and pushed to the public mirror
-under AGPL-3.0).
+Last updated: **2026-05-01** (end of Batch R — sub-national rollout
+PRs 1+2+3 activated: state-branch dual-call resolver + loader fan-
+out + API jurisdiction surface; 22 QLD state-jurisdiction
+`party_entity_link` rows emitted as peers of 148 federal rows on
+the live integration smoke. Plus the gifts/hospitality panel UX
+redesign — provider-first scannable cards with click-to-expand,
+dropping the universal "pending review" noise and replacing the
+two-pivot layout).
 
 ## Current state
 
@@ -91,6 +93,41 @@ under AGPL-3.0).
   (the actual bulk fetch is intentionally a maintainer decision, not
   an agent run). 356/356 backend pytest green. ruff clean. frontend
   build clean.
+- **Batch R — sub-national rollout activation + gifts/hospitality
+  UX redesign** (commits `eecd85c`, `a65a55f`, `16c5acf`, `f20b477`):
+  - **Sub-national rollout PRs 1+2+3** (commit `f20b477`).
+    `detect_state_branch()` deterministically matches AEC-published
+    state-branch wordings; `resolve_segment_with_state_branch()`
+    runs federal + state resolution as a peer; loader emits a
+    second `party_entity_link` row pointing at the state-
+    jurisdiction party_id when a state-branch segment resolves
+    successfully; API surfaces `party_jurisdiction_{id,code,level,
+    name}` per row; frontend renders a non-federal jurisdiction
+    chip when present. **Live smoke**: 22 QLD state links
+    emitted (all to QLD ALP id=152936 — the AEC's "Australian
+    Labor Party (State of Queensland)" wording is the dominant
+    state-branch form for the currently-seeded QLD party rows).
+    Federal links unchanged at 148. No cross-jurisdiction
+    conflation: `_representative_party_exposure_summary` regression
+    test asserts a federal-MP profile NEVER includes state-
+    jurisdiction rows.
+  - **Gifts/Hospitality UX redesign** (commits `eecd85c`,
+    `a65a55f`). Provider-first scannable cards with click-to-
+    expand. New `BenefitProviderCard` + `BenefitOrphanCard`
+    components. Drops the universal "pending review" noise (only
+    surfaces when partial). Replaces the prior dual-pivot
+    "Benefit forms / Named providers" sections with one card
+    per provider showing the distinct forms received. Verified
+    visually in the running browser with multi-form-per-provider
+    data.
+  - **Color-scheme fix** (commit `16c5acf`). Reverted
+    `<meta name="color-scheme" content="light dark" />` (added in
+    Batch P) to `content="light"` because the app's CSS only has
+    a light theme; `light dark` caused dark-mode browsers to
+    paint form inputs (search bar) with dark UA defaults, looking
+    broken. A proper dark theme can be added later as its own
+    change.
+
 - **Batches M + N + O + P — autonomous public-mirror polish run**
   (commits `a727bab`, `3ad2b74`, `e99109c`, `210676f`):
   - **M**: OpenAPI / Swagger metadata on every endpoint (9 tags,
@@ -559,13 +596,14 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: Batches D + E + F + G + H + I + J + K + L + M + N + O + P are closed; next-step menu
+## When you start: Batches D + E + F + G + H + I + J + K + L + M + N + O + P + R are closed; next-step menu
 
-The federal-launch path is structurally complete and the public
-mirror is **fully hardened** — CI green, OpenAPI documented,
-weekly security audits, cache headers, repo metadata, source
-licences provisionally cleared, FAQ + worked example for public
-readers, accessible HTML + Open Graph + robots.txt. Live data state:
+The federal-launch path is structurally complete, the public
+mirror is fully hardened, and the **sub-national rollout has been
+activated for QLD** (22 state-jurisdiction `party_entity_link`
+rows emitted as peers of the federal links). The Gifts &
+Hospitality UX panel is now provider-first scannable cards with
+click-to-expand. Live data state:
 
 - 314,040 non-rejected `influence_event` rows; $13.48B reported total.
 - 318 `person`, 150 federal House `electorate` rows.

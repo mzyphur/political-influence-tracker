@@ -13,6 +13,51 @@ section below corresponds to an internal "batch" landed on `main`.
 
 ## [Unreleased] — pre-launch ramp toward May 2026
 
+### Batch R — sub-national rollout activation + gifts/hospitality UX redesign
+
+- **Activated** the deferred sub-national rollout for QLD. The
+  AEC Register branch resolver now does a deterministic dual-call:
+  one resolution biased toward the federal jurisdiction (existing
+  behaviour, unchanged) and a second pass biased toward a detected
+  state's jurisdiction when a state-branch wording is present
+  ("(Queensland)", "(QLD Branch)", "(State of Queensland)",
+  "(Victorian Division)", "(NSW Branch)", etc.). The loader emits
+  a second `party_entity_link` row pointing at the state-
+  jurisdiction party_id, coexisting with the federal link via the
+  `(party_id, entity_id, link_type)` unique constraint.
+- **Live smoke** against real AEC Register data: 22 QLD state-
+  jurisdiction reviewed links emitted as peers of the existing 148
+  federal links — all 22 to QLD ALP (id=152936), the AEC's
+  dominant published state-branch wording for currently-seeded QLD
+  party rows. The other QLD-jurisdiction parties (LNP, KAP, GRN,
+  IND) wait on additional state-branch wordings being added to the
+  detector or further QLD party seeding. NSW / VIC / etc. roll out
+  automatically once their state-jurisdiction party rows are
+  seeded — the resolver and loader fan-out are state-agnostic by
+  design.
+- **API + frontend** surface a non-federal jurisdiction chip on
+  party-exposure rows when present (e.g. "QLD state", "NSW
+  state"). Federal rows on a federal-MP profile return null (no
+  clutter — federal is the implicit default).
+- **No cross-jurisdiction conflation.** A regression test asserts
+  the federal-MP API surface returns federal-jurisdiction rows
+  ONLY, regardless of how many state-jurisdiction
+  party_entity_link rows exist for the same entity. The office-
+  term-anchored query is the load-bearing guard.
+- **Refactored** the per-MP "Gifts, Travel & Hospitality" panel
+  to provider-first scannable cards with click-to-expand. Each
+  card shows the provider name + total record count up front;
+  clicking reveals the distinct benefit forms received from that
+  provider (lounge access, tickets, etc.), the reported-amount
+  line, the loaded date span, and the project's standing claim-
+  discipline caveat. Records the source PDF didn't attach to a
+  commercial provider surface explicitly under a "Provider not
+  disclosed in source" card — never hidden.
+- **Dropped** the "X pending review" microcopy from the public
+  surface when every record carries the flag. The label now only
+  appears when SOME but not ALL records have been human-reviewed,
+  so it conveys real signal instead of universal noise.
+
 ### Batch O — public-mirror hardening (CI security audits + cache headers + CHANGELOG)
 
 - **Added** `.github/workflows/security.yml` — weekly + manual
