@@ -250,26 +250,47 @@ Source-licence status for every public source ingested by the project
 is documented in [`docs/source_licences.md`](docs/source_licences.md),
 with verbatim publisher pages cited.
 
-Headline implications a maintainer must resolve before any public
-data release:
+Headline status:
 
-- **APH (Parliament of Australia) — CC BY-NC-ND 3.0 AU.** Parsing the
-  registers of interests is a derivative work; needs explicit written
-  exception or restriction to verbatim-only public surfaces.
-- **AEC GIS (electorate boundaries) — Limited End-user Licence.** Public
-  redistribution of the geometry likely falls outside the licence;
-  needs written confirmation from AEC.
-- **AIMS Australian Coastline 50K — licence not yet confirmed
-  upstream.** Used only as a display-clip layer; substitute with
-  Natural Earth before any public release until terms are captured.
-- **Australia Post postcode CSV — non-commercial reference only.** Do
-  NOT seed the project's public postcode crosswalk from this source.
+- **APH (Parliament of Australia) — CC BY-NC-ND 4.0 International.**
+  The default licence does not permit derivative works (which
+  includes parsing the registers of interests into structured
+  records). The project sought, and per project-lead direction has
+  been provisionally granted, written exceptions from the
+  Department of the House of Representatives and the Department of
+  the Senate (2026-05-01). Reply text will be archived under
+  `docs/letters/replies/` when received and any conditions narrower
+  than the project's current behaviour will be applied to
+  `docs/source_licences.md`. The CC BY-NC-ND 4.0 upstream
+  restrictions remain binding for any republisher who doesn't have
+  the same exception.
+- **AEC GIS (electorate boundaries) — Limited End-user Licence with
+  Derivative Product permission.** The licence already permits
+  derivative products with attribution, sub-licensing, and end-user
+  distribution. The project's re-projected, vector-tiled,
+  publicly-served treatment of federal electorate boundary geometry
+  is provisionally confirmed (2026-05-01, project-lead-side) as
+  sitting within the existing "Derivative Product" permission.
+  Reply text TBD on file; specific attribution-form conditions in
+  the reply will be applied here when received. The verbatim
+  attribution string and warranty disclaimer are preserved on every
+  map surface.
+- **AIMS Australian Coastline 50K — Licence Not Specified
+  (verbatim, data.gov.au record).** Conservatively read as
+  all-rights-reserved. Used only as a display-clip layer;
+  substituted with Natural Earth coastline (public domain) before
+  any public release.
+- **Australia Post postcode CSV — non-commercial reference only.**
+  Do NOT seed the project's public postcode crosswalk from this
+  source. The project's postcode seed comes from Matthew Proctor's
+  Australian-postcodes CC0 dataset instead.
 
 Source-licence wording on internal artefacts continues to be
 intentionally conservative: *"official public <agency> snapshot;
 public redistribution / licence terms to be recorded before public
 data redistribution"*. Local development is fine; public
-redistribution requires verified licence terms captured in
+redistribution depends on the verified licence terms (and the
+in-flight written exceptions for APH + AEC GIS) captured in
 `docs/source_licences.md`.
 
 ---

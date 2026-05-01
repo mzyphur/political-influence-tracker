@@ -1,6 +1,9 @@
 # Source Licences and Public-Redistribution Status
 
-Last updated: **2026-04-30**
+Last updated: **2026-05-01** (APH + AEC GIS provisionally cleared
+for public redistribution per project-lead direction; reply text
+archive under `docs/letters/replies/` is still pending. AGPL-3.0
+source-code licence at `LICENSE`.)
 
 This document records the licence status of every public data source the
 project ingests, plus the verbatim attribution wording, redistribution
@@ -67,8 +70,18 @@ funding records, and the Electorate Finder result pages.
   (Australian Electoral Commission) 2026". For derivative products:
   "This product (XXXX) incorporates data that is: © Commonwealth of
   Australia (Australian Electoral Commission) 2026".
-- **Redistribution status (this project):** **needs-follow-up** before
-  public redistribution.
+- **Redistribution status (this project):** **ready (provisionally
+  approved 2026-05-01 per project-lead direction; written reply text
+  to be archived under `docs/letters/replies/` when it arrives)**.
+  The project lead has indicated AEC GIS approval is in hand for
+  the project's re-projected, vector-tiled, publicly-served
+  treatment of federal electorate boundary geometry as a Derivative
+  Product within the End-user Licence's existing permission. The
+  full reply text (which may add specific attribution form or other
+  conditions) will land at `docs/letters/replies/aec_gis_<YYYYMMDD>.{pdf,txt,html}`
+  per `docs/letters/README.md`; if the actual reply imposes
+  conditions narrower than the project's current behaviour, this
+  row will be re-tightened then.
 - **Notes:** Direct-page review confirms derivative products ARE
   permitted under the licence (with attribution), and licensees may
   "distribute the Data or the Derivative Product to End-users" and
@@ -76,14 +89,17 @@ funding records, and the Electorate Finder result pages.
   to the terms of this Licence." This is friendlier than the prior
   search-only summary suggested. The page also disclaims warranty
   ("gives no warranty regarding the Data's accuracy, completeness,
-  currency or suitability for any particular purpose"). Before public
-  release a maintainer should still confirm that the project's
-  specific use (live tile rendering of polygons + downloadable
-  GeoJSON of the same polygons) sits within the "Derivative Product"
-  permission.
+  currency or suitability for any particular purpose"). The project
+  carries the verbatim attribution string "© Commonwealth of
+  Australia (Australian Electoral Commission) [year]" linked to the
+  GIS licence page; preserves the warranty disclaimer; and does not
+  assert AEC endorsement on any UI surface. The Word .docx version
+  of the original written request is at
+  `docs/letters/word/aec_gis_public_redistribution_request.docx`.
 - **Verified at:** https://www.aec.gov.au/electorates/gis/licence.htm
   and https://www.aec.gov.au/electorates/gis/GIS_Data_Download_Data_Licence.htm —
-  directly fetched 2026-04-30 (WebFetch).
+  directly fetched 2026-04-30 (WebFetch). Project-lead-side
+  approval recorded 2026-05-01.
 
 ## APH (Parliament of Australia)
 
@@ -99,20 +115,41 @@ Proceedings, Senate Journals.
   the load-bearing constraint for this project.)
 - **Required attribution (verbatim):** "General content from this
   website should be attributed as _Parliament of Australia website._"
-- **Redistribution status (this project):** **needs-follow-up /
-  blocked** for derivative or commercial use.
-- **Notes:** Direct-page review confirms two binding restrictions:
-  (1) "NoDerivs" means no modifications allowed; (2) material is
-  restricted to "non-commercial purposes". The page also says users
-  are "free to copy and communicate material on this website in its
-  current form". Republishing parsed registers of interests as JSON,
-  or any modification of MP contact CSV, is a derivative work and is
-  NOT permitted under this licence. Any transformation, joining, or
-  commercial-adjacent use needs a written exception from the
-  Department of the House of Representatives or the Department of
-  the Senate (whichever owns the source dataset).
+- **Redistribution status (this project):** **ready (provisionally
+  approved 2026-05-01 per project-lead direction; written reply
+  text from each Department to be archived under
+  `docs/letters/replies/` when it arrives)**. The project lead has
+  indicated written exceptions are in hand from the Department of
+  the House of Representatives and the Department of the Senate,
+  permitting the project to publish structured-record
+  transformations of the registers of interests, MP/Senator
+  contacts CSV, and Votes & Proceedings / Senate Journals — subject
+  to attribution and the Departments' specific conditions when the
+  reply text lands. The full reply text will be archived at
+  `docs/letters/replies/aph_house_<YYYYMMDD>.{pdf,txt,html}` and
+  `docs/letters/replies/aph_senate_<YYYYMMDD>.{pdf,txt,html}` per
+  `docs/letters/README.md`; if the actual replies impose conditions
+  narrower than the project's current behaviour (e.g. limit the
+  surface to verbatim-only PDFs, or require a different attribution
+  form), this row will be re-tightened then. The CC BY-NC-ND 4.0
+  upstream restrictions remain binding for any republisher who
+  doesn't have the same exception.
+- **Notes:** Direct-page review confirms two binding restrictions
+  on the underlying licence: (1) "NoDerivs" means no modifications
+  allowed; (2) material is restricted to "non-commercial purposes".
+  The page also says users are "free to copy and communicate
+  material on this website in its current form". Republishing
+  parsed registers of interests as JSON, or any modification of MP
+  contact CSV, is a derivative work and is NOT permitted under the
+  default licence — which is why the project sought (and per
+  project-lead direction has been granted) an explicit written
+  exception from each Department. The Word .docx versions of the
+  original written requests are at
+  `docs/letters/word/aph_public_redistribution_request_house.docx`
+  and `docs/letters/word/aph_public_redistribution_request_senate.docx`.
 - **Verified at:** https://www.aph.gov.au/Help/Disclaimer_Privacy_Copyright —
-  directly fetched 2026-04-30 (WebFetch).
+  directly fetched 2026-04-30 (WebFetch). Project-lead-side
+  approval recorded 2026-05-01.
 
 ## AIMS Australian Coastline 50K — coastline polygons (eAtlas / NESP MaC)
 
@@ -248,19 +285,31 @@ below is from that page (Batch I direct-fetch, 2026-05-01).
 These are the load-bearing observations a maintainer must resolve
 before any public data release:
 
-1. **APH BY-NC-ND 3.0 AU is the biggest blocker.** Parsing the
-   registers of interests into structured records is, on its face, a
-   derivative work; surfacing them publicly with any commercial
-   element conflicts with NC. Land an explicit written exception
-   from the Department of the House and the Department of the Senate
-   before publication, OR limit the public surface to verbatim PDFs
-   plus links and remove the parsed records from the public API.
-2. **AEC GIS data** is a Limited End-user Licence, not CC-BY. Public
-   hosting of the polygon geometry as a redistributable artefact is
-   likely outside the licence. The current project displays the
-   polygons as a runtime layer rendered from a private server; this
-   is closer to "use within your organisation" but still warrants a
-   written confirmation from AEC before public launch.
+1. **APH (CC BY-NC-ND 4.0 International) — written exceptions in
+   hand (2026-05-01, project-lead-side; reply text TBD on file).**
+   Parsing the registers of interests into structured records is,
+   on its face, a derivative work and would conflict with the
+   default NoDerivs + NonCommercial restrictions; the project sought
+   and per project-lead direction has been granted explicit written
+   exceptions from the Department of the House of Representatives
+   and the Department of the Senate. The reply text will be
+   archived under `docs/letters/replies/` when received and any
+   conditions narrower than the project's current behaviour will be
+   applied to this section. The CC BY-NC-ND 4.0 upstream
+   restrictions remain binding for any republisher who doesn't have
+   the same exception.
+2. **AEC GIS — written confirmation in hand (2026-05-01,
+   project-lead-side; reply text TBD on file).** The Limited
+   End-user Licence already permits derivative products with
+   attribution, sub-licensing, and end-user distribution. The
+   project's re-projected, vector-tiled, publicly-served treatment
+   of federal electorate boundary geometry is now confirmed (per
+   project-lead direction) as sitting within the existing
+   "Derivative Product" permission. Reply text will be archived
+   under `docs/letters/replies/` when received and any specific
+   attribution-form or other conditions in the reply will be
+   applied to this section. The project preserves the verbatim
+   warranty disclaimer on every map surface.
 3. **Australia Post** is non-commercial reference only and explicitly
    blocks public postcode lookups. Do NOT seed the postcode crosswalk
    from this source.
