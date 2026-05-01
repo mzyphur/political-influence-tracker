@@ -1,6 +1,6 @@
 # LLM-Assisted Extraction Pipeline
 
-**Last updated:** 2026-05-01 (Stage 1 — entity industry classification)
+**Last updated:** 2026-05-01 (Stages 1-3 + cross-source correlation view shipped)
 
 This document is the load-bearing reference for the project's
 hybrid LLM-assisted extraction pipeline. It explains:
@@ -225,18 +225,178 @@ DATABASE_URL=postgresql://... \\
         --limit 1
 ```
 
-## Stages 2-4 (planned, not yet shipped)
+## Stages currently shipped
 
-* **Stage 2 — Re-extract House + Senate Register PDFs.**
-  ~$30 USD. Pushes the `private_interest` row count higher by
-  capturing rows the deterministic PDF parser misses.
-* **Stage 3 — Topic-tag AusTender contracts + GrantConnect
-  grants.** ~$200/year USD. Maps free-text contract / grant
-  descriptions to the project's existing 32-public-policy-sector
-  taxonomy, enabling "what industries received the most public
-  money for what purposes" surfaces.
-* **Stage 4 — Hansard speech-level metadata extraction.** Cost
-  TBD. Deferred until Stages 1-3 land cleanly.
+### Stage 2 — Register of Interests deep extraction (LIVE)
+
+* Prompt: `prompts/register_of_interests_extraction/v1.md`.
+* Model: `claude-sonnet-4-6`, temperature 0.0, max_tokens 2048,
+  tool-use enforcement.
+* Schema migration: `backend/schema/040_llm_register_of_interests_observation.sql`.
+* Driver: `scripts/llm_extract_register_of_interests.py`.
+* Loader: `scripts/load_llm_register_of_interests.py`.
+* **Pilot results (2026-05-01):** 100 House register sections;
+  68 fresh calls, 31 nil-skipped (preamble + structural nil
+  returns), 1 failed; 109 disclosure items extracted across the
+  68 substantive sections (~1.6 items/section avg). Cost $0.38 USD
+  regular (~$0.0056/section).
+* Output schema: `{item_type, counterparty_name, counterparty_type,
+  description, estimated_value_aud, event_date, disposition,
+  confidence, evidence_excerpt}`. Each disclosure item lands as a
+  separate row with verbatim source-text excerpt for audit.
+* Item-type taxonomy: 12 codes (`shareholding`, `real_estate`,
+  `directorship`, `partnership`, `liability`, `investment`,
+  `other_asset`, `gift`, `sponsored_travel`, `donation_received`,
+  `membership`, `other_interest`).
+* Counterparty-type taxonomy: 9 codes (`company`, `individual`,
+  `government`, `foreign_government`, `union`, `association`,
+  `political_party`, `charity`, `unknown`).
+
+### Stage 3 — AusTender contract topic tagging (LIVE)
+
+* Prompt **v1**: `prompts/austender_contract_topic_tag/v1.md` —
+  Claude Haiku 4.5 (initial design, $0.0029/contract). 500-contract
+  pilot ran with 1 schema-mismatch hallucination ("furniture" →
+  outside the 33-value sector enum). Prompt-cache did NOT fire
+  reliably (system instruction was 1,099 tokens, right at the
+  1,024-token Haiku cache floor).
+* Prompt **v2**: `prompts/austender_contract_topic_tag/v2.md` —
+  upgraded to **Claude Sonnet 4.6** (project lead direction,
+  2026-05-01) for max accuracy + expanded system instruction
+  with worked examples (#A-#E) + explicit "furniture is NOT a
+  valid sector" reinforcement. System instruction is now ~3,666
+  tokens — caching FIRES reliably (verified: every v2 cache
+  envelope reports `cache_read_input_tokens: 3666`).
+* Schema migration: `backend/schema/039_austender_contract_topic_tag.sql`.
+* Driver: `scripts/llm_tag_austender_contracts.py`.
+* Loader: `scripts/load_llm_austender_topic_tags.py`.
+* **v2 pilot results (2026-05-01):** 200 contracts, 200 fresh calls,
+  0 failures, 0 skipped. Per-call: 584 input + 3666 cached + 125
+  output tokens average. True cost $1.09 USD ($0.0055/contract)
+  including cached-token charges. Without caching this would have
+  been $2.95 USD, so caching saves ~63%.
+* **Quality audit (manual, 10 random contracts, 2026-05-01):**
+  7/10 correct (clear sector + topics + class + accurate summary),
+  2/10 acceptable (judgment-call differences from reviewer view but
+  not wrong), 1/10 weak (medium-confidence labelling captured the
+  ambiguity correctly). 0/10 wrong. High-confidence subset: 5/5
+  correct. Quality is production-grade.
+* Sector distribution from v1+v2 pilot (n=499 v1 + 200 v2):
+  defence (37%), technology (10%), consulting (10%),
+  government_owned (8%), construction (5%), property_development
+  (5%), pharmaceuticals (4%). 99% high-confidence overall.
+* **Full corpus projection (Sonnet 4.6 + caching):**
+  - 5-year (~73k contracts): ~$400 USD regular / ~$200 Batches API
+  - 25-year (~1.9M contracts): ~$10,400 / ~$5,200 Batches API
+  - These are within the project's $1k–3k AUD budget envelope.
+
+## Cross-source correlation surface (NEW — shipped 2026-05-01)
+
+The headline analytical view: **entities that BOTH (a) received
+Australian Government contracts AND (b) appear as donors / gift-
+givers / hosts in `influence_event`**.
+
+* Schema migration: `backend/schema/041_contract_donor_overlap_views.sql`.
+* Reporting script: `scripts/report_contract_donor_overlap.py`
+  (exports JSON + CSV + summary stats).
+* Three views:
+  - `v_contract_supplier_aggregates` — one row per (supplier_name,
+    prompt_version); aggregates contract count, total value,
+    sectors, policy topics, agencies.
+  - `v_donor_entity_aggregates` — one row per entity; aggregates
+    influence_event by family (money / campaign_support / private_
+    interest / benefit / access / organisational_role).
+  - `v_contract_donor_overlap` — INNER JOIN of the two on
+    normalised name; one row per supplier-with-entity-match,
+    SEPARATELY surfacing `total_contract_value_aud` and
+    `donor_total_money_aud` (NEVER summed; tier labels preserved).
+
+**Pilot findings from just 200 v2-tagged contracts (2026-05-01):**
+
+| Supplier | Contracts (AUD) | Donations (AUD) | Disclosed events |
+|---|---:|---:|---:|
+| Luerssen Australia | $2,827,548,741 | $19,000 | 4 |
+| BAE Systems Australia | $1,257,370,739 | $170,459 | 9 |
+| Veolia Environmental Services | $471,802,244 | $136,345 | 22 |
+| Raytheon Australia | $417,000,000 | $344,550 | 35 |
+| Settlement Services International | $411,922,000 | $1,767,512 | 4 |
+| BAE Systems Australia (alias) | $287,787,178 | $131,908 | 3 |
+
+These six suppliers (just 3% of the 200-contract pilot) total
+$5.67 BILLION in contract awards AND $2.57 MILLION in disclosed
+political donations. The full 73k-contract corpus will surface
+hundreds of additional overlaps; the 1.9M-contract 25-year archive
+likely thousands.
+
+**Claim discipline:** the view DOES NOT sum contract-receipts and
+donations into a single number. They live in separate columns
+with separate evidence-tier labels (LLM-tagged tier 2 vs
+deterministic tier 1). No causation is implied; the overlap is a
+cross-source temporal correlation surface for researchers /
+journalists / public scrutiny.
+
+## Stages 4+ (planned)
+
+* **Stage 4 — Portfolio responsibility / minister-agency mapping
+  (deterministic, no LLM).** Strategic gap identified 2026-05-01:
+  the cross-correlation view shows "supplier X got contracts AND
+  donated to MPs" but cannot show "those donations went to MPs
+  whose portfolio oversees the agency that paid X". Closing this
+  gap requires loading the Administrative Arrangements Order +
+  Cabinet ministry composition for current + historical terms.
+  Public domain data from APH; no LLM cost.
+
+* **Stage 5 — Hansard speech-level metadata extraction.** Cost
+  TBD (~$300 USD for current term per `docs/llm_strategy_full_stack.md`).
+  Surfaces what topics each MP advocates / opposes for, enabling
+  the "donor-recipient MP voted/spoke for the donor's industry"
+  correlation.
+
+* **Stage 6 — Senate Estimates Q&A extraction.** Step-change
+  feature; ~$400 USD per term.
+
+* **Stage 7 — Royal Commission archives.** Per-commission ~$1,000+
+  USD. Highest-value step-change for historical influence
+  reconstruction.
+
+## Operational discipline (lessons from Stages 1-3)
+
+The discipline list below is updated as we learn:
+
+* **Cost ceiling per stage** is declared up front; the
+  maintainer approves before running.
+* **Pilot first, then scale.** Every stage runs against a small
+  sample (10-500 records) before going to full scale. Stage 3 v1
+  pilot at concurrency=50 hit Anthropic's 450k-input-tokens-per-
+  minute org rate limit on Haiku 4.5 (17/500 contracts errored).
+  Concurrency=8-10 is the safe-default for synchronous mode;
+  Anthropic Batches API (50% off, async, separate rate limits)
+  is the path for full-scale runs.
+* **Prompt caching pre-flight check.** A system instruction below
+  ~1,500 tokens often falls below Anthropic's caching threshold.
+  Check `cache_read_input_tokens` in the first cache file after a
+  pilot run; if zero, expand the system instruction with worked
+  examples until caching fires reliably. Caching saves ~60-70%
+  of input cost.
+* **No prompt revision without a version bump.** Editing
+  `v1.md` after first publication = breaks reproducibility for
+  any consumer relying on the cached responses. Prompt fixes
+  ship as `v2.md` (etc.); existing v1-tagged classifications
+  stay v1. Stage 3's v1→v2 upgrade (Haiku → Sonnet) was a clean
+  version bump; v1 cache rows remain on disk for audit.
+* **Validation gates.** Every LLM-extracted row passes a
+  deterministic schema check before landing in the DB. The
+  schema is strict — if the LLM hallucinates a field or returns
+  malformed JSON, the row is rejected, not auto-corrected. v1
+  hit one such case ("furniture" not in the 33-sector enum); the
+  driver flagged it, the loader skipped it, no contamination.
+* **Manual quality audit per pilot.** Spot-check ~10 random
+  records by hand against source data. Stage 3 v2 manual audit
+  (10 contracts): 7 correct, 2 acceptable judgment calls, 1 weak
+  (correctly flagged as `medium` confidence by the model).
+* **Public review path.** All prompts are committed to the
+  public mirror. A researcher who disagrees with how a sector
+  is defined can open a GitHub issue + propose a v2 prompt.
 
 ## Operational discipline
 
