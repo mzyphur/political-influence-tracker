@@ -193,6 +193,53 @@ def test_openapi_schema_carries_endpoint_tags_for_public_docs() -> None:
     assert "Influence" in _tags("/api/graph/influence")
 
 
+def test_cache_headers_present_on_reader_facing_snapshot_endpoints(
+    monkeypatch,
+) -> None:
+    """Per Batch O #2, /api/coverage and /api/stats carry a short
+    public Cache-Control so CDNs / browsers can absorb burst traffic
+    while still seeing fresh data within a minute. This test pins
+    down the header so a future middleware refactor can't silently
+    drop it.
+    """
+    monkeypatch.setattr(queries, "get_data_coverage", lambda: {"caveat": "x"})
+    monkeypatch.setattr(queries, "get_project_stats", lambda: {"caveat": "x"})
+    client = TestClient(app)
+
+    for path in ["/api/coverage", "/api/stats"]:
+        response = client.get(path)
+        assert response.status_code == 200
+        assert "cache-control" in response.headers, (
+            f"{path} should carry a Cache-Control header per Batch O #2"
+        )
+        cache_header = response.headers["cache-control"]
+        assert "public" in cache_header
+        assert "max-age=60" in cache_header
+        assert "stale-while-revalidate=300" in cache_header
+
+
+def test_cache_headers_NOT_set_on_other_endpoints(monkeypatch) -> None:
+    """The cache-headers whitelist must NOT silently apply to any
+    other endpoint. /api/search results vary per query and must not
+    be cached publicly — this test guards against an accidental
+    broadening of the middleware match.
+    """
+    monkeypatch.setattr(
+        queries,
+        "search_database",
+        lambda query, *, result_types=None, limit=10, database_url=None: {
+            "results": [],
+        },
+    )
+    client = TestClient(app)
+    response = client.get("/api/search?q=climate")
+
+    assert response.status_code == 200
+    assert "cache-control" not in {k.lower() for k in response.headers.keys()}, (
+        "/api/search must not carry a public Cache-Control header"
+    )
+
+
 def test_state_local_summary_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     captured = {}
 

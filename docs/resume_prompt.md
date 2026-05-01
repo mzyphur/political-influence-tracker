@@ -80,16 +80,18 @@ disclosed person-level money with campaign-support records, party-
 mediated party/entity context, or modelled allocation. Every public
 claim must travel with its evidence tier and attribution limit.
 
-## Current state (live, end of Batch L — 2026-05-01)
+## Current state (live, end of Batches M + N + O + P — 2026-05-01)
 
-**Public-launch-ready.** Public GitHub mirror at
+**Public-mirror fully hardened.** Public GitHub mirror at
 [https://github.com/mzyphur/political-influence-tracker](https://github.com/mzyphur/political-influence-tracker)
-is live, AGPL-3.0, with CI green on every push. APH + AEC GIS
-exception-request letters provisionally cleared per project-lead
-direction (reply text TBD on file under `docs/letters/replies/`).
-Repo polish in place: CONTRIBUTING / CODE_OF_CONDUCT / SECURITY /
-issue + PR templates / 10 discovery topics. README rewritten with
-public-facing tagline + badges + framing block.
+is live, AGPL-3.0, with CI green on every push. Auto-generated
+`/docs` Swagger page is publicly useful (9 tags, per-endpoint
+summaries). New `/api/stats` reader-facing snapshot endpoint.
+Weekly `pip-audit` + `npm audit` security workflow. Cache headers
+on read-heavy endpoints. Public-facing FAQ + worked example.
+Frontend a11y + SEO + Open Graph + robots.txt. CHANGELOG.md.
+APH + AEC GIS provisionally cleared per project-lead direction.
+Backend pytest 362/362.
 
 **Public mirror is live** at
 [https://github.com/mzyphur/political-influence-tracker](https://github.com/mzyphur/political-influence-tracker)
@@ -183,6 +185,19 @@ Live database (Postgres at
   ranges 0200-0299 ACT / 0800-0899 NT, multi-electorate postcodes,
   inner-metro fragmentation). Methodology version bumped to
   2026-05-01.
+- **M + N + O + P**: autonomous public-mirror polish run. Four
+  batches in one extended session, all pushed and CI-green.
+  M: rich OpenAPI/Swagger metadata + new `/api/stats` reader-facing
+  snapshot endpoint + Dependabot config (commit `a727bab`).
+  N: public-facing `docs/faq.md` and `docs/worked_example.md` +
+  README's "Where to look next" reorganised into Readers /
+  Contributors audiences (commit `3ad2b74`).
+  O: weekly `pip-audit` + `npm audit` security workflow + cache
+  headers on `/api/coverage` + `/api/stats` (whitelist middleware) +
+  `CHANGELOG.md` Keep-a-Changelog summary (commit `e99109c`).
+  P: frontend `index.html` a11y / SEO / Open Graph / referrer
+  metadata + new `frontend/public/robots.txt` (commit `210676f`).
+
 - **L**: public-launch hardening. Five pieces:
   (i) fast-feedback CI workflow at `.github/workflows/ci.yml`
   (pytest + ruff + frontend tsc/vite build on every push and PR);

@@ -5,14 +5,12 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-05-01** (end of Batch L — public-launch
-hardening: fast-feedback CI workflow added at
-`.github/workflows/ci.yml`; APH + AEC GIS provisionally cleared per
-project-lead direction (reply text TBD on file under
-`docs/letters/replies/`); CONTRIBUTING + CODE_OF_CONDUCT + SECURITY
-+ issue/PR templates + 10 discovery topics applied to the public
-mirror; README rewritten with public-facing tagline + badges +
-"what this is/is not" framing block + contributing pointer).
+Last updated: **2026-05-01** (end of Batches M + N + O + P —
+autonomous public-mirror polish run; OpenAPI metadata + new
+`/api/stats` endpoint + dependabot + FAQ + worked example +
+weekly security workflow + cache headers + CHANGELOG + frontend
+a11y / SEO / robots.txt all landed and pushed to the public mirror
+under AGPL-3.0).
 
 ## Current state
 
@@ -93,6 +91,31 @@ mirror; README rewritten with public-facing tagline + badges +
   (the actual bulk fetch is intentionally a maintainer decision, not
   an agent run). 356/356 backend pytest green. ruff clean. frontend
   build clean.
+- **Batches M + N + O + P — autonomous public-mirror polish run**
+  (commits `a727bab`, `3ad2b74`, `e99109c`, `210676f`):
+  - **M**: OpenAPI / Swagger metadata on every endpoint (9 tags,
+    summaries, descriptions, non-200 responses); new `/api/stats`
+    reader-facing snapshot endpoint with stable-shape JSON; new
+    `.github/dependabot.yml` for weekly pip / npm / github-actions
+    updates with grouped minor + patch + lockfile-aware versioning.
+    +2 tests pin the response shape and OpenAPI tag groupings.
+  - **N**: new `docs/faq.md` (what this is/isn't, evidence tiers,
+    reproducibility, contributing) and `docs/worked_example.md`
+    (step-by-step compare-two-MPs walkthrough with explicit
+    do / don't claim-discipline templates). README "Where to look
+    next" reorganised into Readers / Contributors audiences.
+  - **O**: `.github/workflows/security.yml` runs `pip-audit` +
+    `npm audit` weekly + on-demand. Cache-Control headers
+    (`public, max-age=60, stale-while-revalidate=300`) on
+    `/api/coverage` and `/api/stats` via a path-whitelist
+    middleware. New `CHANGELOG.md` Keep-a-Changelog-shaped
+    public-friendly summary. +2 tests pin the cache-header
+    behaviour (and the negative test that other endpoints DON'T
+    get cached).
+  - **P**: `frontend/index.html` a11y + SEO + Open Graph
+    metadata; new `frontend/public/robots.txt` permitting the
+    React app + methodology page, disallowing `/api/*` + `/health`.
+
 - **Batch L — public-launch hardening** (commits `206e0da`,
   `9b4e906`, `cc515cc`, TBD this batch):
   - **L #1**: fast-feedback CI workflow at `.github/workflows/ci.yml`
@@ -536,11 +559,13 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: Batches D + E + F + G + H + I + J + K + L are closed; next-step menu
+## When you start: Batches D + E + F + G + H + I + J + K + L + M + N + O + P are closed; next-step menu
 
 The federal-launch path is structurally complete and the public
-mirror is hardened (CI green, repo metadata in place, source
-licences provisionally cleared). Live data state at end of Batch L:
+mirror is **fully hardened** — CI green, OpenAPI documented,
+weekly security audits, cache headers, repo metadata, source
+licences provisionally cleared, FAQ + worked example for public
+readers, accessible HTML + Open Graph + robots.txt. Live data state:
 
 - 314,040 non-rejected `influence_event` rows; $13.48B reported total.
 - 318 `person`, 150 federal House `electorate` rows.

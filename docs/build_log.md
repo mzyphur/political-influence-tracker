@@ -1,5 +1,66 @@
 # Build Log
 
+## 2026-05-01 (Batches M + N + O + P — autonomous public-mirror polish + observability + docs)
+
+Four batches landed in one extended autonomous run, all pushed to
+the public mirror and CI-green:
+
+- **Batch M — OpenAPI metadata + `/api/stats` + Dependabot**
+  (commit `a727bab`). Rich OpenAPI metadata so the auto-generated
+  `/docs` page is publicly useful (9 tags, per-endpoint summaries +
+  descriptions + non-200 responses, contact + license_info pointing
+  at the public mirror and AGPL-3.0). New `/api/stats` reader-facing
+  snapshot endpoint with stable-shape JSON suitable for embedding in
+  HTML / JSON dashboards. Backed by a new `get_project_stats()` query
+  function; two new tests pin the response shape and the OpenAPI tag
+  groupings. New `.github/dependabot.yml` for weekly pip / npm /
+  github-actions updates with grouped minor + patch and lockfile-
+  aware versioning.
+
+- **Batch N — public-facing FAQ + worked example** (commit `3ad2b74`).
+  New `docs/faq.md` answers reader questions (what this is/isn't,
+  why it's not a "money received" leaderboard, evidence tiers,
+  reproducibility, contributing, who runs the project). New
+  `docs/worked_example.md` is a step-by-step walkthrough showing
+  how to investigate "compare two MPs' disclosed records on an
+  industry sector" without overclaiming, with explicit do / don't
+  claim-discipline templates. README's "Where to look next" section
+  reorganised into Readers / Contributors audiences.
+
+- **Batch O — security workflow + cache headers + CHANGELOG**
+  (commit `e99109c`). New `.github/workflows/security.yml` runs
+  `pip-audit` + `npm audit` weekly + on-demand against the locked
+  deps; reports uploaded as artifacts with 30-day retention.
+  `Cache-Control: public, max-age=60, stale-while-revalidate=300`
+  added to `/api/coverage` and `/api/stats` (path-whitelist
+  middleware so other endpoints are unchanged). New `CHANGELOG.md`
+  Keep-a-Changelog-shaped public-friendly summary derived from the
+  per-PR `docs/build_log.md` history.
+
+- **Batch P — frontend a11y + SEO + Open Graph + robots.txt**
+  (commit `210676f`). `frontend/index.html` gains `lang="en-AU"`,
+  `color-scheme` + `theme-color` meta, Referrer-Policy, Open Graph +
+  Twitter card metadata, `preconnect` to MapTiler, `role="main"` +
+  `aria-label` on the React root, and a `<noscript>` fallback
+  pointing at the standalone `/methodology.html`. New
+  `frontend/public/robots.txt` allows the React app + methodology
+  page (transparency project, everything is public) and disallows
+  `/api/*` (JSON, not pages) + `/health`.
+
+Cumulative state at end of this run:
+
+- Public GitHub mirror at https://github.com/mzyphur/political-influence-tracker
+  is live, AGPL-3.0, with CI green on every push.
+- 14 endpoints + auto-generated `/docs` documented end-to-end.
+- New reader-facing `/api/stats` for embedding in dashboards.
+- New `docs/faq.md` and `docs/worked_example.md` for journalists,
+  scholars, regulators, citizens.
+- Weekly automated supply-chain audit + CHANGELOG.md for visible
+  history.
+- Frontend a11y + SEO baseline in place.
+- Backend test suite up from 358 → **362** (+2 stats / OpenAPI
+  pins in Batch M, +2 cache-header pins in Batch O).
+
 ## 2026-05-01 (Batch L — public-launch hardening: CI workflow + assumed-approval licence-status update + repo polish + README polish)
 
 Five PRs landed:
