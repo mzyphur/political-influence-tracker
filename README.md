@@ -358,13 +358,27 @@ and pull requests are all welcome. Start with:
 
 ## Where to look next
 
-- **Methodology** for non-engineers and journalists — open the app and
-  click **Method**, or visit
+For readers (journalists, scholars, regulators, citizens):
+- **Methodology** — open the app and click **Method**, or visit
   [`frontend/public/methodology.html`](frontend/public/methodology.html).
+- **FAQ** — [`docs/faq.md`](docs/faq.md). What this is / isn't,
+  what an evidence tier means, how the project handles claims, the
+  source-licence posture, the postcode-coverage limitations.
+- **Worked example** — [`docs/worked_example.md`](docs/worked_example.md).
+  How to use the project to investigate a question (e.g. comparing
+  two MPs' disclosed records on an industry sector) without
+  overclaiming. Includes the do / don't claim-discipline templates.
+- **API documentation** — start the local server and open
+  [http://127.0.0.1:8008/docs](http://127.0.0.1:8008/docs) for the
+  auto-generated Swagger page. Endpoints are grouped by tag (Search /
+  Map / Coverage / Representatives / etc.).
+
+For contributors (developers, data correctors):
 - **Reproducibility policy** — [`docs/reproducibility.md`](docs/reproducibility.md).
 - **Build log** — [`docs/build_log.md`](docs/build_log.md) (newest
   first).
 - **Session state for the next contributor** — [`docs/session_state.md`](docs/session_state.md).
+- **Contributing guide** — [`CONTRIBUTING.md`](CONTRIBUTING.md).
 - **Operating mode for AI-assisted contributions** — [`CLAUDE.md`](CLAUDE.md).
 - **Project correspondence** (formal letters to APH + AEC GIS) —
   [`docs/letters/`](docs/letters/). Ready-to-sign Word versions are
