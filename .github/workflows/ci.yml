@@ -1,0 +1,94 @@
+name: ci
+
+# Fast feedback on every push and pull request. Complements the
+# weekly + manual federal-pipeline-smoke.yml (which boots the full
+# federal-foundation + state/local smoke pipelines and is too heavy
+# for every commit).
+#
+# Runs:
+#   * Backend pytest with Postgres integration enabled
+#     (AUPOL_RUN_POSTGRES_INTEGRATION=1) against a PostGIS service
+#   * Backend ruff
+#   * Frontend production build (tsc -b && vite build), with the
+#     prebuild hook (sync-methodology-version.mjs) running so
+#     METHODOLOGY_REPO_URL link wrapping is exercised in CI
+#
+# Both jobs run in parallel.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend (pytest + ruff)
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgis/postgis:16-3.4
+        env:
+          POSTGRES_DB: au_politics_test
+          POSTGRES_USER: au_politics
+          POSTGRES_PASSWORD: au_politics_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U au_politics -d au_politics_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Install backend (locked)
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -c requirements.lock -e '.[dev]'
+      - name: Run pytest with Postgres integration
+        env:
+          AUPOL_RUN_POSTGRES_INTEGRATION: "1"
+          DATABASE_URL_TEST: postgresql://au_politics:au_politics_test@127.0.0.1:5432/au_politics_test
+        run: python -m pytest -q
+      - name: Run ruff
+        run: ruff check .
+
+  frontend:
+    name: frontend (tsc + vite build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    env:
+      # Public-facing repo URL the methodology page's revision marker
+      # links to. Same value as committed in frontend/.env.example.
+      METHODOLOGY_REPO_URL: https://github.com/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies (frozen lockfile)
+        run: npm ci
+      - name: Build (tsc -b && vite build)
+        run: npm run build
+      - name: Upload built artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
