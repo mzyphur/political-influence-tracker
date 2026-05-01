@@ -755,25 +755,40 @@ def test_v2_seeded_canonical_parties_resolve_via_exact_match(
 @pytest.mark.parametrize(
     "segment,expected_state_code",
     [
-        # Queensland forms.
+        # Queensland — paren forms.
         ("Australian Labor Party (Queensland)", "QLD"),
         ("Liberal National Party (Queensland Division)", "QLD"),
         ("Australian Labor Party (State of Queensland)", "QLD"),
         ("Australian Greens (QLD Branch)", "QLD"),
-        # NSW forms.
+        # NSW — paren forms.
         ("Australian Greens (NSW Branch)", "NSW"),
         ("Liberal Party (New South Wales Division)", "NSW"),
         ("Australian Greens (N.S.W.)", "NSW"),
-        # Victorian forms.
+        # Victorian — paren forms.
         ("Liberal Party of Australia (Victorian Division)", "VIC"),
         ("Australian Greens (Victoria Branch)", "VIC"),
         ("Australian Labor Party (VIC)", "VIC"),
-        # SA / WA / TAS / NT / ACT forms.
+        # SA / WA / TAS / NT / ACT paren forms.
         ("National Party of Australia (S.A.)", "SA"),
         ("Australian Greens (Western Australia)", "WA"),
         ("Australian Labor Party (Tasmania Branch)", "TAS"),
         ("Country Liberal Party (Northern Territory)", "NT"),
         ("Australian Labor Party (ACT Branch)", "ACT"),
+        # Comma-form trailing — AEC published in liberal_party_state_division_punctuated_v1.
+        ("Liberal Party of Australia, NSW Division", "NSW"),
+        ("Liberal Party of Australia, ACT Division", "ACT"),
+        ("Liberal Party of Australia, Tasmanian Division", "TAS"),
+        ("Liberal Party of Australia, Victorian Division", "VIC"),
+        ("Liberal Party of Australia, South Australian Division", "SA"),
+        ("Liberal Party of Australia, Western Australian Division", "WA"),
+        # Dash-form trailing.
+        ("Liberal Party of Australia - ACT Division", "ACT"),
+        ("Liberal Party of Australia - Tasmanian Division", "TAS"),
+        ("Liberal Party of Australia – Victorian Division", "VIC"),  # en-dash
+        ("Liberal Party of Australia — Tasmanian Division", "TAS"),  # em-dash
+        # "Division of <state>" trailing form.
+        ("Liberal Party of Australia Division of New South Wales", "NSW"),
+        ("Liberal Party of Australia Division of Queensland", "QLD"),
     ],
 )
 def test_detect_state_branch_recognises_known_wordings(

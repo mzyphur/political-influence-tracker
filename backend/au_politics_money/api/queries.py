@@ -3484,6 +3484,20 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
             conn,
             person_id=person_id,
         )
+        # Sub-national rollout (Batch R Option C) — surface the
+        # state-branch context of the MP's federal party as a
+        # SEPARATE evidence tier. The federal party_exposure_summary
+        # above stays the load-bearing federal exposure; this field
+        # carries per-state-branch rollups for the same canonical
+        # party name. Empty list when the MP's party has no
+        # state-jurisdiction peer rows or none of those peers carry
+        # any reviewed party_entity_link rows yet.
+        state_branch_party_exposure_summary = (
+            _representative_state_party_exposure_summary(
+                conn,
+                person_id=person_id,
+            )
+        )
     return _jsonable(
         {
             "person": {
@@ -3518,6 +3532,17 @@ def get_representative_profile(person_id: int, *, database_url: str | None = Non
                 "party/entity receipts across current party representatives as an "
                 "analytical exposure index only; amounts are not term-bounded and are "
                 "not disclosed personal receipts."
+            ),
+            "state_branch_party_exposure_summary": state_branch_party_exposure_summary,
+            "state_branch_party_exposure_caveat": (
+                "State-branch context for the MP's federal party. Each row is a "
+                "state-jurisdiction party row sharing the federal canonical name "
+                "(e.g. the QLD branch of the Australian Labor Party for a federal "
+                "ALP MP). Records are linked to the state branch via the AEC "
+                "Register's published state-branch wording, NOT to the MP "
+                "personally. NOT a personal receipt; NOT a cross-jurisdiction "
+                "sum. The federal party-exposure panel above remains the load-"
+                "bearing federal exposure."
             ),
             "influence_by_sector": influence,
             "vote_topics": votes,
@@ -4572,6 +4597,129 @@ def _party_reviewed_money_summary(conn, *, party_id: int) -> dict[str, Any]:
             for source_document_id in row["input_source_document_ids"] or []
         )
     return summary
+
+
+def _representative_state_party_exposure_summary(
+    conn,
+    *,
+    person_id: int,
+    limit: int = 12,
+) -> list[dict[str, Any]]:
+    """Bridge layer (Batch R, Option C) — for a federal MP, surface
+    the state-branch context of their federal canonical party as a
+    SEPARATE evidence tier.
+
+    For example: a federal ALP MP's profile already shows federal
+    party-mediated exposure via `_representative_party_exposure_summary`.
+    This function additionally surfaces, per state-jurisdiction:
+    QLD ALP, NSW ALP, VIC ALP, etc. — each with its own reviewed
+    `party_entity_link` count and party-mediated money rollup. This
+    gives a public reader a sense of the broader state-branch
+    activity associated with the MP's party WITHOUT conflating it
+    with the federal-party context (separate row → separate tier
+    → separate caveat).
+
+    The bridge is a NAME match: a state-jurisdiction party row whose
+    `name` equals the federal canonical row's `name`. Both QLD ECQ-
+    created rows (no `state_branch_of` metadata) and migration 038-
+    seeded rows (with `state_branch_of`) match this rule. We do NOT
+    fall through to fuzzy similarity — the name match is exact and
+    case-insensitive.
+
+    Returns an empty list when the MP has no current federal office
+    term, or when no state-branch party rows exist for their party.
+    Each row carries an explicit `claim_scope` that spells out the
+    cross-jurisdiction caveat.
+    """
+    state_rows = _fetch_dicts(
+        conn,
+        """
+        WITH federal_party_for_mp AS (
+            SELECT DISTINCT party.id AS federal_party_id, party.name AS federal_party_name
+            FROM office_term
+            JOIN party ON party.id = office_term.party_id
+            JOIN jurisdiction j ON j.id = party.jurisdiction_id
+            WHERE office_term.person_id = %s
+              AND office_term.term_end IS NULL
+              AND office_term.party_id IS NOT NULL
+              AND j.level = 'federal'
+        )
+        SELECT
+            state_party.id,
+            state_party.name,
+            state_party.short_name,
+            state_jurisdiction.id AS state_jurisdiction_id,
+            state_jurisdiction.code AS state_jurisdiction_code,
+            state_jurisdiction.level AS state_jurisdiction_level,
+            state_jurisdiction.name AS state_jurisdiction_name,
+            federal_party_for_mp.federal_party_id,
+            federal_party_for_mp.federal_party_name,
+            -- Reviewed party_entity_link count for this state-party.
+            (
+                SELECT count(*)
+                FROM party_entity_link
+                WHERE party_id = state_party.id
+                  AND review_status = 'reviewed'
+                  AND method = 'official'
+            ) AS reviewed_link_count
+        FROM federal_party_for_mp
+        JOIN party state_party
+          ON state_party.name = federal_party_for_mp.federal_party_name
+         AND state_party.id <> federal_party_for_mp.federal_party_id
+        JOIN jurisdiction state_jurisdiction
+          ON state_jurisdiction.id = state_party.jurisdiction_id
+        WHERE state_jurisdiction.level = 'state'
+        ORDER BY state_jurisdiction.code, state_party.id
+        LIMIT %s
+        """,
+        (person_id, limit),
+    )
+    summaries: list[dict[str, Any]] = []
+    for row in state_rows:
+        link_count = int(row.get("reviewed_link_count") or 0)
+        if link_count <= 0:
+            # No reviewed links to that state branch yet; surface only
+            # state branches with at least one reviewed entity link.
+            # Avoids cluttering the panel with empty state branches a
+            # public reader can't yet act on.
+            continue
+        money_summary = _party_reviewed_money_summary(
+            conn, party_id=int(row["id"])
+        )
+        if money_summary["event_count"] <= 0:
+            continue
+        summaries.append(
+            {
+                "state_party_id": row["id"],
+                "state_party_name": row["name"],
+                "state_party_short_name": row["short_name"],
+                "state_jurisdiction_id": row["state_jurisdiction_id"],
+                "state_jurisdiction_code": row["state_jurisdiction_code"],
+                "state_jurisdiction_level": row["state_jurisdiction_level"],
+                "state_jurisdiction_name": row["state_jurisdiction_name"],
+                "federal_party_id": row["federal_party_id"],
+                "federal_party_name": row["federal_party_name"],
+                "reviewed_link_count": link_count,
+                "event_count": money_summary["event_count"],
+                "reported_amount_event_count": money_summary["reported_amount_event_count"],
+                "party_context_reported_amount_total": money_summary["reported_amount_total"],
+                "first_event_date": money_summary["first_event_date"],
+                "last_event_date": money_summary["last_event_date"],
+                "input_source_document_count": len(
+                    money_summary["input_source_document_ids"]
+                ),
+                "claim_scope": (
+                    "State-branch context for the federal MP's party. "
+                    "Records are linked to the state-jurisdiction branch "
+                    "(via the AEC Register's published state-branch "
+                    "wording), not to the MP personally. NOT a personal "
+                    "receipt; NOT a cross-jurisdiction sum. The federal-"
+                    "party panel above remains the load-bearing federal "
+                    "exposure."
+                ),
+            }
+        )
+    return _jsonable(summaries)
 
 
 def _representative_party_exposure_summary(

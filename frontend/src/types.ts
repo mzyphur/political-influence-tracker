@@ -434,6 +434,36 @@ export type RepresentativePartyExposureSummary = {
   claim_scope: string;
 };
 
+/**
+ * Sub-national rollout (Batch R Option C) — bridge layer that
+ * surfaces the state-branch context of a federal MP's party as a
+ * SEPARATE evidence tier. For a federal ALP MP, this is the per-
+ * state breakdown of state-branch ALP rows (QLD ALP, NSW ALP,
+ * etc.) — each with its own reviewed `party_entity_link` count
+ * and party-mediated money rollup. NOT to be summed with the
+ * federal `party_exposure_summary`; the project's claim-discipline
+ * rule keeps these as separate tiers.
+ */
+export type RepresentativeStateBranchPartyExposureSummary = {
+  state_party_id: number;
+  state_party_name: string;
+  state_party_short_name: string | null;
+  state_jurisdiction_id: number;
+  state_jurisdiction_code: string;
+  state_jurisdiction_level: string;
+  state_jurisdiction_name: string;
+  federal_party_id: number;
+  federal_party_name: string;
+  reviewed_link_count: number;
+  event_count: number;
+  reported_amount_event_count: number;
+  party_context_reported_amount_total: number | null;
+  first_event_date: string | null;
+  last_event_date: string | null;
+  input_source_document_count: number;
+  claim_scope: string;
+};
+
 export type RepresentativeBenefitSummary = {
   event_type: string;
   event_subtype: string;
@@ -565,6 +595,13 @@ export type RepresentativeProfile = {
   campaign_support_caveat: string;
   party_exposure_summary: RepresentativePartyExposureSummary[];
   party_exposure_caveat: string;
+  /** Sub-national rollout bridge layer (Batch R Option C). State-
+   * jurisdiction party rows that share the federal canonical name
+   * with the MP's federal party, surfaced as a SEPARATE evidence
+   * tier with their own claim-discipline caveat. Empty when the
+   * MP's party has no state-branch peers with reviewed links. */
+  state_branch_party_exposure_summary: RepresentativeStateBranchPartyExposureSummary[];
+  state_branch_party_exposure_caveat: string;
   influence_by_sector: RepresentativeInfluenceSectorSummary[];
   vote_topics: RepresentativeVoteTopicSummary[];
   source_effect_context: RepresentativeSourceEffectContext[];

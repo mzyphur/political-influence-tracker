@@ -97,6 +97,8 @@ export function DetailsPanel({
   const benefitHighlights = representativeProfile?.benefit_summary ?? [];
   const topBenefitProviders = representativeProfile?.benefit_provider_summary ?? [];
   const partyExposureSummary = representativeProfile?.party_exposure_summary ?? [];
+  const stateBranchPartyExposureSummary =
+    representativeProfile?.state_branch_party_exposure_summary ?? [];
   const directPageKey = `${selectedPersonId ?? "none"}:${eventFamilyFilter}`;
   const directPageState = directEvidencePages[directPageKey] ?? emptyEvidencePageState;
   const topSectors = useMemo(
@@ -896,6 +898,47 @@ export function DetailsPanel({
               ))}
             </SignalBlock>
             <p className="event-count-note">{representativeProfile.party_exposure_caveat}</p>
+          </section>
+        )}
+
+      {representativeProfileStatus === "ready" &&
+        representativeProfile &&
+        stateBranchPartyExposureSummary.length > 0 && (
+          <section className="panel-section party-exposure-panel state-branch-exposure-panel">
+            <h3>State-branch context for the MP's party</h3>
+            <p className="scope-caption">
+              State-jurisdiction party rows that share the federal canonical
+              name with this MP's federal party. Each row is the per-state
+              branch's own reviewed party/entity link rollup — useful for
+              context, NEVER summed with the federal panel above. The
+              federal panel remains the load-bearing federal exposure.
+            </p>
+            <SignalBlock title="State branches">
+              {stateBranchPartyExposureSummary.map((summary) => (
+                <SignalRow
+                  key={`${summary.state_party_id}:${summary.state_jurisdiction_code}`}
+                  label={`${summary.state_party_short_name || summary.state_party_name} — ${summary.state_jurisdiction_code} branch`}
+                  value={
+                    summary.party_context_reported_amount_total !== null &&
+                    summary.party_context_reported_amount_total !== undefined
+                      ? `${formatMoney(summary.party_context_reported_amount_total)} state-branch context`
+                      : "No reported value"
+                  }
+                  detail={[
+                    `${summary.reviewed_link_count.toLocaleString("en-AU")} reviewed entity link${summary.reviewed_link_count === 1 ? "" : "s"}`,
+                    `${summary.event_count.toLocaleString("en-AU")} loaded reviewed party/entity records`,
+                    `${summary.input_source_document_count.toLocaleString("en-AU")} source documents`,
+                    voteDateSpan(summary.first_event_date, summary.last_event_date),
+                    summary.claim_scope
+                  ]
+                    .filter(Boolean)
+                    .join(" · ")}
+                />
+              ))}
+            </SignalBlock>
+            <p className="event-count-note">
+              {representativeProfile.state_branch_party_exposure_caveat}
+            </p>
           </section>
         )}
 

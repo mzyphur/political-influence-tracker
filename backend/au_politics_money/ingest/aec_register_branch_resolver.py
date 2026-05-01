@@ -905,43 +905,75 @@ def resolve_segments(
 # trailing portion of the segment so we don't pick up incidental
 # mentions of a state name inside an entity's full name (e.g. an
 # entity called "Queensland Property Holdings" is NOT a QLD branch).
-# State-branch detection patterns. We restrict matches to:
+# State-branch detection patterns. We match:
 #   * Trailing parenthetical wordings — "(Queensland)", "(QLD Branch)",
 #     "(State of Queensland)", "(Victorian Division)", etc.
-#   * Trailing "<canonical-party> Branch" wordings published by the
-#     AEC for some parties — "Australian Labor Party (Northern
-#     Territory) Branch".
+#   * Trailing "<canonical-party> Branch" wordings — "Australian
+#     Labor Party (Northern Territory) Branch".
+#   * Comma-form trailing — "Liberal Party of Australia, NSW Division"
+#     (matches the existing `liberal_party_state_division_punctuated_v1`
+#     branch alias rule shape).
+#   * Dash-form trailing — "Liberal Party of Australia - Tasmanian
+#     Division".
+#   * "Division of <state>" trailing form — "Liberal Party of
+#     Australia (Division of New South Wales)".
 #
 # We deliberately do NOT match bare `of <state>` suffixes (e.g. "Bank
 # of Western Australia") because they generate too many false positives
 # on entity names that incidentally contain a state name. The closed
-# parenthetical forms are unambiguous.
+# delimiter-anchored forms are unambiguous.
+#
+# Each state has TWO regex tiers:
+#   1. Long-form full state name (lower false-positive risk).
+#   2. Short-form abbreviation (more constrained context to avoid
+#      catching incidental code-letter matches).
+#
+# All matches are anchored at end-of-string (`$`) so an embedded
+# state-name doesn't accidentally trigger.
+
+# Composable fragment: trailing delimiter that introduces a state-
+# branch suffix in AEC publishing conventions. Allows parens, commas,
+# dashes, "Division of" phrasing, and combinations thereof.
+_STATE_BRANCH_LEAD = (
+    r"(?:\s*[\(\[]\s*"           # opening paren / bracket
+    r"|\s*,\s*"                  # comma
+    r"|\s*[\-–—]\s*"   # dash / en-dash / em-dash
+    r"|\s+Division\s+of\s+"      # "Division of <state>"
+    r")"
+)
+_STATE_BRANCH_TAIL = (
+    r"(?:\s+(?:Branch|Division))?"  # optional Branch/Division word
+    r"\s*[\)\]]?"                   # optional closing paren / bracket
+    r"\s*(?:Branch)?"               # optional trailing Branch word
+    r"\s*$"
+)
+
 _STATE_BRANCH_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     # Queensland forms.
-    (re.compile(r"\(\s*State of Queensland\s*\)\s*(?:Branch)?\s*$", re.IGNORECASE), "QLD"),
-    (re.compile(r"\(\s*Queensland(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "QLD"),
-    (re.compile(r"\(\s*Q\.?L\.?D\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "QLD"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}State of Queensland{_STATE_BRANCH_TAIL}", re.IGNORECASE), "QLD"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}Queensland{_STATE_BRANCH_TAIL}", re.IGNORECASE), "QLD"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}Q\.?L\.?D\.?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "QLD"),
     # New South Wales forms.
-    (re.compile(r"\(\s*New South Wales(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "NSW"),
-    (re.compile(r"\(\s*N\.?S\.?W\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "NSW"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}New South Wales{_STATE_BRANCH_TAIL}", re.IGNORECASE), "NSW"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}N\.?S\.?W\.?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "NSW"),
     # Victoria forms.
-    (re.compile(r"\(\s*Vict?ori(?:a|an)(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "VIC"),
-    (re.compile(r"\(\s*V\.?I\.?C\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "VIC"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}Vict?ori(?:a|an){_STATE_BRANCH_TAIL}", re.IGNORECASE), "VIC"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}V\.?I\.?C\.?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "VIC"),
     # South Australia forms.
-    (re.compile(r"\(\s*South Australia(?:n)?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "SA"),
-    (re.compile(r"\(\s*S\.?A\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "SA"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}South Australia(?:n)?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "SA"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}S\.?A\.?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "SA"),
     # Western Australia forms.
-    (re.compile(r"\(\s*Western Australia(?:n)?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "WA"),
-    (re.compile(r"\(\s*W\.?A\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "WA"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}Western Australia(?:n)?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "WA"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}W\.?A\.?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "WA"),
     # Tasmania forms.
-    (re.compile(r"\(\s*Tasmania(?:n)?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "TAS"),
-    (re.compile(r"\(\s*T\.?A\.?S\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "TAS"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}Tasmania(?:n)?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "TAS"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}T\.?A\.?S\.?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "TAS"),
     # Northern Territory forms.
-    (re.compile(r"\(\s*Northern Territory(?:\s+(?:Branch|Division))?\s*\)\s*(?:Branch)?\s*$", re.IGNORECASE), "NT"),
-    (re.compile(r"\(\s*N\.?T\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "NT"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}Northern Territory{_STATE_BRANCH_TAIL}", re.IGNORECASE), "NT"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}N\.?T\.?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "NT"),
     # Australian Capital Territory forms.
-    (re.compile(r"\(\s*Australian Capital Territory(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "ACT"),
-    (re.compile(r"\(\s*A\.?C\.?T\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "ACT"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}Australian Capital Territory{_STATE_BRANCH_TAIL}", re.IGNORECASE), "ACT"),
+    (re.compile(rf"{_STATE_BRANCH_LEAD}A\.?C\.?T\.?{_STATE_BRANCH_TAIL}", re.IGNORECASE), "ACT"),
 )
 
 
