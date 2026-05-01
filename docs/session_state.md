@@ -5,14 +5,39 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-05-01** (end of Batch R — sub-national rollout
-PRs 1+2+3 activated: state-branch dual-call resolver + loader fan-
-out + API jurisdiction surface; 22 QLD state-jurisdiction
-`party_entity_link` rows emitted as peers of 148 federal rows on
-the live integration smoke. Plus the gifts/hospitality panel UX
-redesign — provider-first scannable cards with click-to-expand,
-dropping the universal "pending review" noise and replacing the
-two-pivot layout).
+Last updated: **2026-05-01** (end of Batch AA — hybrid LLM-extraction
+pipeline landed; Stage 1 entity industry classification in progress
+in the background; Stages 2-15 scoped in
+`docs/llm_strategy_full_stack.md`; methodology page documents the
+new LLM-assisted-extraction surface for public readers).
+
+## Critical: Stage 1 28k LLM run is in progress in the background
+
+**Read this section first.** The LLM-classification full run is
+executing in a background shell at the time this session was
+prepared for compact. Status as of last check (mid-batch-AA):
+
+* Background task: `bx5yduiqo` (or whatever the next session sees
+  via `ps aux | grep llm_classify_entities`)
+* JSONL artifact at `data/processed/llm_entity_classifications/20260501T113157Z.jsonl`
+* Progress at last check: **3,601 / 28,300** entities classified
+  (~13%; running at ~2/sec with concurrency=12; ETA ~3 hours
+  total wall-clock)
+* The run will continue executing AFTER this session compacts.
+  When you reload, check progress with:
+  ```bash
+  wc -l "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics/data/processed/llm_entity_classifications/20260501T113157Z.jsonl"
+  ```
+* Expected final line count: **~28,300** (give or take, since the
+  filter excludes entities with zero `influence_event` appearances)
+* If the run is complete, run the loader:
+  ```bash
+  cd "/Users/mikezyphur/Library/CloudStorage/GoogleDrive-mzyphur@instats.org/My Drive/AU Politics"
+  DATABASE_URL=postgresql://au_politics:change-me-local-only@127.0.0.1:54329/au_politics \
+      backend/.venv/bin/python scripts/load_llm_entity_classifications.py
+  ```
+* Estimated final spend: ~$100 USD = ~$155 AUD (well within the
+  $3,000 AUD project budget for LLM extraction).
 
 ## Current state
 

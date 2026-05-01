@@ -80,23 +80,85 @@ disclosed person-level money with campaign-support records, party-
 mediated party/entity context, or modelled allocation. Every public
 claim must travel with its evidence tier and attribution limit.
 
-## Current state (live, end of Batch R — 2026-05-01)
+## Current state (live, end of Batch AA — 2026-05-01)
 
-**Sub-national rollout activated for QLD.** State-branch dual-call
-resolver + loader fan-out emit state-jurisdiction `party_entity_link`
-rows as peers of federal links. Live integration smoke: 22 QLD
-state links emitted (all to QLD ALP id=152936) alongside the 148
-unchanged federal links. API + frontend now surface
-`party_jurisdiction_{id,code,level,name}` per row.
+**HYBRID LLM-EXTRACTION PIPELINE LANDED.** This is the major
+addition since prior session. Read `docs/llm_extraction_pipeline.md`
++ `docs/llm_strategy_full_stack.md` first. Key files:
 
-**Gifts & Hospitality panel redesigned.** Provider-first scannable
-cards with click-to-expand. Drops the universal "pending review"
-microcopy noise. Replaces the prior dual-pivot layout. Visually
-verified in the running browser.
+* `backend/au_politics_money/llm/` — `LLMClient` + `LLMCache`
+  module with full hash-cache reproducibility chain
+* `prompts/entity_industry_classification/v1.md` — Stage 1 prompt
+  (Claude Sonnet 4.6; classifies entities into 32 industry sectors)
+* `prompts/austender_contract_topic_tag/v1.md` — Stage 3 prompt
+  (Claude Haiku 4.5; tags AusTender contracts to sector + topic)
+* `scripts/llm_classify_entities.py` — Stage 1 driver (cache-aware,
+  concurrent via `--concurrency` flag, default 8)
+* `scripts/load_llm_entity_classifications.py` — Stage 1 loader
+  (maps user-friendly LLM schema to DB CHECK-constrained values)
+* Cached responses at `data/raw/llm_extractions/<task>/<sha256>.{input,output}.json`
+  (gitignored; reproducible from prompt + entity inputs)
 
-Public mirror unchanged: live at
+**Stage 1 (entity industry classification) IS RUNNING IN THE
+BACKGROUND** at the time of compact. JSONL at
+`data/processed/llm_entity_classifications/20260501T113157Z.jsonl`
+was at ~3,601 / 28,300 lines at the last check. The run will
+continue after compact. When you reload, FIRST CHECK if the run
+is complete:
+
+```bash
+wc -l "data/processed/llm_entity_classifications/20260501T113157Z.jsonl"
+```
+
+If ~28,300, run the loader:
+
+```bash
+DATABASE_URL=postgresql://au_politics:change-me-local-only@127.0.0.1:54329/au_politics \
+    backend/.venv/bin/python scripts/load_llm_entity_classifications.py
+```
+
+If still partial, just wait — the `ANTHROPIC_API_KEY` is set in
+`backend/.env` and the script keeps running. It writes to JSONL
+incrementally so a partial result is still loadable.
+
+**Pilot results so far** (200 entities): $0.71 USD,
+$0.0035/entity, 96.5% high-confidence, 3.5% conservative
+"unknown" — exactly the desired claim-discipline shape.
+Expected full cost: ~$100 USD = ~$155 AUD.
+
+**Sub-national rollout** (Batch R) and **Gifts/Hospitality UX
+redesign** (also Batch R) landed in prior commits and are live
+on the public mirror.
+
+Public mirror: live at
 [https://github.com/mzyphur/political-influence-tracker](https://github.com/mzyphur/political-influence-tracker)
-under AGPL-3.0 with CI green. Backend pytest **389/389**.
+under AGPL-3.0 with CI green. Backend pytest **405/405**.
+
+## Strategic plan (Stages 2-15) for the LLM extraction pipeline
+
+Documented at `docs/llm_strategy_full_stack.md`. Per-stage cost
+estimates within the project lead's $3,000 AUD baseline budget
+(expandable for step-change features):
+
+| Stage | Task | USD |
+|---|---|---:|
+| 2 | Register of Interests PDF deeper extraction | $50 |
+| 3 | AusTender + GrantConnect topic tagging | $200/yr |
+| 4 | Hansard speech extraction (current term) | $300 |
+| 5 | Bills Digest summarization | $50 |
+| 6 | Committee submissions (2yr) | $360 |
+| 7 | ANAO audit findings (5yr) | $275 |
+| 8 | NACC + integrity commission reports | $50/yr |
+| 9 | FITS activity descriptions | $20 |
+| 10 | Modern Slavery Statements (1yr) | $185 |
+| 11 | State Hansard (NSW + VIC pilot) | $300 |
+| 12 | Senate Estimates Q&A (term) — step-change | $400 |
+| 13 | Question Time + daily Hansard (term) — step-change | $300 |
+| 14 | Treasury / Finance / Health FOI logs — step-change | $100 |
+| 15 | Royal Commission archives (per commission) — step-change | $1,000+ |
+
+Stages 1-10 = $1,602 USD ($2,490 AUD). Step-change tier (12-15)
+extends to $7,302 USD ($11,340 AUD) for full vision.
 
 **Public mirror is live** at
 [https://github.com/mzyphur/political-influence-tracker](https://github.com/mzyphur/political-influence-tracker)
