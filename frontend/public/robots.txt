@@ -1,0 +1,30 @@
+# Australian Political Influence Tracker — robots policy.
+#
+# This is a public-interest, source-backed transparency project.
+# All public surfaces (the React app, the methodology page, and the
+# read-only API at /api/...) are intentionally crawlable. There is
+# no membership, no paywall, and no private content — every claim
+# the app makes traces back to a public source document.
+#
+# The /api/... endpoints serve JSON; crawlers that don't need
+# structured data can skip them by honouring this disallow block.
+# The rate-limit middleware (60 requests/minute per IP, configurable)
+# is the project's general defence against burst traffic, not the
+# robots policy.
+#
+# Project repository: https://github.com/mzyphur/political-influence-tracker
+# Licence (source code): AGPL-3.0
+# Source-data licences: see docs/source_licences.md in the repository
+
+User-agent: *
+Allow: /
+Allow: /methodology.html
+
+# JSON API: deliberately not crawled (structured data, not pages).
+Disallow: /api/
+
+# Health probes: noise, not content.
+Disallow: /health
+
+# Be polite — do not hammer the API even if you ignore the rule above.
+Crawl-delay: 1

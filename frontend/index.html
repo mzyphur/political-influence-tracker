@@ -1,16 +1,42 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-AU">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta
       name="description"
-      content="Evidence-backed Australian political money, gifts, interests, lobbying, and voting transparency explorer."
+      content="Evidence-backed Australian political money, gifts, interests, lobbying, and voting transparency explorer. Source-backed; no claims of wrongdoing implied."
     />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#16737c" />
+    <meta name="referrer" content="strict-origin-when-cross-origin" />
+    <meta property="og:title" content="Australian Political Influence Tracker" />
+    <meta
+      property="og:description"
+      content="A reproducible, source-backed transparency tool that publishes a verifiable link from disclosed federal political records back to the original public source documents."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:title" content="Australian Political Influence Tracker" />
+    <meta
+      name="twitter:description"
+      content="A reproducible, source-backed transparency tool. Federal-first; AGPL-3.0; pre-launch May 2026."
+    />
+    <link rel="preconnect" href="https://api.maptiler.com" crossorigin />
     <title>AU Political Influence Explorer</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" role="main" aria-label="Australian Political Influence Tracker app"></div>
     <script type="module" src="/src/main.tsx"></script>
+    <noscript>
+      <p style="padding:24px;font-family:sans-serif;max-width:640px;margin:0 auto;">
+        This site requires JavaScript to render the interactive
+        federal-electorate map and the API-backed search interface.
+        For a non-interactive overview of the project's methodology,
+        please open
+        <a href="/methodology.html">/methodology.html</a>, which is
+        a standalone static HTML file and does not require JavaScript.
+      </p>
+    </noscript>
   </body>
 </html>
