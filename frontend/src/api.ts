@@ -304,6 +304,40 @@ export async function fetchContractMinisterResponsibility(options: {
   );
 }
 
+/** Per (donor → recipient MP → policy topic) voting record. The
+ * three-way correlation surface: a donor's contributions + their
+ * industry classification + the recipient MP's voting pattern on
+ * topics that touch that industry. RAW counts only — never
+ * auto-labels "alignment". */
+export async function fetchDonorRecipientVotingAlignment(options: {
+  donorEntityId?: number;
+  recipientPersonId?: number;
+  donorSector?: string;
+  topicSlug?: string;
+  minDonorMoneyAud?: number;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<unknown> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 100)
+  });
+  if (options.donorEntityId !== undefined) {
+    params.set("donor_entity_id", String(options.donorEntityId));
+  }
+  if (options.recipientPersonId !== undefined) {
+    params.set("recipient_person_id", String(options.recipientPersonId));
+  }
+  if (options.donorSector) params.set("donor_sector", options.donorSector);
+  if (options.topicSlug) params.set("topic_slug", options.topicSlug);
+  if (options.minDonorMoneyAud !== undefined) {
+    params.set("min_donor_money_aud", String(options.minDonorMoneyAud));
+  }
+  return fetchJson<unknown>(
+    apiUrl("/api/donor-recipient-voting-alignment", params),
+    options.signal
+  );
+}
+
 /** Per-minister voting record summarised by policy topic. Topics
  * are CC-BY from They Vote For You. Surfaces raw counts; does NOT
  * pre-judge alignment. */
