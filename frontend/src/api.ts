@@ -1,10 +1,14 @@
 import type {
+  ContractDonorOverlapResponse,
+  ContractMinisterResponsibilityResponse,
   CoverageResponse,
   Chamber,
   ElectorateFeatureCollection,
   ElectorateProfile,
   EntityProfile,
+  IndustryAggregateResponse,
   InfluenceGraph,
+  MinisterVotingPatternResponse,
   PartyProfile,
   RepresentativeEvidenceResponse,
   RepresentativeProfile,
@@ -222,4 +226,102 @@ export async function searchDatabase(
     params.append("types", type);
   }
   return fetchJson<SearchResponse>(apiUrl("/api/search", params), signal);
+}
+
+/**
+ * Industry-level influence aggregate. Returns one row per sector
+ * with side-by-side donor totals (tier 1) and contract totals
+ * (tier 2). Powers "the gas industry / coal industry / pharma /
+ * defence" rollup view. NEVER sums across tiers.
+ */
+export async function fetchIndustryAggregate(options: {
+  minDonorMoneyAud?: number;
+  minContractValueAud?: number;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<IndustryAggregateResponse> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 100)
+  });
+  if (options.minDonorMoneyAud !== undefined) {
+    params.set("min_donor_money_aud", String(options.minDonorMoneyAud));
+  }
+  if (options.minContractValueAud !== undefined) {
+    params.set("min_contract_value_aud", String(options.minContractValueAud));
+  }
+  return fetchJson<IndustryAggregateResponse>(
+    apiUrl("/api/industry-aggregate", params),
+    options.signal
+  );
+}
+
+/** Suppliers that received contracts AND appear as donors. Tier 1
+ * + tier 2 surfaced as separate columns; do NOT sum them. */
+export async function fetchContractDonorOverlap(options: {
+  minContractValueAud?: number;
+  minDonorMoneyAud?: number;
+  sector?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<ContractDonorOverlapResponse> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 100)
+  });
+  if (options.minContractValueAud !== undefined) {
+    params.set("min_contract_value_aud", String(options.minContractValueAud));
+  }
+  if (options.minDonorMoneyAud !== undefined) {
+    params.set("min_donor_money_aud", String(options.minDonorMoneyAud));
+  }
+  if (options.sector) params.set("sector", options.sector);
+  return fetchJson<ContractDonorOverlapResponse>(
+    apiUrl("/api/contract-donor-overlap", params),
+    options.signal
+  );
+}
+
+/** Per-contract minister responsibility: every tagged contract
+ * joined to the minister + portfolio overseeing the awarding
+ * agency. Closes the influence-narrative loop. */
+export async function fetchContractMinisterResponsibility(options: {
+  agency?: string;
+  ministerName?: string;
+  portfolio?: string;
+  sector?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<ContractMinisterResponsibilityResponse> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 100)
+  });
+  if (options.agency) params.set("agency", options.agency);
+  if (options.ministerName) params.set("minister_name", options.ministerName);
+  if (options.portfolio) params.set("portfolio", options.portfolio);
+  if (options.sector) params.set("sector", options.sector);
+  return fetchJson<ContractMinisterResponsibilityResponse>(
+    apiUrl("/api/contract-minister-responsibility", params),
+    options.signal
+  );
+}
+
+/** Per-minister voting record summarised by policy topic. Topics
+ * are CC-BY from They Vote For You. Surfaces raw counts; does NOT
+ * pre-judge alignment. */
+export async function fetchMinisterVotingPattern(options: {
+  ministerName?: string;
+  portfolio?: string;
+  topicSlug?: string;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<MinisterVotingPatternResponse> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 100)
+  });
+  if (options.ministerName) params.set("minister_name", options.ministerName);
+  if (options.portfolio) params.set("portfolio", options.portfolio);
+  if (options.topicSlug) params.set("topic_slug", options.topicSlug);
+  return fetchJson<MinisterVotingPatternResponse>(
+    apiUrl("/api/minister-voting-pattern", params),
+    options.signal
+  );
 }
