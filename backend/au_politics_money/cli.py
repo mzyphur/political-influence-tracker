@@ -417,6 +417,25 @@ def classify_entities_command() -> int:
     return 0
 
 
+def normalize_austender_csv_command(archive_dir: str) -> int:
+    """Run the AusTender historical-contract-notice CSV→JSONL parser
+    against a downloaded archive directory.
+
+    The archive_dir is the
+    ``data/raw/austender_contract_notices_historical/<UTC-stamp>/``
+    directory the data.gov.au fetcher writes; it must contain a
+    ``resource.csv`` file plus the fetcher's ``metadata.json`` for
+    provenance. The output JSONL + summary JSON land under
+    ``data/processed/austender_contract_notices_historical/``.
+    """
+    from au_politics_money.ingest import austender as austender_module
+
+    archive_path = Path(archive_dir).resolve()
+    jsonl_path = austender_module.normalise_archive_dir(archive_path)
+    print(str(Path(jsonl_path).resolve()))
+    return 0
+
+
 def fetch_current_aec_boundaries_command(refetch: bool) -> int:
     metadata_path = fetch_current_aec_boundary_zip(refetch=refetch)
     print(str(Path(metadata_path).resolve()))
@@ -1089,6 +1108,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("classify-entities")
 
+    austender_normalise_parser = subparsers.add_parser(
+        "normalize-austender-csv",
+        help=(
+            "Read a downloaded AusTender historical contract-notice CSV "
+            "(under data/raw/austender_contract_notices_historical/<UTC-stamp>/"
+            "resource.csv, as written by scripts/fetch_data_gov_au_resource.sh) "
+            "and produce per-row JSONL plus a summary JSON under "
+            "data/processed/austender_contract_notices_historical/."
+        ),
+    )
+    austender_normalise_parser.add_argument(
+        "archive_dir",
+        help=(
+            "Path to the data/raw/austender_contract_notices_historical/<UTC-stamp>/ "
+            "directory that contains resource.csv (and metadata.json from "
+            "the fetcher)."
+        ),
+    )
+
     boundary_fetch_parser = subparsers.add_parser("fetch-current-aec-boundaries")
     boundary_fetch_parser.add_argument(
         "--refetch",
@@ -1536,6 +1574,8 @@ def main() -> int:
         return load_aec_register_of_entities_command(args.client_type)
     if args.command == "classify-entities":
         return classify_entities_command()
+    if args.command == "normalize-austender-csv":
+        return normalize_austender_csv_command(args.archive_dir)
     if args.command == "fetch-current-aec-boundaries":
         return fetch_current_aec_boundaries_command(args.refetch)
     if args.command == "extract-aec-boundaries":
