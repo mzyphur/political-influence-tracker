@@ -2354,3 +2354,56 @@ a:focus-visible {
   border-top: 1px dashed rgba(0,0,0,0.08);
   font-style: italic;
 }
+
+/* MinisterVotingPanel + ContractDonorOverlapPanel (Batch CC-1).
+ * Tabular per-row drilldowns embedded in EntityProfilePanel /
+ * DetailsPanel. Reuse the .industry-activity-card pattern for
+ * visual consistency. */
+.minister-voting-panel,
+.contract-donor-overlap-panel {
+  border-top: 1px solid var(--surface-border, rgba(0,0,0,0.08));
+  padding: 12px 0;
+  margin-top: 8px;
+}
+.minister-voting-header,
+.contract-donor-overlap-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+.minister-voting-header h4,
+.contract-donor-overlap-header h4 {
+  font-size: 0.95rem;
+  margin: 4px 0 4px 0;
+}
+.minister-voting-table,
+.contract-donor-overlap-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  margin-top: 8px;
+}
+.minister-voting-table th,
+.minister-voting-table td,
+.contract-donor-overlap-table th,
+.contract-donor-overlap-table td {
+  padding: 5px 7px;
+  border-bottom: 1px solid rgba(0,0,0,0.05);
+  text-align: left;
+}
+.minister-voting-table th[scope="col"],
+.contract-donor-overlap-table th[scope="col"] {
+  font-size: 0.74rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted-text, #555);
+  white-space: nowrap;
+}
+.minister-voting-table .numeric,
+.contract-donor-overlap-table .numeric {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
