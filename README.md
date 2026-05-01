@@ -224,7 +224,27 @@ Per-tier rules for campaign-support attribution are in
 
 ---
 
-## License / source-licence terms
+## Source code licence
+
+The project's source code (Python backend, TypeScript frontend, SQL
+schema migrations, build / pipeline scripts, documentation, and
+this README) is licensed under the
+**[GNU Affero General Public License, version 3.0](LICENSE)** (AGPL-3.0).
+
+The AGPL is a strong copyleft licence with one extension that matters
+for civic-transparency code: if you run a modified version of this
+project as a public-facing network service, the AGPL requires that
+you offer the source of your modifications to your service's users.
+This is intentional. The point of a public-interest transparency
+project is that anyone running a public-facing fork can be held to
+the same source-disclosure standard.
+
+The AGPL applies to the project's **code**. The data the project
+ingests is governed by the upstream publishers' separate licences
+(documented per-source below); those licences continue to bind
+regardless of what the code licence says.
+
+## Source-data licence terms
 
 Source-licence status for every public source ingested by the project
 is documented in [`docs/source_licences.md`](docs/source_licences.md),

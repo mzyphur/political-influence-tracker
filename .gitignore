@@ -31,3 +31,8 @@ data/audit/
 # Notebook checkpoints
 .ipynb_checkpoints/
 .claude/
+
+# Microsoft Office lock files (e.g. ~$aph_request.docx while a Word
+# document is open). The actual .docx files under docs/letters/word/
+# ARE tracked; only the transient lock files are excluded.
+~$*
