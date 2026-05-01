@@ -501,6 +501,7 @@
           <a href="#equal-share">Equal-share estimates</a>
           <a href="#campaign-support-tiers">Campaign support tiers</a>
           <a href="#postcode-coverage">Postcode coverage</a>
+          <a href="#llm-assisted-extraction">LLM-assisted extraction</a>
           <a href="#reproducibility">Reproduce these numbers</a>
           <a href="#claims">Claim discipline</a>
           <a href="#version">Version</a>
@@ -1081,6 +1082,103 @@
           </p>
         </article>
 
+        <article class="panel wide" id="llm-assisted-extraction">
+          <h2>LLM-Assisted Extraction</h2>
+          <p>
+            For document types where deterministic parsing has known
+            coverage gaps (multi-page PDFs with handwritten amendments,
+            freeform contract descriptions, narrative audit reports,
+            Hansard speech text), the project uses
+            <strong>large language model</strong> extraction
+            <strong>strictly under a reproducibility chain</strong>.
+            Anything an LLM produces is tagged with
+            <code>extraction_method = "llm_&lt;task&gt;_v&lt;n&gt;"</code>
+            in its evidence row, and the project's claim-discipline
+            rule treats LLM-extracted rows as a separate evidence tier
+            from deterministic ones.
+          </p>
+          <h3>Where LLMs are used</h3>
+          <ul>
+            <li>
+              <strong>Entity industry classification</strong>
+              (<a href="https://github.com/mzyphur/political-influence-tracker/blob/main/prompts/entity_industry_classification/v1.md" rel="noreferrer" target="_blank">prompt v1</a>)
+              — every donor / supplier / lobbyist client / associated
+              entity that the deterministic rule classifier left
+              tagged as <code>unknown</code> is re-classified into
+              one of the project's 32 industry sectors via Claude
+              Sonnet 4.6. ~28,000 entities reclassified at ~$100 USD
+              total cost.
+            </li>
+            <li>
+              <strong>Contract topic tagging</strong>
+              (<a href="https://github.com/mzyphur/political-influence-tracker/blob/main/prompts/austender_contract_topic_tag/v1.md" rel="noreferrer" target="_blank">prompt v1</a>)
+              — AusTender + GrantConnect freeform descriptions are
+              tagged into industry sector + policy topic + procurement
+              class. Pending production run.
+            </li>
+            <li>
+              <strong>Future stages</strong>: Hansard speech-level
+              metadata, parliamentary committee submissions, ANAO
+              audit findings, NACC reports, Modern Slavery Statements,
+              Senate Estimates Q&amp;A, Question Time. See
+              <a href="https://github.com/mzyphur/political-influence-tracker/blob/main/docs/llm_strategy_full_stack.md" rel="noreferrer" target="_blank">docs/llm_strategy_full_stack.md</a>
+              for the full document-type matrix and per-stage cost.
+            </li>
+          </ul>
+          <h3>Where LLMs are NOT used</h3>
+          <p>
+            Anything with a structured CSV / JSON / SDMX source stays
+            deterministic — AEC bulk data, AusTender CSV rows
+            themselves, TVFY voting API, ABS APIs, ABN Lookup, AEC
+            Register of Entities. Money-flow records (donations,
+            receipts, gifts, hospitality) are NEVER LLM-extracted —
+            the byte-identical-totals invariant requires deterministic
+            parsing for every row that can feed a reported total.
+            Person, party, and electorate name resolution stays
+            deterministic by design (the project's resolver is
+            exact-match, never fuzzy).
+          </p>
+          <h3>Reproducibility commitment for LLM-extracted rows</h3>
+          <ul>
+            <li>
+              <strong>Pinned model versions.</strong> Every cached
+              response records the exact model id (e.g.
+              <code>claude-sonnet-4-6</code>). Swapping models
+              invalidates the cache by design.
+            </li>
+            <li>
+              <strong>Versioned prompts.</strong> Every prompt is
+              committed to the public repo at
+              <code>prompts/&lt;task&gt;/v&lt;N&gt;.md</code>. Prompt
+              revisions ship as new versions; existing extractions
+              stay tagged with the version they were produced under.
+            </li>
+            <li>
+              <strong>Strict schema validation.</strong> Every LLM
+              response is validated against a JSON schema. Hallucinated
+              fields are rejected, never auto-corrected.
+            </li>
+            <li>
+              <strong>Hash-cached responses.</strong> The full input +
+              output envelope of every API call is persisted at
+              <code>data/raw/llm_extractions/&lt;task&gt;/&lt;sha256&gt;.json</code>.
+              A researcher can verify any extraction without an API
+              key by checking the cached envelope.
+            </li>
+            <li>
+              <strong>Conservative on uncertainty.</strong> The prompt
+              instructs the model to return <code>unknown</code> with
+              low confidence on opaque names, rather than guessing.
+              An honest "I don't know" beats a confidently-wrong
+              tag every time.
+            </li>
+          </ul>
+          <p>
+            The full architectural discussion lives at
+            <a href="https://github.com/mzyphur/political-influence-tracker/blob/main/docs/llm_extraction_pipeline.md" rel="noreferrer" target="_blank">docs/llm_extraction_pipeline.md</a>.
+          </p>
+        </article>
+
         <article class="panel wide" id="reproducibility">
           <h2>Reproduce These Numbers Yourself</h2>
           <p>
@@ -1219,7 +1317,7 @@ make reproduce-federal</code></pre>
           <strong>Methodology version:</strong>
           <code data-methodology-version-date>2026-05-01</code>
           &middot; Internal revision marker
-          <code data-methodology-version-sha><a href="https://github.com/mzyphur/political-influence-tracker/commit/1315a6a" rel="noreferrer" target="_blank">1315a6a-dirty</a></code>
+          <code data-methodology-version-sha><a href="https://github.com/mzyphur/political-influence-tracker/commit/7046930" rel="noreferrer" target="_blank">7046930-dirty</a></code>
           (auto-injected at build time from
           <code>git rev-parse --short HEAD</code>; the committed values are a
           fallback for readers who run the dev server without first running
