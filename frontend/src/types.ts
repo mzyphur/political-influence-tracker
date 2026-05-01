@@ -891,3 +891,184 @@ export type RepresentativeContact = {
 };
 
 export type LoadState = "idle" | "loading" | "ready" | "error";
+
+
+/* -------------------------------------------------------------- *
+ * Industry-aggregate + cross-source correlation types (Batch BB) *
+ * -------------------------------------------------------------- */
+
+/**
+ * Per-sector aggregate row with side-by-side donor totals (tier 1)
+ * and contract totals (tier 2). NEVER summed across the boundary.
+ */
+export type IndustryAggregateRow = {
+  sector: string;
+  /* Donor side (deterministic). May be null for sectors with no
+   * recorded donor activity. */
+  distinct_donor_entities: number | null;
+  donor_event_count: number | null;
+  money_event_count: number | null;
+  campaign_support_event_count: number | null;
+  private_interest_event_count: number | null;
+  benefit_event_count: number | null;
+  access_event_count: number | null;
+  organisational_role_event_count: number | null;
+  total_money_aud: number | null;
+  total_campaign_support_aud: number | null;
+  donor_earliest_event_date: string | null;
+  donor_latest_event_date: string | null;
+  donor_evidence_tier: string | null;
+  donor_sector_method: string | null;
+  /* Contract side (LLM-tagged). May be null for sectors with no
+   * tagged contracts in the current corpus. */
+  contract_prompt_version: string | null;
+  contract_count: number | null;
+  distinct_contract_ids: number | null;
+  distinct_suppliers: number | null;
+  total_contract_value_aud: number | null;
+  contracting_agencies: string[] | null;
+  procurement_classes: string[] | null;
+  contract_evidence_tier: string | null;
+};
+
+export type IndustryAggregateResponse = {
+  claim_discipline_caveat: string;
+  row_count: number;
+  filters: {
+    min_donor_money_aud: number;
+    min_contract_value_aud: number;
+    limit: number;
+  };
+  rows: IndustryAggregateRow[];
+};
+
+
+/**
+ * Per-supplier overlap row: a contract supplier that ALSO appears
+ * as a donor / gift-giver / host in the deterministic record.
+ */
+export type ContractDonorOverlapRow = {
+  supplier_name: string;
+  supplier_normalized: string;
+  contract_prompt_version: string;
+  contract_count: number;
+  distinct_contract_ids: number;
+  total_contract_value_aud: number | null;
+  contract_sectors: string[];
+  contract_policy_topics: string[];
+  contract_agencies: string[];
+  matched_entity_id: number | null;
+  matched_entity_canonical_name: string | null;
+  matched_entity_type: string | null;
+  donor_event_count: number;
+  money_event_count: number;
+  campaign_support_event_count: number;
+  private_interest_event_count: number;
+  benefit_event_count: number;
+  access_event_count: number;
+  organisational_role_event_count: number;
+  donor_total_money_aud: number | null;
+  donor_total_campaign_support_aud: number | null;
+  donor_event_families: string[];
+  donor_earliest_event_date: string | null;
+  donor_latest_event_date: string | null;
+  contract_evidence_tier: string;
+  donor_evidence_tier: string;
+  claim_discipline_note: string;
+};
+
+export type ContractDonorOverlapResponse = {
+  claim_discipline_caveat: string;
+  row_count: number;
+  filters: {
+    min_contract_value_aud: number;
+    min_donor_money_aud: number;
+    sector: string | null;
+    limit: number;
+  };
+  rows: ContractDonorOverlapRow[];
+};
+
+
+/**
+ * Per-contract minister responsibility row: a tagged contract
+ * joined to the minister + portfolio overseeing the awarding
+ * agency, via the deterministic portfolio_agency table.
+ */
+export type ContractMinisterResponsibilityRow = {
+  contract_id: string;
+  agency_name: string;
+  supplier_name: string;
+  sector: string;
+  policy_topics: string[];
+  procurement_class: string;
+  summary: string;
+  portfolio_label: string | null;
+  cabinet_ministry_id: number | null;
+  cabinet_ministry_label: string | null;
+  parliamentary_term: string | null;
+  governing_party_short_name: string | null;
+  minister_role_id: number | null;
+  minister_person_id: number | null;
+  minister_name: string | null;
+  minister_role_title: string | null;
+  minister_role_type: string | null;
+  minister_effective_from: string | null;
+  minister_effective_to: string | null;
+  contract_evidence_tier: string;
+  portfolio_evidence_tier: string;
+  minister_evidence_tier: string;
+  claim_discipline_note: string;
+};
+
+export type ContractMinisterResponsibilityResponse = {
+  claim_discipline_caveat: string;
+  row_count: number;
+  filters: {
+    agency: string | null;
+    minister_name: string | null;
+    portfolio: string | null;
+    sector: string | null;
+    limit: number;
+  };
+  rows: ContractMinisterResponsibilityRow[];
+};
+
+
+/**
+ * Per-(minister, policy_topic) voting summary. Aye + no + rebellion
+ * counts over divisions tagged to the topic by They Vote For You
+ * (CC-BY). Does NOT pre-judge alignment.
+ */
+export type MinisterVotingPatternRow = {
+  minister_role_id: number;
+  minister_person_id: number;
+  minister_name: string;
+  minister_role_title: string;
+  portfolio_label: string;
+  cabinet_ministry_label: string;
+  topic_id: number;
+  policy_topic_label: string;
+  policy_topic_slug: string;
+  division_count: number;
+  aye_count: number;
+  no_count: number;
+  rebellion_count: number;
+  earliest_vote_date: string | null;
+  latest_vote_date: string | null;
+  voting_evidence_tier: string;
+  portfolio_evidence_tier: string;
+  claim_discipline_note: string;
+};
+
+export type MinisterVotingPatternResponse = {
+  claim_discipline_caveat: string;
+  row_count: number;
+  filters: {
+    minister_name: string | null;
+    portfolio: string | null;
+    topic_slug: string | null;
+    limit: number;
+  };
+  rows: MinisterVotingPatternRow[];
+};
