@@ -37,6 +37,39 @@ Last updated: 2026-04-29
 | `aec_register_of_entities_*` | AEC Register of Entities (politicalparty / associatedentity / significantthirdparty / thirdparty) | https://transparency.aec.gov.au/RegisterOfEntities | Official party + associated-entity + third-party registrations | Production-suitable. GET page → extract `__RequestVerificationToken` → POST `/RegisterOfEntities/ClientDetailsRead` with `X-Requested-With: XMLHttpRequest`. The fourth working `clientType` value is `thirdparty` (not `thirdpartycampaigner`, which returns HTTP 500). Anti-forgery token + cookie values are redacted from raw archive metadata; cookie request headers are never persisted. AEC field typos preserved verbatim downstream: `RegisterOfPolitcalParties`, `LinkToRegisterOfPolitcalParties`, `AmmendmentNumber`. Auto-creates reviewed `party_entity_link` rows ONLY when an AEC `AssociatedParties` segment resolves to exactly one canonical `party.id` via deterministic exact-match or documented branch alias rules. Public redistribution/licence terms to be recorded before public data redistribution. |
 | `nacc_corrupt_conduct` | NACC corrupt conduct guidance | https://www.nacc.gov.au/reporting-and-investigating-corruption/what-corrupt-conduct | Integrity language and legal caution | Helps keep public claims precise. |
 
+### Federal-Spending and Influence-Disclosure Sources (Registered, Loaders Pending)
+
+These twelve sources were registered in `sources.py` as part of the
+project's strategic-breadth expansion (see `docs/build_log.md` for
+the Batch X registration). They are publicly-published Commonwealth
+government-spending and influence-disclosure registers that
+materially expand transparency coverage beyond the existing
+AEC/APH disclosure scope. Each carries a verified URL + licence;
+the loader adapter for each lands in a follow-up batch.
+
+| Source ID | Source | URL | Licence | Notes |
+| --- | --- | --- | --- | --- |
+| `austender_contract_notices_current` | AusTender Contract Notices (current) | https://www.tenders.gov.au/cn/search | CC-BY 3.0 AU (per data.gov.au mirror) | Every Commonwealth contract ≥ $10k. Live tenders.gov.au CloudFront-blocks plain HTTP UAs; polite UA required. Surface as government-spending family, NOT money or campaign support — contracts are not personal MP receipts. |
+| `austender_contract_notices_historical` | AusTender historical contract data (yearly CSV bulk) | https://data.gov.au/data/dataset/historical-australian-government-contract-notice-data | CC-BY 3.0 AU | Preferred bulk path for 1998–2020 contracts. CKAN id `5c7fa69b-…`. Yearly CSVs ~30MB / ~75k rows each. Fetch via `scripts/fetch_data_gov_au_resource.sh`. |
+| `grantconnect_grants` | GrantConnect — Commonwealth grants awarded | https://www.grants.gov.au/Ga/Search | Commonwealth open data (CGRGs require publication) | Every Commonwealth grant > $0 published within 21 days of agreement. Grant ID, program, agency, recipient + ABN, value, dates, location. Government-spending family, not personal receipt. |
+| `fits_register` | Foreign Influence Transparency Scheme public register | https://transparency.ag.gov.au/FITS/SearchResults | Public register (FITS Act 2018 Cth) | Registrants acting on behalf of foreign principals. Activity types include political activity, parliamentary lobbying, communications, disbursements. Surface as `foreign_influence_disclosure` family with strong claim-discipline caveat: registration ≠ wrongdoing. |
+| `senate_order_contracts` | Senate Order on Departmental and Agency Contracts | https://www.aph.gov.au/Parliamentary_Business/Committees/Senate/Finance_and_Public_Administration/SeOrder | Commonwealth public record | Twice-yearly per-portfolio HTML tables of contracts ≥ $100k. Useful for confidentiality-clause flags AusTender doesn't always row-expose. |
+| `anao_performance_audits` | ANAO Auditor-General Performance Audit Reports | https://www.anao.gov.au/work/performance-audit | Commonwealth public record | Per-portfolio program audits. Each report carries audit number, portfolio, topic, tabling date, full PDF, summary findings, recommendations. |
+| `federal_register_of_legislation` | Federal Register of Legislation | https://www.legislation.gov.au/ | Public domain (Commonwealth primary legislation) | Every Act, subordinate instrument, gazette, EM. Free-text searchable. Pairs with Bills Search + TVFY for Bill→speech→vote pipelines. |
+| `aph_bills_search` | APH Bills Search | https://www.aph.gov.au/Parliamentary_Business/Bills_Legislation/Bills_Search_Results | Commonwealth public record | Per-Bill progress, second-reading speeches, committee referrals, amendments, final outcome. Each Bill links to text, EM, Bills Digest, Hansard, divisions. |
+| `aph_committee_inquiries` | APH Parliamentary Committee Inquiries — submissions and transcripts | https://www.aph.gov.au/Parliamentary_Business/Committees | Commonwealth public record | Public submissions, transcripts, final reports. Excellent lobbying-by-public-record surface — corporate submissions on policies that affect them are documented influence events with date + topic + verbatim text. |
+| `grants_gov_au_open_grants` | GrantConnect — Open Grants and Forecast Opportunities | https://www.grants.gov.au/Go/List | Commonwealth open data | Forward-looking forecast register. NOT an influence-evidence surface — these are forecasts, not awards. |
+| `modern_slavery_register` | Modern Slavery Statements register | https://modernslaveryregister.gov.au/ | Commonwealth public record (Modern Slavery Act 2018 Cth) | Mandatory statements by entities ≥ $100M turnover. Entity ABN + reporting period + statement PDF. Useful for sector-level supply-chain context. |
+| `aph_hansard_full_text_proquest` | APH Hansard full-text via ParlInfo Search | https://parlinfo.aph.gov.au/parlInfo/search/search.w3p | Commonwealth public record | Speech-level Hansard text. The project currently ingests divisions but not speech text; extending to speeches would let the app pair every TVFY division with speaker-attributed text via per-speech permalinks. |
+
+A reproducible CC-BY-licensed resource fetcher for these
+data.gov.au-mirrored datasets is at
+[`scripts/fetch_data_gov_au_resource.sh`](../scripts/fetch_data_gov_au_resource.sh).
+The script refuses non-CC-BY/public-domain licences by default
+(override only with `ALLOW_NON_CC_BY=1` plus a verbatim entry in
+`docs/source_licences.md` first). Each fetch writes a SHA-256-
+attested archive under `data/raw/<source_id>/<UTC-stamp>/`.
+
 ## State and Territory Sources To Expand
 
 These seed records are now in `backend/au_politics_money/ingest/sources.py`.

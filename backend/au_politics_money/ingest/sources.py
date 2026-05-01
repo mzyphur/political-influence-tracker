@@ -1169,6 +1169,280 @@ SOURCES: tuple[SourceRecord, ...] = (
         priority="medium",
         notes="Reference for careful integrity language and corruption definitions.",
     ),
+    # ---- Federal-spending transparency sources (Batch X registration) ----
+    # These are publicly-published Commonwealth government-spending and
+    # influence-disclosure registers that significantly expand the
+    # project's federal coverage beyond the AEC/APH disclosure scope.
+    # Each is registered here with verified URL + licence; the loader
+    # adapter for each lands in a follow-up batch as it's ready.
+    SourceRecord(
+        source_id="austender_contract_notices_current",
+        name="AusTender Contract Notices (current)",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="government_contract_register",
+        url="https://www.tenders.gov.au/cn/search",
+        expected_format="csv_or_xml_via_search_export",
+        update_frequency="continuous",
+        priority="high",
+        notes=(
+            "Every Commonwealth contract notice ≥ $10k published by "
+            "agencies on AusTender. Current data lives at tenders.gov.au; "
+            "the live search/export endpoints CloudFront-block plain "
+            "HTTP user-agents, so a polite UA (with project URL) is "
+            "required. Each contract row carries: agency, contract ID, "
+            "publish/start/end/amendment dates, value, description, "
+            "UNSPSC code + title (industry classification), "
+            "procurement method, supplier name + ABN + address. "
+            "Supplier ABN is the natural join key into the project's "
+            "existing entity table; UNSPSC enables industry-classified "
+            "spending analysis. IMPORTANT: contract spending is NOT a "
+            "personal receipt by an MP and must be surfaced as "
+            "government-spending evidence family, not money or campaign "
+            "support."
+        ),
+    ),
+    SourceRecord(
+        source_id="austender_contract_notices_historical",
+        name="AusTender Contract Notices (historical CSV bulk)",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="government_contract_register",
+        url="https://data.gov.au/data/dataset/historical-australian-government-contract-notice-data",
+        expected_format="csv",
+        update_frequency="annual_bulk",
+        priority="high",
+        notes=(
+            "Historical (1998 onward) AusTender contract data published "
+            "as yearly CSVs on data.gov.au under CC-BY 3.0 Australia. "
+            "Most-recent yearly file at time of registration is "
+            "'2017-18 Australian Government Contract Data' (75,478 rows, "
+            "31 MB). Preferred path for bulk historical ingestion "
+            "because the data.gov.au mirror has clean static CSV URLs, "
+            "verified CC-BY licence, and is not behind CloudFront. "
+            "Same column shape as the current AusTender export "
+            "(agency, supplier, value, dates, UNSPSC, ABN). CKAN dataset "
+            "id: 5c7fa69b-b0e9-4553-b8df-2a022dd2e982."
+        ),
+    ),
+    SourceRecord(
+        source_id="grantconnect_grants",
+        name="GrantConnect — Commonwealth grants awarded",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="government_grant_register",
+        url="https://www.grants.gov.au/Ga/Search",
+        expected_format="csv_via_search_export",
+        update_frequency="continuous",
+        priority="high",
+        notes=(
+            "Every Commonwealth grant awarded under reportable programs. "
+            "Per the Commonwealth Grants Rules and Guidelines (CGRGs) "
+            "every grant > $0 must appear here within 21 calendar days "
+            "of the grant agreement taking effect. Each grant row "
+            "carries: grant ID, program, agency, recipient name + ABN, "
+            "value, start/end dates, location (postcode), purpose. "
+            "Grants are NOT personal receipts by MPs — they're public "
+            "money flowing to recipient organisations under specific "
+            "programs. Surface as a government-spending evidence "
+            "family. Recipient ABN joins to the project's entity table; "
+            "this lets the app surface 'this entity received $X in "
+            "Commonwealth grants over the same period it appeared as "
+            "a donor in AEC returns', strictly as labelled context."
+        ),
+    ),
+    SourceRecord(
+        source_id="fits_register",
+        name="Foreign Influence Transparency Scheme (FITS) public register",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="influence_disclosure_register",
+        url="https://transparency.ag.gov.au/FITS/SearchResults",
+        expected_format="html_search_results",
+        update_frequency="continuous",
+        priority="high",
+        notes=(
+            "AGD-administered public register of registrants who act on "
+            "behalf of foreign principals. Each registrant row "
+            "discloses: registrant name + ABN, foreign principal "
+            "name + country, activity type (general political activity, "
+            "communications activity, parliamentary lobbying, "
+            "disbursement activity), and registration date. CRITICAL "
+            "transparency surface for analysing foreign-aligned "
+            "influence on Australian democracy. Records are public "
+            "by design under the Foreign Influence Transparency "
+            "Scheme Act 2018 (Cth). Surface as its own evidence "
+            "family `foreign_influence_disclosure` with a strong "
+            "claim-discipline caveat: registration is a legal "
+            "compliance act, NOT an allegation of wrongdoing."
+        ),
+    ),
+    SourceRecord(
+        source_id="senate_order_contracts",
+        name="Senate Order on Departmental and Agency Contracts",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="government_contract_supplementary_register",
+        url="https://www.aph.gov.au/Parliamentary_Business/Committees/Senate/Finance_and_Public_Administration/SeOrder",
+        expected_format="html_per_agency_returns",
+        update_frequency="biannual",
+        priority="medium",
+        notes=(
+            "Twice-yearly Senate-ordered listing where each Commonwealth "
+            "department/agency must list contracts ≥ $100k (or with "
+            "confidentiality provisions). Useful supplementary surface "
+            "to AusTender for high-value contracts and for "
+            "confidentiality-clause flags that AusTender doesn't "
+            "always expose at the row level. Per-portfolio HTML "
+            "tables linked from the APH Senate FAPA committee page. "
+            "Consolidates by responsible Senator (Manager of "
+            "Government Business)."
+        ),
+    ),
+    SourceRecord(
+        source_id="anao_performance_audits",
+        name="ANAO Auditor-General Performance Audit Reports",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="audit_authority_report_register",
+        url="https://www.anao.gov.au/work/performance-audit",
+        expected_format="html_index_with_pdf_reports",
+        update_frequency="continuous",
+        priority="medium",
+        notes=(
+            "Australian National Audit Office's program of "
+            "performance audits — per-portfolio audits of how "
+            "Commonwealth programs are administered. Each report "
+            "carries: audit number, portfolio/agency, audit topic, "
+            "tabling date, full PDF report, summary findings, "
+            "recommendations. Useful evidentiary surface for "
+            "'how is this portfolio's spending actually administered' "
+            "queries that pair with AusTender / GrantConnect data."
+        ),
+    ),
+    SourceRecord(
+        source_id="federal_register_of_legislation",
+        name="Federal Register of Legislation",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="legislation_register",
+        url="https://www.legislation.gov.au/",
+        expected_format="json_search_api_plus_html_pages",
+        update_frequency="continuous",
+        priority="medium",
+        notes=(
+            "Authoritative register of every Commonwealth Act, "
+            "subordinate legislation, gazette, and explanatory "
+            "memorandum. Free-text searchable; supports machine-"
+            "readable URLs per legislative instrument. Pairs with "
+            "the APH Bills Search to link MP voting records (TVFY) "
+            "and Hansard speech context to specific legislative "
+            "instruments. Public domain (Commonwealth-published "
+            "primary legislation)."
+        ),
+    ),
+    SourceRecord(
+        source_id="aph_bills_search",
+        name="APH Bills Search",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="bills_progress_register",
+        url="https://www.aph.gov.au/Parliamentary_Business/Bills_Legislation/Bills_Search_Results",
+        expected_format="html_search_with_per_bill_pages",
+        update_frequency="continuous",
+        priority="medium",
+        notes=(
+            "Per-Bill progress through both Houses, second-reading "
+            "speeches, committee referrals, amendments, and final "
+            "outcome. Each Bill page links to: full Bill text, "
+            "Explanatory Memorandum, Bills Digest (Parliamentary "
+            "Library analysis), Hansard for second reading speech, "
+            "and (where applicable) the relevant House Vote / "
+            "Senate Journal entry. Pairs with TVFY divisions to "
+            "give a complete legislative-decision picture per MP."
+        ),
+    ),
+    SourceRecord(
+        source_id="aph_committee_inquiries",
+        name="APH Parliamentary Committee Inquiries — submissions and transcripts",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="parliamentary_committee_register",
+        url="https://www.aph.gov.au/Parliamentary_Business/Committees",
+        expected_format="html_per_inquiry_with_pdf_submissions",
+        update_frequency="continuous",
+        priority="medium",
+        notes=(
+            "Every parliamentary committee inquiry's public "
+            "submissions, transcripts, and final reports. Excellent "
+            "lobbying-by-public-record surface — when a corporate "
+            "entity makes a public submission to an inquiry on a "
+            "policy that affects them, that is a documented "
+            "influence event with date, topic, and verbatim text. "
+            "Submissions are PDF-attached to the inquiry index page. "
+            "Public domain content (Commonwealth-published)."
+        ),
+    ),
+    SourceRecord(
+        source_id="grants_gov_au_open_grants",
+        name="GrantConnect — Open Grants and Forecast Opportunities",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="government_grant_opportunity_register",
+        url="https://www.grants.gov.au/Go/List",
+        expected_format="html_search_with_per_opportunity_pages",
+        update_frequency="continuous",
+        priority="low",
+        notes=(
+            "Companion register to the awarded-grants endpoint: "
+            "lists currently-open grant opportunities and "
+            "forecast opportunities. Useful for forward-looking "
+            "transparency (which programs are about to award "
+            "money), but NOT a money-flow surface — these are "
+            "forecasts, not awards. Don't surface as influence "
+            "evidence."
+        ),
+    ),
+    SourceRecord(
+        source_id="modern_slavery_register",
+        name="Modern Slavery Statements register",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="corporate_compliance_register",
+        url="https://modernslaveryregister.gov.au/",
+        expected_format="html_search_with_per_statement_pdfs",
+        update_frequency="annual",
+        priority="low",
+        notes=(
+            "Mandatory register of modern-slavery statements by "
+            "entities with ≥ $100M annual consolidated turnover, "
+            "per the Modern Slavery Act 2018 (Cth). Each statement "
+            "includes the entity ABN, the reporting period, and a "
+            "PDF of the statement. Cross-references usefully with "
+            "the entity table for sector-level supply-chain "
+            "context. Public domain (Commonwealth-published)."
+        ),
+    ),
+    SourceRecord(
+        source_id="aph_hansard_full_text_proquest",
+        name="APH Hansard full-text (ParlInfo Search)",
+        jurisdiction="Commonwealth",
+        level="national",
+        source_type="parliamentary_speech_text",
+        url="https://parlinfo.aph.gov.au/parlInfo/search/search.w3p;query=Dataset%3Ahansardr",
+        expected_format="html_search_with_per_speech_pages",
+        update_frequency="continuous",
+        priority="medium",
+        notes=(
+            "Speech-level Hansard text via the ParlInfo search "
+            "endpoint. Currently the project ingests divisions "
+            "(via House Votes & Proceedings + Senate Journals) "
+            "but NOT the speech text — extending to speeches "
+            "would let the app pair every TVFY division with "
+            "speaker-attributed text. ParlInfo supports per-speech "
+            "permalinks so each row is reproducibly citable."
+        ),
+    ),
 )
 
 
