@@ -131,6 +131,17 @@ _RATE_WINDOW_SECONDS = 60.0
 _rate_limit_hits: defaultdict[str, deque[float]] = defaultdict(deque)
 
 
+# Per-path cache hints (max-age in seconds) for the read-heavy
+# coverage / stats endpoints. The values change infrequently (loaders
+# refresh on the hour-or-less cadence) so a short public cache is
+# correct and reduces load. Path matching is exact or via the leading-
+# segment match below.
+_CACHE_MAX_AGE_BY_PATH: dict[str, int] = {
+    "/api/stats": 60,
+    "/api/coverage": 60,
+}
+
+
 @app.middleware("http")
 async def rate_limit_api_requests(request: Request, call_next):
     if API_RATE_LIMIT_PER_MINUTE > 0 and request.url.path.startswith("/api/"):
@@ -146,7 +157,18 @@ async def rate_limit_api_requests(request: Request, call_next):
                 headers={"Retry-After": str(int(_RATE_WINDOW_SECONDS))},
             )
         hits.append(now)
-    return await call_next(request)
+    response = await call_next(request)
+    cache_max_age = _CACHE_MAX_AGE_BY_PATH.get(request.url.path)
+    if cache_max_age is not None and 200 <= response.status_code < 300:
+        # The reader-facing snapshot endpoints can safely live behind a
+        # short public cache. The value is 60s because loader refreshes
+        # are no more frequent than that; longer would risk serving
+        # noticeably stale numbers.
+        response.headers["Cache-Control"] = (
+            f"public, max-age={cache_max_age}, "
+            f"stale-while-revalidate={cache_max_age * 5}"
+        )
+    return response
 
 
 @app.get(

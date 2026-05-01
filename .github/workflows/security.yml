@@ -1,0 +1,89 @@
+name: security
+
+# Weekly + on-demand supply-chain audit. Complements Dependabot
+# (which opens version-update PRs) by running active vulnerability
+# scans against the locked deps:
+#
+#   * pip-audit against backend/requirements.lock
+#     (https://pypi.org/project/pip-audit/)
+#   * npm audit against frontend/package-lock.json
+#
+# The job is informational by default — it does NOT fail the build
+# on findings. The `continue-on-error: true` lets the maintainer
+# review the report in the workflow UI and decide whether to land
+# a fix as a regular PR (or accept Dependabot's auto-PR for the
+# same vulnerability). If a finding is severe enough to gate `main`,
+# remove the continue-on-error from the relevant step.
+
+on:
+  schedule:
+    # Sunday 18:00 UTC = Monday 04:00 / 05:00 Australia/Sydney depending
+    # on daylight saving — same general window as the federal-pipeline
+    # smoke run.
+    - cron: "0 18 * * 0"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  pip-audit:
+    name: pip-audit (backend)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: backend/requirements.lock
+      - name: Install pip-audit
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pip-audit
+      - name: Run pip-audit against requirements.lock
+        continue-on-error: true
+        run: |
+          pip-audit --requirement requirements.lock --strict --format json \
+            --output ../pip-audit-report.json || true
+          pip-audit --requirement requirements.lock --strict || true
+      - name: Upload pip-audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pip-audit-report
+          path: pip-audit-report.json
+          if-no-files-found: ignore
+          retention-days: 30
+
+  npm-audit:
+    name: npm audit (frontend)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies (frozen lockfile)
+        run: npm ci
+      - name: Run npm audit (production deps only, JSON report)
+        continue-on-error: true
+        run: |
+          npm audit --omit=dev --json > ../npm-audit-report.json || true
+          npm audit --omit=dev || true
+      - name: Upload npm audit report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-report
+          path: npm-audit-report.json
+          if-no-files-found: ignore
+          retention-days: 30

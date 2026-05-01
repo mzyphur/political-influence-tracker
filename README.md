@@ -374,6 +374,9 @@ For readers (journalists, scholars, regulators, citizens):
   Map / Coverage / Representatives / etc.).
 
 For contributors (developers, data correctors):
+- **Changelog** — [`CHANGELOG.md`](CHANGELOG.md) (public-friendly
+  per-batch summary; the canonical per-PR audit trail is
+  [`docs/build_log.md`](docs/build_log.md)).
 - **Reproducibility policy** — [`docs/reproducibility.md`](docs/reproducibility.md).
 - **Build log** — [`docs/build_log.md`](docs/build_log.md) (newest
   first).
