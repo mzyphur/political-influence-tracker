@@ -631,6 +631,85 @@ def industry_aggregate(
 
 
 @app.get(
+    "/api/industry-anatomy",
+    tags=["Influence"],
+    summary="THE influence-anatomy view: all evidence streams per sector",
+    description=(
+        "Returns rows from `v_industry_anatomy`: per-sector "
+        "side-by-side aggregation of donations, gifts, sponsored "
+        "travel, memberships, investments, AND contracts. Every "
+        "evidence stream the project has on a sector lives in its "
+        "own column with explicit tier label. NEVER sums across "
+        "tiers. Powers the public app's 'Industry Detail' page "
+        "surface — the load-bearing pro-democracy transparency "
+        "page."
+    ),
+    responses={200: {"description": "Per-sector anatomy rows"}},
+)
+def industry_anatomy(
+    sector: str | None = None,
+    min_money_aud: Annotated[float, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 60,
+) -> dict:
+    return queries.get_industry_anatomy(
+        sector=sector,
+        min_money_aud=min_money_aud,
+        limit=limit,
+    )
+
+
+@app.get(
+    "/api/roi-items",
+    tags=["Influence"],
+    summary="LLM-extracted disclosure items from House Register",
+    description=(
+        "Returns rows from `llm_register_of_interests_observation` "
+        "(Stage 2 LLM extraction; ~3,547 items in DB at end of "
+        "Stage 2 full corpus). Each row is one MP-disclosed item: "
+        "gift, sponsored travel, membership, directorship, "
+        "investment, liability, etc. Filters: item_type, "
+        "counterparty_name (LIKE-match), member_name (LIKE-match), "
+        "min_value_aud. Powers per-MP ROI drill-downs and per-"
+        "counterparty 'who got gifts from Qantas' queries."
+    ),
+    responses={200: {"description": "Per-item ROI rows"}},
+)
+def roi_items(
+    item_type: str | None = None,
+    counterparty_name_query: str | None = None,
+    member_name_query: str | None = None,
+    min_value_aud: Annotated[float, Query(ge=0)] | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict:
+    return queries.get_roi_items(
+        item_type=item_type,
+        counterparty_name_query=counterparty_name_query,
+        member_name_query=member_name_query,
+        min_value_aud=min_value_aud,
+        limit=limit,
+    )
+
+
+@app.get(
+    "/api/roi-providers",
+    tags=["Influence"],
+    summary="Top counterparties (gift-givers / travel-sponsors / etc.)",
+    description=(
+        "Returns per-counterparty aggregate of MP ROI items: who "
+        "gave the most gifts / sponsored the most travel / hosted "
+        "the most MPs at events. Powers the 'top gift providers' "
+        "surface (Qantas Chairman's Lounge pattern)."
+    ),
+    responses={200: {"description": "Per-counterparty aggregates"}},
+)
+def roi_providers(
+    item_type: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> dict:
+    return queries.get_roi_providers(item_type=item_type, limit=limit)
+
+
+@app.get(
     "/api/donor-recipient-voting-alignment",
     tags=["Influence"],
     summary="Per (donor → recipient MP → policy topic) voting record",

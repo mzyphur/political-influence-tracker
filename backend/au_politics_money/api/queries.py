@@ -6402,6 +6402,246 @@ def get_industry_aggregate(
     }
 
 
+def get_industry_anatomy(
+    *,
+    sector: str | None = None,
+    min_money_aud: float = 0,
+    limit: int = 60,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    """Return rows from `v_industry_anatomy` — the comprehensive
+    per-sector influence-anatomy surface. Surfaces every evidence
+    stream the project has on each industry (donations + gifts +
+    sponsored travel + memberships + investments + contracts) in
+    SEPARATE columns. NEVER sums across evidence tiers.
+    """
+    where_clauses: list[str] = []
+    params: list[Any] = []
+    if sector:
+        where_clauses.append("sector = %s")
+        params.append(sector)
+    where_clauses.append(
+        "(COALESCE(total_money_aud, 0) >= %s OR COALESCE(total_contract_value_aud, 0) >= %s)"
+    )
+    params.append(min_money_aud)
+    params.append(min_money_aud)
+    where_sql = " WHERE " + " AND ".join(where_clauses)
+
+    sql = f"""
+        SELECT
+            sector,
+            distinct_donor_entities,
+            donor_event_count,
+            money_event_count,
+            campaign_support_event_count,
+            private_interest_event_count,
+            benefit_event_count,
+            access_event_count,
+            organisational_role_event_count,
+            total_money_aud,
+            total_campaign_support_aud,
+            gift_count,
+            gift_total_aud,
+            sponsored_travel_count,
+            sponsored_travel_total_aud,
+            membership_count,
+            directorship_count,
+            investment_count,
+            liability_count,
+            distinct_gift_counterparty_names,
+            contract_count,
+            distinct_contract_ids,
+            distinct_suppliers,
+            total_contract_value_aud,
+            contracting_agencies,
+            procurement_classes,
+            donor_evidence_tier,
+            contract_evidence_tier,
+            gift_evidence_tier,
+            claim_discipline_note
+        FROM v_industry_anatomy
+        {where_sql}
+        ORDER BY
+            COALESCE(total_money_aud, 0) DESC NULLS LAST,
+            COALESCE(total_contract_value_aud, 0) DESC NULLS LAST
+        LIMIT %s
+    """
+    params.append(limit)
+
+    with connect(database_url) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+
+    return {
+        "claim_discipline_caveat": (
+            "Influence anatomy view: every evidence stream on each "
+            "industry surfaced side-by-side. Donor / gift / travel / "
+            "membership amounts (deterministic + ROI extraction tier 1+2) "
+            "and contract amounts (LLM tier 2) live in separate columns "
+            "and are NEVER summed. The per-sector aggregation exposes "
+            "correlation surfaces; consumers interpret. No causation "
+            "implied. The project's claim-discipline rule is preserved."
+        ),
+        "row_count": len(rows),
+        "filters": {
+            "sector": sector,
+            "min_money_aud": min_money_aud,
+            "limit": limit,
+        },
+        "rows": _jsonable(rows),
+    }
+
+
+def get_roi_items(
+    *,
+    item_type: str | None = None,
+    counterparty_name_query: str | None = None,
+    member_name_query: str | None = None,
+    min_value_aud: float | None = None,
+    limit: int = 100,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    """Return rows from `llm_register_of_interests_observation`.
+    Powers the gift / sponsored-travel / membership drill-down.
+    Filters: item_type (gift / sponsored_travel / etc.),
+    counterparty_name (LIKE-match), member_name (LIKE-match),
+    min_value_aud.
+    """
+    where_clauses: list[str] = []
+    params: list[Any] = []
+    if item_type:
+        where_clauses.append("item_type = %s")
+        params.append(item_type)
+    if counterparty_name_query:
+        where_clauses.append("counterparty_name ILIKE %s")
+        params.append(f"%{counterparty_name_query}%")
+    if member_name_query:
+        where_clauses.append(
+            "(member_name ILIKE %s OR family_name ILIKE %s)"
+        )
+        params.append(f"%{member_name_query}%")
+        params.append(f"%{member_name_query}%")
+    if min_value_aud is not None:
+        where_clauses.append(
+            "COALESCE(estimated_value_aud, 0) >= %s"
+        )
+        params.append(min_value_aud)
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    sql = f"""
+        SELECT
+            id,
+            source_id,
+            section_number,
+            section_title,
+            member_name,
+            family_name,
+            given_names,
+            electorate,
+            state,
+            item_type,
+            counterparty_name,
+            counterparty_type,
+            description,
+            estimated_value_aud,
+            event_date,
+            disposition,
+            confidence,
+            evidence_excerpt,
+            extraction_method,
+            prompt_version,
+            llm_model_id,
+            llm_response_sha256,
+            review_status
+        FROM llm_register_of_interests_observation
+        {where_sql}
+        ORDER BY
+            COALESCE(estimated_value_aud, 0) DESC NULLS LAST,
+            event_date DESC NULLS LAST
+        LIMIT %s
+    """
+    params.append(limit)
+
+    with connect(database_url) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+
+    return {
+        "claim_discipline_caveat": (
+            "ROI items are extracted by Claude Sonnet 4.6 from House "
+            "Register of Interests PDFs (LLM tier 2 evidence). Each "
+            "row carries an evidence_excerpt verbatim from the source "
+            "section. No causation implied; these are public "
+            "disclosures by the Members themselves."
+        ),
+        "row_count": len(rows),
+        "filters": {
+            "item_type": item_type,
+            "counterparty_name_query": counterparty_name_query,
+            "member_name_query": member_name_query,
+            "min_value_aud": min_value_aud,
+            "limit": limit,
+        },
+        "rows": _jsonable(rows),
+    }
+
+
+def get_roi_providers(
+    *,
+    item_type: str | None = None,
+    limit: int = 50,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    """Return per-counterparty aggregate of ROI items. Powers the
+    "top gift providers / sponsored-travel sponsors / membership
+    organisations" surface (Qantas Chairman's Lounge pattern, etc.)."""
+    where_clauses: list[str] = []
+    params: list[Any] = []
+    if item_type:
+        where_clauses.append("item_type = %s")
+        params.append(item_type)
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    sql = f"""
+        SELECT
+            counterparty_name,
+            counterparty_type,
+            COUNT(*) AS item_count,
+            COUNT(DISTINCT member_name) AS distinct_member_count,
+            COUNT(*) FILTER (WHERE item_type = 'gift') AS gift_count,
+            COUNT(*) FILTER (WHERE item_type = 'sponsored_travel') AS travel_count,
+            COUNT(*) FILTER (WHERE item_type = 'membership') AS membership_count,
+            SUM(COALESCE(estimated_value_aud, 0)) AS total_disclosed_value_aud,
+            MIN(event_date) AS earliest_event_date,
+            MAX(event_date) AS latest_event_date
+        FROM llm_register_of_interests_observation
+        {where_sql}
+        GROUP BY counterparty_name, counterparty_type
+        ORDER BY item_count DESC, total_disclosed_value_aud DESC
+        LIMIT %s
+    """
+    params.append(limit)
+
+    with connect(database_url) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+
+    return {
+        "claim_discipline_caveat": (
+            "Aggregated counterparty totals from MP-disclosed ROI "
+            "items (Stage 2 LLM extraction). The project does NOT "
+            "claim wrongdoing; these are MP self-disclosures of "
+            "gifts / travel / memberships received."
+        ),
+        "row_count": len(rows),
+        "filters": {"item_type": item_type, "limit": limit},
+        "rows": _jsonable(rows),
+    }
+
+
 def get_donor_recipient_voting_alignment(
     *,
     donor_entity_id: int | None = None,
