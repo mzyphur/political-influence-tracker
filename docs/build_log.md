@@ -1,5 +1,103 @@
 # Build Log
 
+## 2026-05-01 (Batch L — public-launch hardening: CI workflow + assumed-approval licence-status update + repo polish + README polish)
+
+Five PRs landed:
+
+- **L #1: Fast-feedback CI workflow** (commit `206e0da`). New
+  `.github/workflows/ci.yml` runs on every push to `main` and every
+  pull request. Two parallel jobs: backend (pytest + ruff against
+  a PostGIS service, Python 3.11, pip cache keyed by
+  `requirements.lock`) and frontend (tsc + vite build, Node 22,
+  npm cache keyed by `package-lock.json`, `METHODOLOGY_REPO_URL`
+  set to `${{ github.repository }}` so fork CI builds get their
+  own commit links). Frontend artifacts uploaded for 7 days.
+  Complements the existing weekly + manual
+  `federal-pipeline-smoke.yml` (which runs the full federal-
+  foundation + state/local smoke pipelines).
+- **L #2: Source-data licence-status update per project-lead
+  direction** (commit `9b4e906`). Per project-lead direction on
+  2026-05-01: written exception responses to APH (Clerk of the
+  House + Clerk of the Senate) and AEC GIS exception-request
+  letters are in hand. Reply text is TBD on file under
+  `docs/letters/replies/` — when each reply lands, the row is
+  re-checked and any specific conditions are applied.
+  `docs/source_licences.md` rows for AEC GIS and APH moved from
+  "needs-follow-up" to "ready (provisionally approved 2026-05-01
+  per project-lead direction; written reply text to be archived
+  under docs/letters/replies/ when it arrives)". Project-level
+  "Implications" block updated. README's "Source-data licence
+  terms" section rewritten to match. The honest "reply text TBD"
+  framing keeps the audit trail truthful about what's verified vs
+  what's pending receipt.
+- **L #3: Repo polish — CONTRIBUTING + CODE_OF_CONDUCT + SECURITY +
+  issue/PR templates + GitHub topics** (commit `cc515cc`). Eight
+  new metadata files so the public mirror is welcoming + safe for
+  outside contributors:
+  - `CONTRIBUTING.md`: project mission + claim-discipline operating
+    constraints, dev setup, branch/commit conventions, what makes
+    a good first contribution, decisions reserved to the maintainer.
+  - `CODE_OF_CONDUCT.md`: references the Contributor Covenant v2.1
+    by URL (the canonical short-reference pattern many large OSS
+    projects use). Reporting channel: `mzyphur@instats.org`.
+  - `SECURITY.md`: private vulnerability-disclosure policy with a
+    project-specific in-scope section (claim-discipline bypasses,
+    source-licence violations, surfacing data without source-
+    backing).
+  - `.github/ISSUE_TEMPLATE/config.yml`: disables blank issues;
+    routes code-of-conduct + security concerns to private email
+    channels via mailto contact links.
+  - `.github/ISSUE_TEMPLATE/bug_report.md`: standard bug template
+    asking for the build SHA + environment versions the project's
+    reproducibility chain expects.
+  - `.github/ISSUE_TEMPLATE/feature_request.md`: feature template
+    that explicitly checks evidence-family-separation and
+    source-licence-posture.
+  - `.github/ISSUE_TEMPLATE/data_correction.md`: project-specific,
+    the highest-value contribution category. Asks for the exact
+    public-app surface, the underlying source quote with URL, the
+    affected evidence family, and the reporter's confidence level.
+  - `.github/PULL_REQUEST_TEMPLATE.md`: standard PR template with
+    project-specific gates: claim-discipline review checklist,
+    resolver-no-fuzzy-matching + direct-money-byte-identical
+    invariant check, source-licence posture review, full test plan.
+
+  Plus 10 GitHub repo topics applied via `gh repo edit`:
+  transparency, civic-tech, open-data, public-interest,
+  australian-politics, electoral-transparency, political-finance,
+  data-journalism, aec, agpl.
+- **L #4: README polish for public-facing readers** (commit TBD
+  this batch). Top of the README rewritten with a one-line
+  blockquote tagline, four shields.io badges (CI status, AGPL-3.0,
+  pre-launch status, Contributor Covenant), a "What this is" and
+  "What this is **not**" framing block (so a first-time visitor
+  sees the project's claim-discipline posture before the
+  reproducibility section), updated clone URL pointing to the
+  public mirror, a "Contributing" section pointing at the new
+  CONTRIBUTING / CODE_OF_CONDUCT / SECURITY files, and a pointer
+  to `docs/letters/` for project correspondence.
+- **L #5: docs refresh + final quality gates + push.**
+  `docs/build_log.md`, `docs/session_state.md`, `docs/resume_prompt.md`
+  refreshed for end-of-Batch-L. 358/358 pytest pass. ruff clean.
+  Frontend production build clean.
+
+Live state at end of Batch L:
+
+- Public GitHub mirror at https://github.com/mzyphur/political-influence-tracker
+  is live, AGPL-3.0, with CI green on every push, repo polish
+  files in place, and 10 discovery topics applied.
+- 314,040 non-rejected `influence_event` rows; $13.48B reported
+  total. 318 `person`. 150 federal House `electorate`. 148
+  reviewed `party_entity_link`. 0 `unresolved_no_match` in
+  `associatedentity` or `politicalparty` register observations.
+  448 `postcode_electorate_crosswalk` rows / 404 distinct
+  postcodes / 127 of 150 federal House seats covered (84.7%).
+- All ten source licences verbatim direct-fetch (or, for AIMS
+  Coastline 50K's eAtlas companion, conclusively unfetchable with
+  the data.gov.au verbatim as the load-bearing record). APH +
+  AEC GIS provisionally cleared per project-lead direction on
+  2026-05-01; reply text TBD on file under `docs/letters/replies/`.
+
 ## 2026-05-01 (Batch K — public-readiness sprint: Word letter exports + AGPL-3.0 source-code licence + public GitHub mirror live)
 
 Three changes landed:

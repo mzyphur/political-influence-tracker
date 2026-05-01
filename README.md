@@ -1,24 +1,54 @@
 # Australian Political Influence Transparency
 
-A reproducible, source-backed evidence system for Australian political
-money, gifts, interests, lobbying access, party-channelled support, and
-parliamentary voting behaviour. Federal-first; state/local follows.
+> **A reproducible, source-backed transparency tool that publishes a
+> verifiable link from disclosed federal political records back to
+> the original public source documents.**
 
-The project's central rule: **show the evidence, preserve the source,
-and separate facts from interpretation.** Direct disclosed person-level
-records, source-backed campaign-support records, party/entity-mediated
-context, and modelled allocations are kept as separate evidence
-families. They are NEVER summed into a single "money received" headline.
-Every public claim travels with its evidence tier and attribution
-limit.
+[![ci](https://github.com/mzyphur/political-influence-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/mzyphur/political-influence-tracker/actions/workflows/ci.yml)
+[![licence: AGPL-3.0](https://img.shields.io/badge/licence-AGPL--3.0-blue.svg)](LICENSE)
+[![status: pre-launch 2026-05](https://img.shields.io/badge/status-pre--launch%202026--05-yellow.svg)](docs/build_log.md)
+[![code of conduct](https://img.shields.io/badge/code%20of%20conduct-Contributor%20Covenant%202.1-brightgreen.svg)](CODE_OF_CONDUCT.md)
 
+Federal-first; state/local follows. Targets a May 2026 federal launch.
 The corresponding theory of influence and the per-mechanism modelling
-choices are documented in
-[`docs/theory_of_influence.md`](docs/theory_of_influence.md) and
-[`docs/influence_network_model.md`](docs/influence_network_model.md).
+choices live in [`docs/theory_of_influence.md`](docs/theory_of_influence.md)
+and [`docs/influence_network_model.md`](docs/influence_network_model.md).
 The hostable, public-facing companion page is at
 [`frontend/public/methodology.html`](frontend/public/methodology.html)
 (linked from the app as **Method**).
+
+## What this is
+
+A public-interest transparency tool. It ingests Australia's already-
+public political-disclosure records — AEC annual + election returns,
+the AEC Register of Entities, House and Senate registers of
+interests, MP/Senator contacts, House Votes & Proceedings + Senate
+Journals, voting records via They Vote For You — parses them into
+structured records, and surfaces them on a public app alongside the
+original PDFs and CSVs. Every claim the app makes travels with its
+evidence tier and a link back to the source document.
+
+## What this is **not**
+
+* **Not a watchdog campaign or opinion site.** The project does not
+  characterise individual MPs or senators as corrupt, improper, or
+  bribed. Disclosed records are not allegations of wrongdoing;
+  surfacing a record is not equivalent to accusing the person who
+  disclosed it.
+* **Not a single "money received" leaderboard.** Direct disclosed
+  person-level records, source-backed campaign-support records,
+  party/entity-mediated context, and modelled allocations are kept
+  as **separate evidence families** with their own caveats. They
+  are NEVER summed.
+* **Not a substitute for journalism.** The project surfaces records
+  in a navigable form; interpretation, investigation, and reporting
+  on what those records mean is the work of journalists, scholars,
+  regulators, and citizens.
+
+The central rule that ties all of these together: **show the
+evidence, preserve the source, and separate facts from
+interpretation.** Every public claim travels with its evidence tier
+and attribution limit.
 
 ---
 
@@ -31,13 +61,25 @@ private spreadsheets, no human-curated row-by-row totals.
 ### One command, from a clean clone
 
 ```bash
-git clone <repo-url> au-politics
-cd au-politics
+git clone https://github.com/mzyphur/political-influence-tracker.git
+cd political-influence-tracker
 make bootstrap        # backend venv + frontend npm deps
 make db-up            # local Postgres/PostGIS via docker-compose
 make db-ready         # block until Postgres is ready
 make reproduce-federal
 ```
+
+For a faster local sanity check (CI mode; smaller dataset, no full
+live fetch):
+
+```bash
+make reproduce-federal-smoke
+```
+
+The same chain runs in CI on every push to `main` and every pull
+request — see [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
+and the weekly full-pipeline smoke at
+[`.github/workflows/federal-pipeline-smoke.yml`](.github/workflows/federal-pipeline-smoke.yml).
 
 `make reproduce-federal` runs
 [`scripts/reproduce_federal_from_scratch.sh`](scripts/reproduce_federal_from_scratch.sh).
@@ -295,6 +337,25 @@ in-flight written exceptions for APH + AEC GIS) captured in
 
 ---
 
+## Contributing
+
+Bug reports, feature requests, **data corrections** (the highest-
+value contribution category — see the dedicated
+[issue template](.github/ISSUE_TEMPLATE/data_correction.md)),
+and pull requests are all welcome. Start with:
+
+* [`CONTRIBUTING.md`](CONTRIBUTING.md) — project mission, dev setup,
+  branch + commit conventions, and the project-specific gates the
+  maintainers apply during review (claim discipline, no fuzzy
+  matching in the resolver, byte-identical direct-money totals,
+  source-licence posture).
+* [`CODE_OF_CONDUCT.md`](CODE_OF_CONDUCT.md) — Contributor Covenant
+  v2.1.
+* [`SECURITY.md`](SECURITY.md) — private vulnerability-disclosure
+  channel. Use this for security issues, source-licence violations,
+  or claim-discipline bypasses; do **not** open a public issue for
+  these.
+
 ## Where to look next
 
 - **Methodology** for non-engineers and journalists — open the app and
@@ -305,3 +366,6 @@ in-flight written exceptions for APH + AEC GIS) captured in
   first).
 - **Session state for the next contributor** — [`docs/session_state.md`](docs/session_state.md).
 - **Operating mode for AI-assisted contributions** — [`CLAUDE.md`](CLAUDE.md).
+- **Project correspondence** (formal letters to APH + AEC GIS) —
+  [`docs/letters/`](docs/letters/). Ready-to-sign Word versions are
+  under [`docs/letters/word/`](docs/letters/word/).

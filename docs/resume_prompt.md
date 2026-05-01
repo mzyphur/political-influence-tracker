@@ -80,7 +80,16 @@ disclosed person-level money with campaign-support records, party-
 mediated party/entity context, or modelled allocation. Every public
 claim must travel with its evidence tier and attribution limit.
 
-## Current state (live, end of Batch K — 2026-05-01)
+## Current state (live, end of Batch L — 2026-05-01)
+
+**Public-launch-ready.** Public GitHub mirror at
+[https://github.com/mzyphur/political-influence-tracker](https://github.com/mzyphur/political-influence-tracker)
+is live, AGPL-3.0, with CI green on every push. APH + AEC GIS
+exception-request letters provisionally cleared per project-lead
+direction (reply text TBD on file under `docs/letters/replies/`).
+Repo polish in place: CONTRIBUTING / CODE_OF_CONDUCT / SECURITY /
+issue + PR templates / 10 discovery topics. README rewritten with
+public-facing tagline + badges + framing block.
 
 **Public mirror is live** at
 [https://github.com/mzyphur/political-influence-tracker](https://github.com/mzyphur/political-influence-tracker)
@@ -174,6 +183,25 @@ Live database (Postgres at
   ranges 0200-0299 ACT / 0800-0899 NT, multi-electorate postcodes,
   inner-metro fragmentation). Methodology version bumped to
   2026-05-01.
+- **L**: public-launch hardening. Five pieces:
+  (i) fast-feedback CI workflow at `.github/workflows/ci.yml`
+  (pytest + ruff + frontend tsc/vite build on every push and PR);
+  (ii) APH + AEC GIS provisionally cleared per project-lead
+  direction (reply text TBD on file under `docs/letters/replies/`),
+  with honest "provisionally approved; reply text to be archived
+  when it arrives" framing in `docs/source_licences.md` and the
+  README;
+  (iii) repo polish — `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`
+  (Contributor Covenant v2.1 by URL reference),  `SECURITY.md`,
+  issue templates (config / bug_report / feature_request /
+  data_correction), `PULL_REQUEST_TEMPLATE.md`, plus 10 GitHub
+  discovery topics;
+  (iv) README rewritten with public-facing tagline + four
+  shields.io badges + "What this is / What this is **not**"
+  framing block + Contributing section pointing at the new
+  metadata files;
+  (v) docs refresh + quality gates + push.
+
 - **K**: public-readiness sprint. Three pieces:
   (i) ready-to-sign Word .docx exports of the APH House / APH
   Senate / AEC GIS exception letters under `docs/letters/word/`

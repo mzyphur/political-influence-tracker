@@ -5,11 +5,14 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-05-01** (end of Batch K — public GitHub mirror
-live at https://github.com/mzyphur/political-influence-tracker under
-AGPL-3.0; `METHODOLOGY_REPO_URL` wired to load from
-`frontend/.env.local`; ready-to-sign Word .docx versions of the
-APH + AEC GIS exception letters added under `docs/letters/word/`).
+Last updated: **2026-05-01** (end of Batch L — public-launch
+hardening: fast-feedback CI workflow added at
+`.github/workflows/ci.yml`; APH + AEC GIS provisionally cleared per
+project-lead direction (reply text TBD on file under
+`docs/letters/replies/`); CONTRIBUTING + CODE_OF_CONDUCT + SECURITY
++ issue/PR templates + 10 discovery topics applied to the public
+mirror; README rewritten with public-facing tagline + badges +
+"what this is/is not" framing block + contributing pointer).
 
 ## Current state
 
@@ -90,6 +93,29 @@ APH + AEC GIS exception letters added under `docs/letters/word/`).
   (the actual bulk fetch is intentionally a maintainer decision, not
   an agent run). 356/356 backend pytest green. ruff clean. frontend
   build clean.
+- **Batch L — public-launch hardening** (commits `206e0da`,
+  `9b4e906`, `cc515cc`, TBD this batch):
+  - **L #1**: fast-feedback CI workflow at `.github/workflows/ci.yml`
+    (pytest + ruff + frontend tsc/vite build, runs on every push to
+    `main` and every PR). Complements the existing weekly + manual
+    `federal-pipeline-smoke.yml`.
+  - **L #2**: APH + AEC GIS provisionally cleared per project-lead
+    direction on 2026-05-01. Reply text TBD on file under
+    `docs/letters/replies/`. `docs/source_licences.md` rows updated
+    with honest "provisionally approved; written reply text to be
+    archived when it arrives" framing. README's source-data licence
+    section rewritten to match.
+  - **L #3**: repo polish — `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`
+    (Contributor Covenant v2.1 by URL reference),  `SECURITY.md`,
+    four issue templates (config / bug_report / feature_request /
+    data_correction), `PULL_REQUEST_TEMPLATE.md`, plus 10 GitHub
+    discovery topics applied via `gh repo edit`.
+  - **L #4**: README rewritten for public-facing readers — one-line
+    blockquote tagline, four shields.io badges, "What this is /
+    What this is **not**" framing block, public-mirror clone URL,
+    Contributing section pointing at the new metadata files.
+  - **L #5**: docs refresh + final gates + push.
+
 - **Batch K — public-readiness sprint** (commits `32660c3`, `8388cdc`,
   TBD this batch):
   - **K #1**: ready-to-sign Word .docx versions of the APH + AEC GIS
@@ -510,10 +536,11 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: Batches D + E + F + G + H + I + J + K are closed; next-step menu
+## When you start: Batches D + E + F + G + H + I + J + K + L are closed; next-step menu
 
-The federal-launch path is structurally complete. Live data state at
-end of Batch K:
+The federal-launch path is structurally complete and the public
+mirror is hardened (CI green, repo metadata in place, source
+licences provisionally cleared). Live data state at end of Batch L:
 
 - 314,040 non-rejected `influence_event` rows; $13.48B reported total.
 - 318 `person`, 150 federal House `electorate` rows.
