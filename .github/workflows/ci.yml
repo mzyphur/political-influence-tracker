@@ -77,7 +77,7 @@ jobs:
       METHODOLOGY_REPO_URL: https://github.com/${{ github.repository }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: "22"
           cache: npm
