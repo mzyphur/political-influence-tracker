@@ -5,8 +5,11 @@ import {
   Banknote,
   Building2,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Gift,
   Globe2,
+  HelpCircle,
   Loader2,
   Mail,
   MapPin,
@@ -23,6 +26,8 @@ import type {
   ElectorateFeature,
   ElectorateProfile,
   LoadState,
+  RepresentativeBenefitProviderSummary,
+  RepresentativeBenefitSummary,
   RepresentativeContact,
   RepresentativeEvent,
   RepresentativeProfile
@@ -733,34 +738,65 @@ export function DetailsPanel({
         representativeProfile &&
         benefitHighlights.length > 0 && (
           <section className="panel-section benefit-highlights-panel">
-            <h3>Gifts, Travel & Hospitality Highlights</h3>
+            <h3>Gifts, Travel &amp; Hospitality</h3>
             <p className="scope-caption">
-              These are declared gifts, hospitality, travel, tickets, memberships,
-              flights, meals, and similar benefit records. Missing values mean no
-              dollar amount is recorded in the normalized data; they are not zeros.
+              Declared gifts, hospitality, travel, tickets, memberships,
+              flights, meals, and similar benefit records — grouped by who
+              provided them. Missing dollar values mean the source PDF did
+              not record an amount; they are not zeros. Disclosed records,
+              not allegations of wrongdoing.
             </p>
-            <SignalBlock title="Benefit forms">
-              {benefitHighlights.slice(0, 6).map((summary) => (
-                <SignalRow
-                  key={`${summary.event_type}:${summary.event_subtype}`}
-                  label={benefitFormLabel(summary.event_type, summary.event_subtype)}
-                  value={`${summary.event_count.toLocaleString("en-AU")} records`}
-                  detail={benefitSummaryDetail(summary)}
-                />
-              ))}
-            </SignalBlock>
-            {topBenefitProviders.length > 0 && (
-              <SignalBlock title="Named providers">
-                {topBenefitProviders.slice(0, 5).map((provider) => (
-                  <SignalRow
+            <div className="benefit-provider-list">
+              {topBenefitProviders.slice(0, 8).map((provider) => {
+                // Compute a per-(event_type, subtype) breakdown for this
+                // provider from the provider summary's parallel arrays.
+                // The arrays are aligned 1:1 in the API; we group them
+                // here so the expanded card can show "Lounge access × 2"
+                // style chips.
+                const counts = new Map<string, {
+                  eventType: string;
+                  subtype: string | null;
+                  count: number;
+                }>();
+                const totalForms = Math.max(
+                  provider.event_types.length,
+                  provider.event_subtypes.length
+                );
+                for (let index = 0; index < totalForms; index += 1) {
+                  const eventType = provider.event_types[index] ?? "benefit";
+                  const subtype = provider.event_subtypes[index] ?? null;
+                  const key = `${eventType}:${subtype ?? ""}`;
+                  const existing = counts.get(key);
+                  if (existing) {
+                    existing.count += 1;
+                  } else {
+                    counts.set(key, { eventType, subtype, count: 1 });
+                  }
+                }
+                const perFormCounts = Array.from(counts.values()).sort(
+                  (a, b) => b.count - a.count
+                );
+                return (
+                  <BenefitProviderCard
                     key={`${provider.provider_entity_id ?? "raw"}:${provider.provider_name}`}
-                    label={provider.provider_name}
-                    value={`${provider.event_count.toLocaleString("en-AU")} records`}
-                    detail={benefitProviderDetail(provider)}
+                    provider={provider}
+                    perFormCounts={perFormCounts}
                   />
-                ))}
-              </SignalBlock>
-            )}
+                );
+              })}
+              <BenefitOrphanCard
+                count={benefitHighlights.reduce(
+                  (total, summary) =>
+                    total +
+                    Math.max(
+                      0,
+                      summary.event_count - summary.named_provider_event_count
+                    ),
+                  0
+                )}
+                benefitForms={benefitHighlights}
+              />
+            </div>
           </section>
         )}
 
@@ -1209,9 +1245,33 @@ function benefitFormLabel(eventType: string, eventSubtype: string | null | undef
   } as RepresentativeEvent);
 }
 
+// "Needs review" is the project's default state for every freshly
+// ingested record (the AEC/APH automated parser cannot legally
+// promote a row to "human-reviewed" until a maintainer hand-checks
+// it against the upstream PDF). In practice that means almost every
+// public-app record carries the "pending review" flag, which makes
+// the label noise — it adds vague doubt without specific
+// information. We only surface the label when it conveys real
+// signal: when a non-trivial subset (but not all) records have
+// been human-reviewed, so the reader can tell that human curation
+// is in flight on this row.
+function partialReviewDetail(
+  needsReview: number,
+  total: number
+): string {
+  if (total <= 0 || needsReview <= 0) return "";
+  if (needsReview >= total) return ""; // all unreviewed: no signal
+  const reviewed = total - needsReview;
+  return (
+    `${reviewed.toLocaleString("en-AU")} of ${total.toLocaleString("en-AU")} ` +
+    `human-reviewed against the source PDF`
+  );
+}
+
 function benefitSummaryDetail(summary: {
   event_type: string;
   event_subtype: string | null;
+  event_count: number;
   named_provider_event_count: number;
   provider_linked_event_count: number;
   reported_amount_event_count: number;
@@ -1232,9 +1292,10 @@ function benefitSummaryDetail(summary: {
     summary.reported_amount_event_count > 0
       ? `${formatMoney(summary.reported_amount_total)} reported`
       : "value not disclosed or not extracted",
-    summary.needs_review_event_count > 0
-      ? `${summary.needs_review_event_count.toLocaleString("en-AU")} pending review`
-      : "",
+    partialReviewDetail(
+      summary.needs_review_event_count,
+      summary.event_count
+    ),
     summary.missing_data_event_count > 0
       ? `${summary.missing_data_event_count.toLocaleString("en-AU")} with missing fields`
       : "",
@@ -1246,6 +1307,7 @@ function benefitSummaryDetail(summary: {
 }
 
 function benefitProviderDetail(provider: {
+  event_count: number;
   event_types: string[];
   event_subtypes: string[];
   reported_amount_event_count: number;
@@ -1264,9 +1326,10 @@ function benefitProviderDetail(provider: {
     provider.reported_amount_event_count > 0
       ? `${formatMoney(provider.reported_amount_total)} reported`
       : "value not disclosed or not extracted",
-    provider.needs_review_event_count > 0
-      ? `${provider.needs_review_event_count.toLocaleString("en-AU")} pending review`
-      : "",
+    partialReviewDetail(
+      provider.needs_review_event_count,
+      provider.event_count
+    ),
     provider.missing_data_event_count > 0
       ? `${provider.missing_data_event_count.toLocaleString("en-AU")} with missing fields`
       : "",
@@ -1652,6 +1715,185 @@ function SignalRow({
         <span>{detail}</span>
       </div>
       <small>{value}</small>
+    </div>
+  );
+}
+
+/**
+ * Cleaned-up benefit-form chip text. We pivot on subtype when present,
+ * fall back on the parent type, and humanise either way. The chip's
+ * "× N" tail is shown by the parent component.
+ */
+function benefitFormChipLabel(eventType: string, subtype: string | null): string {
+  return benefitFormLabel(eventType, subtype || null) || humanize(eventType);
+}
+
+/**
+ * One expandable card per named provider. Closed: shows the
+ * provider name, total record count, and a one-line summary
+ * (forms received + date span + reported value if any).
+ * Open: shows a per-(event-type/subtype) breakdown, the partial-
+ * review status if any, and the loaded date span — all sourced
+ * from the existing `RepresentativeBenefitProviderSummary` payload
+ * with no additional API calls.
+ *
+ * The closed view is the scannable headline a reporter or voter
+ * sees first. Click to drill in for context. Provider-first is
+ * the default sort because it matches how a reader naturally asks
+ * "who's been giving this MP what?".
+ */
+function BenefitProviderCard({
+  provider,
+  perFormCounts
+}: {
+  provider: RepresentativeBenefitProviderSummary;
+  perFormCounts: Array<{ eventType: string; subtype: string | null; count: number }>;
+}) {
+  const [open, setOpen] = useState(false);
+  const detailLine = benefitProviderDetail(provider);
+  const reviewLine = partialReviewDetail(
+    provider.needs_review_event_count,
+    provider.event_count
+  );
+  const reportedLine =
+    provider.reported_amount_event_count > 0
+      ? `${formatMoney(provider.reported_amount_total)} reported across ${
+          provider.reported_amount_event_count
+        } record${provider.reported_amount_event_count === 1 ? "" : "s"}`
+      : "No dollar value disclosed in the source for any of these records.";
+  return (
+    <div className="benefit-provider-card" data-expanded={open ? "true" : "false"}>
+      <button
+        type="button"
+        className="benefit-provider-card__head"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <div className="benefit-provider-card__title">
+          <strong>{provider.provider_name}</strong>
+          <span>{detailLine}</span>
+        </div>
+        <small className="benefit-provider-card__count">
+          {provider.event_count.toLocaleString("en-AU")}
+          <span> record{provider.event_count === 1 ? "" : "s"}</span>
+        </small>
+        <span className="benefit-provider-card__chevron" aria-hidden="true">
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </span>
+      </button>
+      {open && (
+        <div className="benefit-provider-card__body">
+          <div className="benefit-provider-card__chips">
+            {perFormCounts.map(({ eventType, subtype, count }) => (
+              <span
+                key={`${eventType}:${subtype ?? ""}`}
+                className="benefit-provider-card__chip"
+              >
+                {benefitFormChipLabel(eventType, subtype)}
+                <em>× {count.toLocaleString("en-AU")}</em>
+              </span>
+            ))}
+          </div>
+          <p className="benefit-provider-card__note">{reportedLine}</p>
+          <p className="benefit-provider-card__note">
+            Loaded date span: {voteDateSpan(
+              provider.first_event_date,
+              provider.last_event_date
+            )}
+            {provider.missing_data_event_count > 0 ? (
+              <>
+                {" · "}
+                {provider.missing_data_event_count.toLocaleString("en-AU")}{" "}
+                of {provider.event_count.toLocaleString("en-AU")} have at least
+                one missing field in the source PDF.
+              </>
+            ) : null}
+          </p>
+          {reviewLine ? (
+            <p className="benefit-provider-card__note">{reviewLine}.</p>
+          ) : null}
+          <p className="benefit-provider-card__caveat">
+            Disclosed records, not allegations of wrongdoing. Each row links
+            back to the original APH Register of Interests entry on the
+            representative's evidence page.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Single card for the records that have NO named provider in the
+ * source. We never hide these (it would violate claim discipline)
+ * — instead we surface them under one explicit "Provider not
+ * disclosed in the source" card, with the benefit-form breakdown
+ * inside.
+ */
+function BenefitOrphanCard({
+  count,
+  benefitForms
+}: {
+  count: number;
+  benefitForms: RepresentativeBenefitSummary[];
+}) {
+  const [open, setOpen] = useState(false);
+  if (count <= 0 || benefitForms.length === 0) return null;
+  return (
+    <div
+      className="benefit-provider-card benefit-provider-card--orphan"
+      data-expanded={open ? "true" : "false"}
+    >
+      <button
+        type="button"
+        className="benefit-provider-card__head"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <div className="benefit-provider-card__title">
+          <strong>
+            <HelpCircle size={13} aria-hidden="true" /> Provider not disclosed
+            in source
+          </strong>
+          <span>
+            Records where the source PDF did not name a commercial provider
+            (e.g. "Memberships" with no club, "Hospitality" with no host).
+          </span>
+        </div>
+        <small className="benefit-provider-card__count">
+          {count.toLocaleString("en-AU")}
+          <span> record{count === 1 ? "" : "s"}</span>
+        </small>
+        <span className="benefit-provider-card__chevron" aria-hidden="true">
+          {open ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+        </span>
+      </button>
+      {open && (
+        <div className="benefit-provider-card__body">
+          <div className="benefit-provider-card__chips">
+            {benefitForms.map((summary) => {
+              const orphanCount = Math.max(
+                0,
+                summary.event_count - summary.named_provider_event_count
+              );
+              if (orphanCount <= 0) return null;
+              return (
+                <span
+                  key={`${summary.event_type}:${summary.event_subtype}`}
+                  className="benefit-provider-card__chip"
+                >
+                  {benefitFormChipLabel(summary.event_type, summary.event_subtype)}
+                  <em>× {orphanCount.toLocaleString("en-AU")}</em>
+                </span>
+              );
+            })}
+          </div>
+          <p className="benefit-provider-card__caveat">
+            These records exist in the source PDFs without a commercial
+            provider attached; the project does not invent one.
+          </p>
+        </div>
+      )}
     </div>
   );
 }
