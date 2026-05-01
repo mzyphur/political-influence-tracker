@@ -631,6 +631,38 @@ def industry_aggregate(
 
 
 @app.get(
+    "/api/minister-voting-pattern",
+    tags=["Influence"],
+    summary="Per-minister voting record summarised by policy topic",
+    description=(
+        "Returns rows from `v_minister_voting_pattern`: each row "
+        "is a (minister, policy_topic) summary with division_count, "
+        "aye_count, no_count, rebellion_count. Powers questions like "
+        "'how did Mark Dreyfus vote on unconventional gas mining "
+        "divisions?' or 'which ministers rebelled most on climate "
+        "policy?'. Topics are imported from They Vote For You "
+        "(CC-BY) — `division_topic.method='third_party_civic'`. "
+        "Voting + portfolio data are both tier-1 (deterministic, "
+        "source-attributed). The view does NOT pre-judge alignment "
+        "— consumers interpret the raw votes."
+    ),
+    responses={200: {"description": "Per-minister voting summaries"}},
+)
+def minister_voting_pattern(
+    minister_name: str | None = None,
+    portfolio: str | None = None,
+    topic_slug: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict:
+    return queries.get_minister_voting_pattern(
+        minister_name=minister_name,
+        portfolio=portfolio,
+        topic_slug=topic_slug,
+        limit=limit,
+    )
+
+
+@app.get(
     "/api/contract-minister-responsibility",
     tags=["Influence"],
     summary="Contracts joined to the responsible minister via portfolio mapping",

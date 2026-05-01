@@ -6402,6 +6402,78 @@ def get_industry_aggregate(
     }
 
 
+def get_minister_voting_pattern(
+    *,
+    minister_name: str | None = None,
+    portfolio: str | None = None,
+    topic_slug: str | None = None,
+    limit: int = 100,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    """Return rows from `v_minister_voting_pattern`."""
+    where_clauses: list[str] = []
+    params: list[Any] = []
+    if minister_name:
+        where_clauses.append("lower(minister_name) = lower(%s)")
+        params.append(minister_name)
+    if portfolio:
+        where_clauses.append("lower(portfolio_label) = lower(%s)")
+        params.append(portfolio)
+    if topic_slug:
+        where_clauses.append("policy_topic_slug = %s")
+        params.append(topic_slug)
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    sql = f"""
+        SELECT
+            minister_role_id,
+            minister_person_id,
+            minister_name,
+            minister_role_title,
+            portfolio_label,
+            cabinet_ministry_label,
+            topic_id,
+            policy_topic_label,
+            policy_topic_slug,
+            division_count,
+            aye_count,
+            no_count,
+            rebellion_count,
+            earliest_vote_date,
+            latest_vote_date,
+            voting_evidence_tier,
+            portfolio_evidence_tier,
+            claim_discipline_note
+        FROM v_minister_voting_pattern
+        {where_sql}
+        ORDER BY division_count DESC, minister_name, policy_topic_label
+        LIMIT %s
+    """
+    params.append(limit)
+
+    with connect(database_url) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+
+    return {
+        "claim_discipline_caveat": (
+            "Voting data is tier 1 (APH divisions; topic linkage from "
+            "They Vote For You CC-BY). Portfolio data is tier 1 (AAO + "
+            "ministry list). The view surfaces correlation alongside "
+            "responsibility; no causation implied."
+        ),
+        "row_count": len(rows),
+        "filters": {
+            "minister_name": minister_name,
+            "portfolio": portfolio,
+            "topic_slug": topic_slug,
+            "limit": limit,
+        },
+        "rows": _jsonable(rows),
+    }
+
+
 def get_contract_minister_responsibility(
     *,
     agency: str | None = None,
