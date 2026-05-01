@@ -6402,6 +6402,102 @@ def get_industry_aggregate(
     }
 
 
+def get_donor_recipient_voting_alignment(
+    *,
+    donor_entity_id: int | None = None,
+    recipient_person_id: int | None = None,
+    donor_sector: str | None = None,
+    topic_slug: str | None = None,
+    min_donor_money_aud: float = 0,
+    limit: int = 100,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    """Return rows from `v_donor_recipient_voting_alignment`.
+
+    Per (donor entity, recipient MP, policy topic) tuple: surfaces
+    the recipient MP's voting pattern alongside the donor's
+    industry classification + total contributions. Powers the
+    headline "did MP X vote with their donors' industry interests?"
+    surface — RAW counts only. Does NOT auto-label "alignment"
+    (that would imply causation; the project's claim-discipline
+    rule prefers correlation surfaces).
+    """
+    where_clauses: list[str] = []
+    params: list[Any] = []
+    if donor_entity_id is not None:
+        where_clauses.append("donor_entity_id = %s")
+        params.append(donor_entity_id)
+    if recipient_person_id is not None:
+        where_clauses.append("recipient_person_id = %s")
+        params.append(recipient_person_id)
+    if donor_sector:
+        where_clauses.append("donor_sector = %s")
+        params.append(donor_sector)
+    if topic_slug:
+        where_clauses.append("policy_topic_slug = %s")
+        params.append(topic_slug)
+    where_clauses.append("COALESCE(donor_total_money_aud, 0) >= %s")
+    params.append(min_donor_money_aud)
+    where_sql = " WHERE " + " AND ".join(where_clauses)
+
+    sql = f"""
+        SELECT
+            donor_entity_id,
+            donor_canonical_name,
+            donor_sector,
+            recipient_person_id,
+            recipient_person_canonical_name,
+            recipient_person_display_name,
+            donor_total_money_aud,
+            donor_money_event_count,
+            topic_id,
+            policy_topic_label,
+            policy_topic_slug,
+            recipient_division_count,
+            recipient_aye_count,
+            recipient_no_count,
+            recipient_rebellion_count,
+            donor_evidence_tier,
+            recipient_voting_evidence_tier,
+            claim_discipline_note
+        FROM v_donor_recipient_voting_alignment
+        {where_sql}
+        ORDER BY
+            COALESCE(donor_total_money_aud, 0) DESC NULLS LAST,
+            recipient_division_count DESC NULLS LAST
+        LIMIT %s
+    """
+    params.append(limit)
+
+    with connect(database_url) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+
+    return {
+        "claim_discipline_caveat": (
+            "Donor amounts (deterministic, evidence tier 1) and "
+            "voting record (deterministic + They Vote For You "
+            "topic linkage CC-BY) are surfaced together for the "
+            "purpose of correlation analysis. The view does NOT "
+            "label any vote as 'aligned' or 'opposed' to the "
+            "donor's interests — that would imply causation, "
+            "which the project's claim-discipline rules forbid. "
+            "Consumers interpret the raw counts."
+        ),
+        "row_count": len(rows),
+        "filters": {
+            "donor_entity_id": donor_entity_id,
+            "recipient_person_id": recipient_person_id,
+            "donor_sector": donor_sector,
+            "topic_slug": topic_slug,
+            "min_donor_money_aud": min_donor_money_aud,
+            "limit": limit,
+        },
+        "rows": _jsonable(rows),
+    }
+
+
 def get_minister_voting_pattern(
     *,
     minister_name: str | None = None,

@@ -631,6 +631,45 @@ def industry_aggregate(
 
 
 @app.get(
+    "/api/donor-recipient-voting-alignment",
+    tags=["Influence"],
+    summary="Per (donor → recipient MP → policy topic) voting record",
+    description=(
+        "Returns rows from `v_donor_recipient_voting_alignment`: "
+        "for every donor → MP pair where both sides carry "
+        "evidence (donor donations + MP votes on tagged "
+        "divisions), surfaces the MP's voting pattern alongside "
+        "the donor's industry classification + total "
+        "contributions. RAW COUNTS ONLY — does NOT auto-label "
+        "any vote as 'aligned' or 'opposed' to the donor's "
+        "industry. That would be a causation claim the project "
+        "does not make. Consumers (researchers, journalists, "
+        "the public) interpret. Joins three evidence streams: "
+        "donor donations (tier 1), entity industry classification "
+        "(LLM tier 2), MP voting record (tier 1 + They Vote For "
+        "You topic linkage CC-BY)."
+    ),
+    responses={200: {"description": "Per donor-recipient-topic rows"}},
+)
+def donor_recipient_voting_alignment(
+    donor_entity_id: int | None = None,
+    recipient_person_id: int | None = None,
+    donor_sector: str | None = None,
+    topic_slug: str | None = None,
+    min_donor_money_aud: Annotated[float, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict:
+    return queries.get_donor_recipient_voting_alignment(
+        donor_entity_id=donor_entity_id,
+        recipient_person_id=recipient_person_id,
+        donor_sector=donor_sector,
+        topic_slug=topic_slug,
+        min_donor_money_aud=min_donor_money_aud,
+        limit=limit,
+    )
+
+
+@app.get(
     "/api/minister-voting-pattern",
     tags=["Influence"],
     summary="Per-minister voting record summarised by policy topic",
