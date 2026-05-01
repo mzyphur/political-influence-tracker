@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -433,6 +434,44 @@ def normalize_austender_csv_command(archive_dir: str) -> int:
     archive_path = Path(archive_dir).resolve()
     jsonl_path = austender_module.normalise_archive_dir(archive_path)
     print(str(Path(jsonl_path).resolve()))
+    return 0
+
+
+def normalize_grants_csv_command(csv_path_str: str) -> int:
+    """Run the GrantConnect grant-observation CSV→JSONL parser
+    against a downloaded CSV.
+
+    The csv_path is a CSV exported from data.gov.au's GrantConnect
+    dataset (CC BY 3.0 AU). The output JSONL + summary JSON land
+    under ``data/processed/grant_observations/`` with a UTC
+    timestamp.
+    """
+    from datetime import datetime, timezone
+
+    from au_politics_money.config import PROCESSED_DIR
+    from au_politics_money.ingest import grants as grants_module
+
+    csv_path = Path(csv_path_str).resolve()
+    if not csv_path.exists():
+        print(f"GrantConnect CSV not found: {csv_path}", file=sys.stderr)
+        return 2
+
+    output_dir = PROCESSED_DIR / "grant_observations"
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    output_jsonl = output_dir / f"{timestamp}.jsonl"
+    output_summary = output_dir / f"{timestamp}.summary.json"
+
+    summary = grants_module.write_jsonl_with_summary(
+        csv_path=csv_path,
+        output_jsonl=output_jsonl,
+        output_summary=output_summary,
+    )
+    print(f"Wrote {summary.record_count:,} grant records to {output_jsonl}")
+    print(f"Failed rows: {summary.failed_rows}")
+    print(f"Distinct agencies: {summary.distinct_agencies}")
+    print(f"Distinct recipients: {summary.distinct_recipients}")
+    print(f"Total grant value (AUD): ${summary.total_grant_value_aud}")
+    print(f"Summary: {output_summary}")
     return 0
 
 
@@ -1127,6 +1166,23 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
 
+    grants_normalise_parser = subparsers.add_parser(
+        "normalize-grants-csv",
+        help=(
+            "Read a downloaded GrantConnect grant-award CSV (from "
+            "data.gov.au's GrantConnect dataset, CC BY 3.0 AU) and "
+            "produce per-row JSONL plus a summary JSON under "
+            "data/processed/grant_observations/."
+        ),
+    )
+    grants_normalise_parser.add_argument(
+        "csv_path",
+        help=(
+            "Path to a GrantConnect CSV file (typically downloaded "
+            "via scripts/fetch_data_gov_au_resource.sh)."
+        ),
+    )
+
     boundary_fetch_parser = subparsers.add_parser("fetch-current-aec-boundaries")
     boundary_fetch_parser.add_argument(
         "--refetch",
@@ -1576,6 +1632,8 @@ def main() -> int:
         return classify_entities_command()
     if args.command == "normalize-austender-csv":
         return normalize_austender_csv_command(args.archive_dir)
+    if args.command == "normalize-grants-csv":
+        return normalize_grants_csv_command(args.csv_path)
     if args.command == "fetch-current-aec-boundaries":
         return fetch_current_aec_boundaries_command(args.refetch)
     if args.command == "extract-aec-boundaries":
