@@ -1,0 +1,22 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Code of conduct concern
+    url: mailto:mzyphur@instats.org?subject=%5Bcoc%5D%20political-influence-tracker
+    about: |
+      Concerns about a contributor's behaviour, or about the
+      maintainers' handling of a community-conduct issue, are
+      handled privately by email per the project's CODE_OF_CONDUCT.md.
+      Please do NOT open a public issue for these.
+  - name: Security disclosure (private)
+    url: mailto:mzyphur@instats.org?subject=%5Bsecurity%5D%20political-influence-tracker
+    about: |
+      Suspected security vulnerabilities, source-licence violations,
+      or claim-discipline bypasses go through the private security
+      channel per SECURITY.md. Please do NOT open a public issue.
+  - name: Public methodology + reproducibility docs
+    url: https://github.com/mzyphur/political-influence-tracker/tree/main/docs
+    about: |
+      The methodology, claim-discipline rules, evidence-tier
+      definitions, and reproducibility chain are documented in the
+      docs/ directory. Skim before filing if your question is
+      "what does the project claim about X?"
