@@ -5982,3 +5982,163 @@ def healthcheck(*, database_url: str | None = None) -> dict[str, Any]:
             cur.execute("SELECT 1")
             cur.fetchone()
     return {"status": "ok", "database": "ok"}
+
+
+# Caveat string returned alongside /api/stats so a public reader sees
+# the project's claim-discipline posture in the same payload as the
+# headline numbers.
+PROJECT_STATS_CAVEAT: str = (
+    "These totals span four separate evidence families (direct "
+    "disclosed person-level records, source-backed campaign-support "
+    "records, party/entity-mediated context, and modelled "
+    "allocations). The project NEVER sums across families on any "
+    "user-facing surface. The single influence_event row count below "
+    "is a loaded-row metric for transparency, not a 'money received' "
+    "headline."
+)
+
+
+def get_project_stats(*, database_url: str | None = None) -> dict[str, Any]:
+    """Return a short, public-facing snapshot of the project's database.
+
+    This is a deliberately small payload designed for embedding in
+    public dashboards, the methodology page, and the project's own
+    homepage. It is NOT a substitute for the richer
+    `get_data_coverage()` response — that one is the engineering /
+    audit view; this one is the reader-facing summary.
+
+    The numbers are read live from the database and reflect whatever
+    state the loader chain has left in place. Every field carries a
+    well-known stable key so it can be wired into HTML / RSS / JSON
+    consumers without per-call schema discovery.
+    """
+    with connect(database_url) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT
+                    count(*) AS event_count,
+                    coalesce(sum(amount), 0) AS reported_value_sum,
+                    max(event_date) AS latest_event_date
+                FROM influence_event
+                WHERE event_type <> 'rejected_record'
+                """
+            )
+            event_summary = cur.fetchone() or {}
+
+            cur.execute(
+                """
+                SELECT count(*) AS person_count
+                FROM person
+                """
+            )
+            person_summary = cur.fetchone() or {}
+
+            cur.execute(
+                """
+                SELECT count(*) AS federal_house_electorate_count
+                FROM electorate
+                WHERE chamber = 'house'
+                  AND jurisdiction_id = (
+                      SELECT id FROM jurisdiction
+                      WHERE level = 'federal'
+                      ORDER BY id
+                      LIMIT 1
+                  )
+                """
+            )
+            electorate_summary = cur.fetchone() or {}
+
+            cur.execute(
+                """
+                SELECT
+                    count(*) FILTER (WHERE review_status = 'reviewed')
+                        AS reviewed_count,
+                    count(*) FILTER (WHERE review_status = 'unresolved_no_match'
+                                  OR review_status = 'unresolved_multiple_matches')
+                        AS unresolved_count
+                FROM party_entity_link
+                """
+            )
+            party_entity_link_summary = cur.fetchone() or {
+                "reviewed_count": 0,
+                "unresolved_count": 0,
+            }
+
+            cur.execute(
+                """
+                SELECT
+                    count(*) AS row_count,
+                    count(DISTINCT postcode) AS distinct_postcode_count,
+                    count(DISTINCT electorate_id) AS distinct_electorate_count
+                FROM postcode_electorate_crosswalk
+                """
+            )
+            postcode_summary = cur.fetchone() or {}
+
+            cur.execute(
+                """
+                SELECT count(*) AS source_document_count
+                FROM source_document
+                """
+            )
+            source_summary = cur.fetchone() or {}
+
+            cur.execute(
+                """
+                SELECT max(fetched_at) AS most_recent_fetch_at
+                FROM source_document
+                """
+            )
+            recency_summary = cur.fetchone() or {}
+
+    federal_house_electorate_count = (
+        electorate_summary.get("federal_house_electorate_count") or 0
+    )
+    distinct_electorate_count = (
+        postcode_summary.get("distinct_electorate_count") or 0
+    )
+    seat_coverage_pct: float | None = None
+    if federal_house_electorate_count:
+        seat_coverage_pct = round(
+            100.0 * distinct_electorate_count / federal_house_electorate_count, 1
+        )
+
+    return _jsonable(
+        {
+            "influence_event": {
+                "row_count": event_summary.get("event_count", 0),
+                "reported_value_sum": event_summary.get("reported_value_sum", 0),
+                "latest_event_date": event_summary.get("latest_event_date"),
+            },
+            "person": {
+                "row_count": person_summary.get("person_count", 0),
+            },
+            "electorate": {
+                "federal_house_count": federal_house_electorate_count,
+            },
+            "party_entity_link": {
+                "reviewed_count": party_entity_link_summary.get("reviewed_count", 0),
+                "unresolved_count": party_entity_link_summary.get("unresolved_count", 0),
+            },
+            "postcode_electorate_crosswalk": {
+                "row_count": postcode_summary.get("row_count", 0),
+                "distinct_postcode_count": postcode_summary.get(
+                    "distinct_postcode_count", 0
+                ),
+                "distinct_electorate_count": distinct_electorate_count,
+                "federal_house_seat_coverage_percent": seat_coverage_pct,
+            },
+            "source_document": {
+                "row_count": source_summary.get("source_document_count", 0),
+                "most_recent_fetch_at": recency_summary.get(
+                    "most_recent_fetch_at"
+                ),
+            },
+            "licence": {
+                "source_code": "AGPL-3.0",
+                "source_data": "see docs/source_licences.md",
+            },
+            "caveat": PROJECT_STATS_CAVEAT,
+        }
+    )

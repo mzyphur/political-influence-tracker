@@ -1,0 +1,86 @@
+# Dependabot config for the public mirror.
+#
+# Goals:
+#   * Surface security patches on the project's three dep ecosystems
+#     (Python backend, Node frontend, GitHub Actions) with PRs the
+#     maintainer can review one at a time.
+#   * Keep CI noise low — group routine non-security updates into a
+#     weekly batch per ecosystem so the maintainer doesn't drown in
+#     PRs.
+#   * Pin the ecosystem versions Dependabot is allowed to bump
+#     against the lockfiles the project actually uses
+#     (`backend/requirements.lock`, `frontend/package-lock.json`)
+#     rather than against floating semver ranges.
+#
+# Routine dependency upgrades go through the project's normal
+# pull-request flow (the CI workflow at `.github/workflows/ci.yml`
+# runs pytest + ruff + frontend build on every PR), so a
+# Dependabot PR is gated by the same checks a human PR would face.
+
+version: 2
+
+updates:
+  - package-ecosystem: "pip"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Australia/Sydney"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "backend"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      backend-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    versioning-strategy: "lockfile-only"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Australia/Sydney"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "frontend"
+    commit-message:
+      prefix: "chore(deps)"
+      include: "scope"
+    groups:
+      frontend-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"
+    versioning-strategy: "increase-if-necessary"
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Australia/Sydney"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "ci"
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+    groups:
+      gha-minor-and-patch:
+        applies-to: version-updates
+        update-types:
+          - "minor"
+          - "patch"

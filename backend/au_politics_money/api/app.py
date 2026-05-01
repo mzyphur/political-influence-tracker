@@ -17,9 +17,107 @@ app = FastAPI(
     title="Australian Political Influence Transparency API",
     version=__version__,
     description=(
-        "Search and context API for source-backed Australian political money, "
-        "gifts, interests, lobbying, and voting records."
+        "Search and context API for source-backed Australian political "
+        "money, gifts, interests, lobbying, and voting records.\n\n"
+        "**Claim discipline.** Every record returned by this API "
+        "carries an evidence tier (`direct`, `campaign_support`, "
+        "`party_mediated`, or `modelled`) and an attribution caveat. "
+        "Direct disclosed person-level records, source-backed "
+        "campaign-support records, party/entity-mediated context, "
+        "and modelled allocations are kept as separate evidence "
+        "families and are NEVER summed into a single \"money "
+        "received\" headline by the project's own surfaces. "
+        "Consumers of this API are expected to preserve the same "
+        "separation.\n\n"
+        "**Source documents.** Every record is reproducible from "
+        "public AEC, APH, AIMS, ABS, and (optional) civic sources. "
+        "The reproducibility chain is documented at "
+        "[`docs/reproducibility.md`](https://github.com/mzyphur/political-influence-tracker/blob/main/docs/reproducibility.md). "
+        "The per-source licence audit is at "
+        "[`docs/source_licences.md`](https://github.com/mzyphur/political-influence-tracker/blob/main/docs/source_licences.md).\n\n"
+        "**Rate limits.** This API enforces a per-IP, per-minute "
+        "rate limit (configurable; defaults to 60/min). Responses "
+        "that exceed the limit return 429 with `Retry-After`. The "
+        "API is read-only — only `GET` is permitted.\n\n"
+        "**License.** The project's source code is licensed under "
+        "AGPL-3.0. Source data carries the upstream publishers' "
+        "separate licences as documented in `docs/source_licences.md`."
     ),
+    contact={
+        "name": "Project lead",
+        "email": "mzyphur@instats.org",
+        "url": "https://github.com/mzyphur/political-influence-tracker",
+    },
+    license_info={
+        "name": "AGPL-3.0",
+        "url": "https://www.gnu.org/licenses/agpl-3.0.txt",
+    },
+    openapi_tags=[
+        {
+            "name": "Health",
+            "description": "Liveness + database-readiness probes.",
+        },
+        {
+            "name": "Search",
+            "description": (
+                "Free-text search across representatives, electorates, "
+                "parties, entities, public-policy sectors, public-policy "
+                "topics, and postcodes."
+            ),
+        },
+        {
+            "name": "Map",
+            "description": "Geographic data for the federal House map.",
+        },
+        {
+            "name": "Coverage",
+            "description": (
+                "Project-wide data coverage statistics: row counts, "
+                "evidence-tier breakdowns, source-document counts, and "
+                "postcode-crosswalk completeness."
+            ),
+        },
+        {
+            "name": "State / Local",
+            "description": (
+                "State-level and council-level disclosure summaries "
+                "and records. Federal scope is the project's primary "
+                "focus through May 2026; state/local coverage expands "
+                "after the federal launch."
+            ),
+        },
+        {
+            "name": "Representatives",
+            "description": (
+                "Per-MP / per-Senator profile and evidence-event "
+                "endpoints."
+            ),
+        },
+        {
+            "name": "Entities",
+            "description": (
+                "Per-entity (donor, lobbyist client, associated "
+                "entity, or third-party campaigner) profile."
+            ),
+        },
+        {
+            "name": "Parties",
+            "description": "Per-party profile.",
+        },
+        {
+            "name": "Electorates",
+            "description": "Per-electorate profile (federal House).",
+        },
+        {
+            "name": "Influence",
+            "description": (
+                "Cross-cutting influence-context and graph endpoints. "
+                "These return labelled connections between "
+                "representatives, parties, entities, sectors, and "
+                "topics — they do NOT assert wrongdoing or causation."
+            ),
+        },
+    ],
 )
 app.add_middleware(
     CORSMiddleware,
@@ -51,12 +149,30 @@ async def rate_limit_api_requests(request: Request, call_next):
     return await call_next(request)
 
 
-@app.get("/health")
+@app.get(
+    "/health",
+    tags=["Health"],
+    summary="Process liveness probe",
+    description="Returns 200 with the package version. Does not check the database.",
+)
 def root_health() -> dict:
     return {"status": "ok", "version": __version__}
 
 
-@app.get("/api/health")
+@app.get(
+    "/api/health",
+    tags=["Health"],
+    summary="Database-backed health check",
+    description=(
+        "Returns 200 with a database-readiness summary plus the package "
+        "version. Returns 503 if the database is unavailable or not "
+        "migrated."
+    ),
+    responses={
+        200: {"description": "Service healthy"},
+        503: {"description": "Database unavailable or not migrated"},
+    },
+)
 def api_health() -> dict:
     try:
         return {**queries.healthcheck(), "version": __version__}
@@ -64,7 +180,18 @@ def api_health() -> dict:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
-@app.get("/api/search")
+@app.get(
+    "/api/search",
+    tags=["Search"],
+    summary="Search across the project's records",
+    description=(
+        "Free-text search across representatives, electorates, parties, "
+        "entities, public-policy sectors, public-policy topics, and "
+        "postcodes. The search index is deterministic — no fuzzy "
+        "matching is applied across the seven result types. Pass `types` "
+        "one or more times to restrict the result set."
+    ),
+)
 def search(
     q: Annotated[str, Query(min_length=1, description="Search text, name, party, sector, or postcode.")],
     types: Annotated[
@@ -76,7 +203,24 @@ def search(
     return queries.search_database(q, result_types=set(types) if types else None, limit=limit)
 
 
-@app.get("/api/map/electorates")
+@app.get(
+    "/api/map/electorates",
+    tags=["Map"],
+    summary="GeoJSON-style features for the federal map",
+    description=(
+        "Returns the federal House (or, optionally, Senate / state / "
+        "council) electorate features used by the public app's map. "
+        "Geometry is re-projected to EPSG:4326 and (optionally) "
+        "simplified for interactive responsiveness; the AEC's official "
+        "boundary geometry is unchanged in storage. Use "
+        "`include_geometry=false` to skip the polygons (lighter "
+        "payload for tabular consumers)."
+    ),
+    responses={
+        200: {"description": "Electorate features"},
+        400: {"description": "Invalid query parameter"},
+    },
+)
 def electorate_map(
     chamber: Annotated[str, Query(pattern="^(house|senate|state|council)$")] = "house",
     state: Annotated[str | None, Query(min_length=2, max_length=3)] = None,
@@ -101,12 +245,63 @@ def electorate_map(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get("/api/coverage")
+@app.get(
+    "/api/coverage",
+    tags=["Coverage"],
+    summary="Project data-coverage summary",
+    description=(
+        "Returns row counts, evidence-tier breakdowns, source-document "
+        "counts, and postcode-crosswalk completeness as of the "
+        "currently-loaded database state. Use this endpoint to gauge "
+        "what fraction of the federal-launch surface is covered. "
+        "This is the engineering / audit view; for a smaller, "
+        "reader-facing summary suitable for embedding in dashboards "
+        "and public pages, use `/api/stats` instead."
+    ),
+)
 def coverage() -> dict:
     return queries.get_data_coverage()
 
 
-@app.get("/api/state-local/summary")
+@app.get(
+    "/api/stats",
+    tags=["Coverage"],
+    summary="Reader-facing project stats snapshot",
+    description=(
+        "Returns a small, stable-shape JSON snapshot of the project's "
+        "headline numbers — total non-rejected `influence_event` rows, "
+        "reported-value sum, person count, federal-House electorate "
+        "count, reviewed `party_entity_link` count, postcode-crosswalk "
+        "size, federal-House-seat coverage percent, source-document "
+        "count, and the most-recent fetch timestamp. The payload "
+        "includes a `caveat` string reminding consumers that the four "
+        "evidence families are NEVER summed across families on any "
+        "user-facing surface — the single influence_event row count is "
+        "a loaded-row metric for transparency, not a 'money received' "
+        "headline.\n\n"
+        "Designed to be embedded directly in HTML / JSON dashboards / "
+        "RSS / static-site generators that want a stable schema and a "
+        "small payload."
+    ),
+)
+def project_stats() -> dict:
+    return queries.get_project_stats()
+
+
+@app.get(
+    "/api/state-local/summary",
+    tags=["State / Local"],
+    summary="State / council disclosure summary",
+    description=(
+        "Returns top-N state-level or council-level disclosure summaries "
+        "ordered by value. State / local coverage expands after the "
+        "May 2026 federal launch."
+    ),
+    responses={
+        200: {"description": "Summary"},
+        400: {"description": "Invalid query parameter"},
+    },
+)
 def state_local_summary(
     level: Annotated[str | None, Query(pattern="^(state|council|local)$")] = None,
     jurisdiction_code: Annotated[
@@ -125,7 +320,21 @@ def state_local_summary(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get("/api/state-local/records")
+@app.get(
+    "/api/state-local/records",
+    tags=["State / Local"],
+    summary="State / council disclosure records",
+    description=(
+        "Returns paginated state-level or council-level disclosure "
+        "records. Each record carries its own attribution caveat. Use "
+        "`flow_kind` to filter to a specific record family (e.g. "
+        "`qld_gift`, `vic_public_funding_payment`, `nt_annual_gift`)."
+    ),
+    responses={
+        200: {"description": "Records page"},
+        400: {"description": "Invalid query parameter"},
+    },
+)
 def state_local_records(
     level: Annotated[str | None, Query(pattern="^(state|council|local)$")] = None,
     jurisdiction_code: Annotated[
@@ -170,7 +379,23 @@ def state_local_records(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-@app.get("/api/representatives/{person_id}")
+@app.get(
+    "/api/representatives/{person_id}",
+    tags=["Representatives"],
+    summary="Per-MP / per-Senator profile",
+    description=(
+        "Returns a representative's office terms, party affiliation, "
+        "evidence-tier exposure summary (direct, campaign-support, "
+        "party-mediated, modelled), recent disclosed records, and "
+        "linked sectors / topics. The exposure summary is asymmetric "
+        "with respect to the equal-share denominator — see the "
+        "methodology page's #equal-share section for details."
+    ),
+    responses={
+        200: {"description": "Representative profile"},
+        404: {"description": "Representative not found"},
+    },
+)
 def representative_profile(person_id: int) -> dict:
     profile = queries.get_representative_profile(person_id)
     if not profile:
@@ -178,7 +403,23 @@ def representative_profile(person_id: int) -> dict:
     return profile
 
 
-@app.get("/api/representatives/{person_id}/evidence")
+@app.get(
+    "/api/representatives/{person_id}/evidence",
+    tags=["Representatives"],
+    summary="Paginated evidence events for a representative",
+    description=(
+        "Returns paginated evidence events for a representative, scoped "
+        "to one of two evidence groups: `direct` (disclosed person-level "
+        "records) or `campaign_support` (source-backed campaign-support "
+        "records). The two groups are NEVER summed at any project surface. "
+        "Cursor-based pagination."
+    ),
+    responses={
+        200: {"description": "Evidence events page"},
+        400: {"description": "Invalid query parameter"},
+        404: {"description": "Representative not found"},
+    },
+)
 def representative_evidence(
     person_id: int,
     group: Annotated[str, Query(pattern="^(direct|campaign_support)$")] = "direct",
@@ -204,7 +445,21 @@ def representative_evidence(
     return page
 
 
-@app.get("/api/entities/{entity_id}")
+@app.get(
+    "/api/entities/{entity_id}",
+    tags=["Entities"],
+    summary="Per-entity profile (donor / lobbyist client / associated entity / third-party campaigner)",
+    description=(
+        "Returns an entity's profile, including its public-policy "
+        "sectors, AEC Register pathway (if any), and the records linking "
+        "it to representatives. The entity's records are presented with "
+        "explicit evidence-tier labels."
+    ),
+    responses={
+        200: {"description": "Entity profile"},
+        404: {"description": "Entity not found"},
+    },
+)
 def entity_profile(entity_id: int) -> dict:
     profile = queries.get_entity_profile(entity_id)
     if not profile:
@@ -212,7 +467,23 @@ def entity_profile(entity_id: int) -> dict:
     return profile
 
 
-@app.get("/api/parties/{party_id}")
+@app.get(
+    "/api/parties/{party_id}",
+    tags=["Parties"],
+    summary="Per-party profile",
+    description=(
+        "Returns a party's profile including its current MPs, "
+        "associated entities, public-policy sectors, and disclosed "
+        "campaign-support exposure. Federal short-form party rows "
+        "(ALP, IND, AG, NATS, LP, LNP, ON, KAP) were consolidated with "
+        "their long-form pairs in migration 034; state-jurisdiction "
+        "rows are intentionally untouched."
+    ),
+    responses={
+        200: {"description": "Party profile"},
+        404: {"description": "Party not found"},
+    },
+)
 def party_profile(party_id: int) -> dict:
     profile = queries.get_party_profile(party_id)
     if not profile:
@@ -220,7 +491,21 @@ def party_profile(party_id: int) -> dict:
     return profile
 
 
-@app.get("/api/electorates/{electorate_id}")
+@app.get(
+    "/api/electorates/{electorate_id}",
+    tags=["Electorates"],
+    summary="Per-electorate profile (federal House)",
+    description=(
+        "Returns an electorate's profile including its current "
+        "representative, party-mediated exposure summary, and a list "
+        "of postcodes mapped to the electorate (via the AEC's "
+        "Electorate Finder)."
+    ),
+    responses={
+        200: {"description": "Electorate profile"},
+        404: {"description": "Electorate not found"},
+    },
+)
 def electorate_profile(electorate_id: int) -> dict:
     profile = queries.get_electorate_profile(electorate_id)
     if not profile:
@@ -228,7 +513,17 @@ def electorate_profile(electorate_id: int) -> dict:
     return profile
 
 
-@app.get("/api/influence-context")
+@app.get(
+    "/api/influence-context",
+    tags=["Influence"],
+    summary="Cross-cutting influence-context lookup",
+    description=(
+        "Returns labelled connections relevant to a representative, a "
+        "policy topic, or a public-policy sector. The connections are "
+        "described as recorded patterns; this endpoint does NOT assert "
+        "wrongdoing or causation."
+    ),
+)
 def influence_context(
     person_id: int | None = None,
     topic_id: int | None = None,
@@ -243,7 +538,25 @@ def influence_context(
     )
 
 
-@app.get("/api/graph/influence")
+@app.get(
+    "/api/graph/influence",
+    tags=["Influence"],
+    summary="Influence-graph nodes and edges",
+    description=(
+        "Returns a small, focused graph of nodes (representatives, "
+        "parties, entities) and edges (disclosed records, party links, "
+        "AEC Register pathways) anchored at the requested seed. Each "
+        "edge carries its evidence tier so a graph consumer can render "
+        "direct vs party-mediated vs modelled connections "
+        "differently. Returns 404 if the seed entity / party / "
+        "representative does not exist."
+    ),
+    responses={
+        200: {"description": "Graph"},
+        400: {"description": "Invalid query parameter"},
+        404: {"description": "Graph root not found"},
+    },
+)
 def influence_graph(
     person_id: int | None = None,
     party_id: int | None = None,

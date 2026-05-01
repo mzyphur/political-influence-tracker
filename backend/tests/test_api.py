@@ -121,6 +121,78 @@ def test_coverage_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     assert response.json()["active_country"] == "AU"
 
 
+def test_stats_endpoint_delegates_to_query_layer(monkeypatch) -> None:
+    monkeypatch.setattr(
+        queries,
+        "get_project_stats",
+        lambda: {
+            "influence_event": {
+                "row_count": 314040,
+                "reported_value_sum": 13483949861.89,
+                "latest_event_date": "2026-04-28",
+            },
+            "person": {"row_count": 318},
+            "electorate": {"federal_house_count": 150},
+            "party_entity_link": {
+                "reviewed_count": 148,
+                "unresolved_count": 0,
+            },
+            "postcode_electorate_crosswalk": {
+                "row_count": 448,
+                "distinct_postcode_count": 404,
+                "distinct_electorate_count": 127,
+                "federal_house_seat_coverage_percent": 84.7,
+            },
+            "source_document": {
+                "row_count": 1278,
+                "most_recent_fetch_at": "2026-04-30T23:46:53+00:00",
+            },
+            "licence": {
+                "source_code": "AGPL-3.0",
+                "source_data": "see docs/source_licences.md",
+            },
+            "caveat": "fixture-caveat",
+        },
+    )
+    client = TestClient(app)
+
+    response = client.get("/api/stats")
+
+    assert response.status_code == 200
+    payload = response.json()
+    # The reader-facing snapshot's stable-shape contract.
+    assert payload["influence_event"]["row_count"] == 314040
+    assert payload["electorate"]["federal_house_count"] == 150
+    assert (
+        payload["postcode_electorate_crosswalk"][
+            "federal_house_seat_coverage_percent"
+        ]
+        == 84.7
+    )
+    assert payload["licence"]["source_code"] == "AGPL-3.0"
+    assert "caveat" in payload
+
+
+def test_openapi_schema_carries_endpoint_tags_for_public_docs() -> None:
+    """The /docs auto-generated page is part of the project's public
+    surface as of Batch M #1; this test pins down the tag groupings
+    so a future refactor can't silently drop them.
+    """
+    client = TestClient(app)
+    schema = client.get("/openapi.json").json()
+    paths = schema["paths"]
+
+    def _tags(path: str, method: str = "get") -> list[str]:
+        return paths[path][method].get("tags", [])
+
+    assert "Search" in _tags("/api/search")
+    assert "Coverage" in _tags("/api/coverage")
+    assert "Coverage" in _tags("/api/stats")
+    assert "Map" in _tags("/api/map/electorates")
+    assert "Representatives" in _tags("/api/representatives/{person_id}")
+    assert "Influence" in _tags("/api/graph/influence")
+
+
 def test_state_local_summary_endpoint_delegates_to_query_layer(monkeypatch) -> None:
     captured = {}
 
