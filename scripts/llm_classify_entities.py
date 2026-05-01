@@ -58,14 +58,22 @@ from au_politics_money.config import PROCESSED_DIR  # noqa: E402
 from au_politics_money.llm import LLMClient, LLMResponse  # noqa: E402
 
 
-PROMPT_VERSION = "entity_industry_classification_v1"
+DEFAULT_PROMPT_VERSION = "entity_industry_classification_v1"
 MODEL_ID = "claude-sonnet-4-6"
 TASK_NAME = "entity_industry_classification"
 
-PROMPT_PATH = PROJECT_ROOT / "prompts" / "entity_industry_classification" / "v1.md"
+# v2 (2026-05-01): expanded 40-sector taxonomy with energy + mining
+# splits. Selected via --prompt-version v2 (or "entity_industry_classification_v2").
+# Runtime config:
+PROMPT_PATH_V1 = PROJECT_ROOT / "prompts" / "entity_industry_classification" / "v1.md"
+PROMPT_PATH_V2 = PROJECT_ROOT / "prompts" / "entity_industry_classification" / "v2.md"
+
+# Backward-compat alias (existing imports may reference PROMPT_PATH).
+PROMPT_PATH = PROMPT_PATH_V1
+PROMPT_VERSION = DEFAULT_PROMPT_VERSION
 
 
-VALID_PUBLIC_SECTORS: frozenset[str] = frozenset(
+VALID_PUBLIC_SECTORS_V1: frozenset[str] = frozenset(
     {
         "fossil_fuels", "mining", "renewable_energy",
         "property_development", "construction", "gambling",
@@ -81,6 +89,34 @@ VALID_PUBLIC_SECTORS: frozenset[str] = frozenset(
     }
 )
 
+# v2 taxonomy: fossil_fuels split into 5 sub-codes; mining split
+# into 3 sub-codes. v1 codes (`fossil_fuels`, `mining`) are NOT
+# valid in v2 — the model is instructed to pick a specific
+# commodity sub-code or use the residual. Schema 043 keeps both
+# v1 and v2 codes valid in the DB CHECK constraints.
+VALID_PUBLIC_SECTORS_V2: frozenset[str] = frozenset(
+    {
+        # Energy + mining splits (NEW in v2)
+        "coal", "gas", "petroleum", "uranium", "fossil_fuels_other",
+        "iron_ore", "critical_minerals", "mining_other",
+        # Unchanged from v1
+        "renewable_energy", "property_development", "construction",
+        "gambling", "alcohol", "tobacco", "finance",
+        "superannuation", "insurance", "banking", "technology",
+        "telecoms", "defence", "consulting", "law", "accounting",
+        "healthcare", "pharmaceuticals", "education", "media",
+        "sport_entertainment", "transport", "aviation",
+        "agriculture", "unions", "business_associations",
+        "charities_nonprofits", "foreign_government",
+        "government_owned", "political_entity",
+        "individual_uncoded", "unknown",
+    }
+)
+
+# Backward-compat alias used by tests and tools that import
+# VALID_PUBLIC_SECTORS without specifying a version.
+VALID_PUBLIC_SECTORS = VALID_PUBLIC_SECTORS_V1
+
 VALID_ENTITY_TYPES: frozenset[str] = frozenset(
     {
         "company", "trust", "association", "union",
@@ -92,43 +128,64 @@ VALID_ENTITY_TYPES: frozenset[str] = frozenset(
 )
 
 
-RESPONSE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["public_sector", "entity_type", "confidence", "evidence_note"],
-    "properties": {
-        "public_sector": {"type": "string", "enum": sorted(VALID_PUBLIC_SECTORS)},
-        "entity_type": {"type": "string", "enum": sorted(VALID_ENTITY_TYPES)},
-        "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
-        "evidence_note": {
-            "type": "string",
-            "description": (
-                "1-2 sentences explaining why this sector and not "
-                "another. Mention specific signals from the name."
-            ),
-        },
-    },
-}
-
-
-def _load_system_instruction() -> str:
-    """Extract the load-bearing system instruction from the v1
-    prompt markdown. The prompt file is the source of truth; this
-    script reads it at runtime so a prompt update lands without
-    requiring a code change.
+def _build_response_schema(prompt_version: str) -> dict[str, Any]:
+    """Build the response schema for a given prompt version.
+    v1 uses the 33-sector taxonomy; v2 uses the 40-sector taxonomy.
     """
-    text = PROMPT_PATH.read_text(encoding="utf-8")
-    # Find the "## System instruction" section; strip leading
-    # heading lines but keep the rest verbatim. Stop at the next
-    # "## " heading.
+    sectors = (
+        VALID_PUBLIC_SECTORS_V2
+        if prompt_version.endswith("_v2")
+        else VALID_PUBLIC_SECTORS_V1
+    )
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "public_sector",
+            "entity_type",
+            "confidence",
+            "evidence_note",
+        ],
+        "properties": {
+            "public_sector": {"type": "string", "enum": sorted(sectors)},
+            "entity_type": {"type": "string", "enum": sorted(VALID_ENTITY_TYPES)},
+            "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
+            "evidence_note": {
+                "type": "string",
+                "description": (
+                    "1-2 sentences explaining why this sector and not "
+                    "another. Mention specific signals from the name."
+                ),
+            },
+        },
+    }
+
+
+# Backward-compat: the v1 schema is still exported as
+# RESPONSE_SCHEMA for any callers that expect the constant.
+RESPONSE_SCHEMA: dict[str, Any] = _build_response_schema(
+    DEFAULT_PROMPT_VERSION
+)
+
+
+def _load_system_instruction(prompt_path: Path | None = None) -> str:
+    """Extract the load-bearing system instruction from the prompt
+    markdown file. Defaults to v1 path; v2 / future versions pass
+    `prompt_path` explicitly.
+
+    The prompt file is the source of truth; this script reads it
+    at runtime so a prompt update lands without requiring a code
+    change.
+    """
+    target = prompt_path if prompt_path is not None else PROMPT_PATH
+    text = target.read_text(encoding="utf-8")
     marker = "## System instruction"
     start = text.find(marker)
     if start < 0:
         raise RuntimeError(
-            f"Prompt v1 missing '{marker}' section: {PROMPT_PATH}"
+            f"Prompt missing '{marker}' section: {target}"
         )
     rest = text[start + len(marker):]
-    # Skip the rest of the heading line.
     if rest.startswith(" (load-bearing)"):
         rest = rest[len(" (load-bearing)"):]
     rest = rest.lstrip("\n")
@@ -136,6 +193,24 @@ def _load_system_instruction() -> str:
     if end >= 0:
         rest = rest[:end]
     return rest.strip()
+
+
+def _resolve_prompt_paths(prompt_version: str) -> tuple[str, Path, frozenset[str]]:
+    """Map a prompt-version arg ('v1' / 'v2' / full task-name) to
+    (full_prompt_version_string, prompt_md_path, valid_sectors_set).
+    """
+    short = prompt_version.lower().lstrip("v")
+    if prompt_version.endswith("_v2") or short == "2":
+        return (
+            "entity_industry_classification_v2",
+            PROMPT_PATH_V2,
+            VALID_PUBLIC_SECTORS_V2,
+        )
+    return (
+        "entity_industry_classification_v1",
+        PROMPT_PATH_V1,
+        VALID_PUBLIC_SECTORS_V1,
+    )
 
 
 def _build_user_message(
@@ -224,6 +299,9 @@ def _classify_one(
     *,
     entity: dict[str, Any],
     system_instruction: str,
+    prompt_version: str = DEFAULT_PROMPT_VERSION,
+    valid_sectors: frozenset[str] = VALID_PUBLIC_SECTORS_V1,
+    response_schema: dict[str, Any] | None = None,
 ) -> tuple[LLMResponse, dict[str, Any]]:
     canonical_name = entity["canonical_name"]
     entity_type_so_far = entity["entity_type"] or "unknown"
@@ -247,19 +325,20 @@ def _classify_one(
         entity_type_so_far=entity_type_so_far,
         additional_context=" | ".join(additional_context_parts),
     )
+    schema = response_schema if response_schema is not None else _build_response_schema(prompt_version)
     response = client.call_json(
         model_id=MODEL_ID,
-        prompt_version=PROMPT_VERSION,
+        prompt_version=prompt_version,
         system_instruction=system_instruction,
         user_message=user_message,
-        response_schema=RESPONSE_SCHEMA,
+        response_schema=schema,
         temperature=0.0,
         max_tokens=512,
     )
     parsed = response.parsed
     # Server-side enum validation should already have caught these,
     # but belt-and-braces.
-    if parsed["public_sector"] not in VALID_PUBLIC_SECTORS:
+    if parsed["public_sector"] not in valid_sectors:
         raise ValueError(
             f"Invalid public_sector {parsed['public_sector']!r} returned for "
             f"entity {entity['id']} ({canonical_name})"
@@ -277,7 +356,7 @@ def _classify_one(
         "event_count": entity["event_count"],
         "source_document_count": entity["source_document_count"],
         "llm_model_id": response.model_id,
-        "llm_prompt_version": PROMPT_VERSION,
+        "llm_prompt_version": prompt_version,
         "llm_temperature": 0.0,
         "llm_response_sha256": response.sha256,
         "llm_input_tokens": response.input_tokens,
@@ -287,7 +366,7 @@ def _classify_one(
         "new_entity_type": parsed["entity_type"],
         "confidence": parsed["confidence"],
         "evidence_note": parsed["evidence_note"],
-        "extraction_method": "llm_entity_industry_classification_v1",
+        "extraction_method": f"llm_{prompt_version}",
     }
     return response, record
 
@@ -334,7 +413,22 @@ def main(argv: list[str] | None = None) -> int:
             "Use --concurrency 1 to revert to fully sequential."
         ),
     )
+    parser.add_argument(
+        "--prompt-version", default="v1",
+        choices=["v1", "v2"],
+        help=(
+            "Prompt version to use. v1 = 33-sector taxonomy "
+            "(prompts/entity_industry_classification/v1.md); v2 = "
+            "40-sector taxonomy with energy + mining splits "
+            "(prompts/entity_industry_classification/v2.md). "
+            "Default: v1."
+        ),
+    )
     args = parser.parse_args(argv)
+
+    # Resolve prompt-version to (full_string, prompt_path, valid_sectors).
+    prompt_version, prompt_path, valid_sectors = _resolve_prompt_paths(args.prompt_version)
+    response_schema = _build_response_schema(prompt_version)
 
     if not args.database_url:
         print("DATABASE_URL must be set (export, or pass --database-url)", file=sys.stderr)
@@ -353,8 +447,8 @@ def main(argv: list[str] | None = None) -> int:
     jsonl_path = output_dir / f"{timestamp}.jsonl"
     summary_path = output_dir / f"{timestamp}.summary.json"
 
-    print(f"Loading system instruction from {PROMPT_PATH}...")
-    system_instruction = _load_system_instruction()
+    print(f"Loading system instruction (prompt {prompt_version}) from {prompt_path}...")
+    system_instruction = _load_system_instruction(prompt_path)
 
     client = LLMClient(task_name=TASK_NAME)
 
@@ -401,12 +495,15 @@ def main(argv: list[str] | None = None) -> int:
                 client,
                 entity=entity,
                 system_instruction=system_instruction,
+                prompt_version=prompt_version,
+                valid_sectors=valid_sectors,
+                response_schema=response_schema,
             )
         except Exception as exc:  # noqa: BLE001
             error_record = {
                 "entity_id": entity["id"],
                 "canonical_name": entity["canonical_name"],
-                "extraction_method": "llm_entity_industry_classification_v1",
+                "extraction_method": f"llm_{prompt_version}",
                 "error": repr(exc),
             }
             with output_lock:
@@ -474,7 +571,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     summary = {
         "task_name": TASK_NAME,
-        "prompt_version": PROMPT_VERSION,
+        "prompt_version": prompt_version,
         "model_id": MODEL_ID,
         "generated_at": timestamp,
         "concurrency": args.concurrency,
