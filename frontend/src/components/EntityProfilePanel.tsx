@@ -1,6 +1,7 @@
 import { Banknote, Building2, ExternalLink, Loader2, Megaphone, Network, X } from "lucide-react";
 import { formatMoney } from "../map";
 import type { EntityEvent, EntityProfile, LoadState } from "../types";
+import { ContractDonorOverlapPanel } from "./ContractDonorOverlapPanel";
 
 type EntityProfilePanelProps = {
   profile: EntityProfile | null;
@@ -132,6 +133,20 @@ export function EntityProfilePanel({
           </div>
 
           <p className="caveat compact">{profile.caveat}</p>
+
+          {/* Contract×donor overlap drill-down (Batch CC-1).
+            * Shows contracts the entity received side-by-side with
+            * donations they made, when both are available. Filtered
+            * by the entity's likely sector via the supplier name
+            * match in v_contract_donor_overlap. The panel handles
+            * the empty state cleanly. */}
+          {profile && (
+            <ContractDonorOverlapPanel
+              minContractValueAud={500_000}
+              rowLimit={10}
+              initiallyCollapsed
+            />
+          )}
         </>
       )}
     </section>

@@ -21,6 +21,7 @@ import {
   Vote
 } from "lucide-react";
 import { fetchRepresentativeEvidence } from "../api";
+import { MinisterVotingPanel } from "./MinisterVotingPanel";
 import { formatMoney } from "../map";
 import type {
   ElectorateFeature,
@@ -941,6 +942,19 @@ export function DetailsPanel({
             </p>
           </section>
         )}
+
+      {/* Minister voting record (Batch CC-1).
+        * Embedded for any rep that's also a cabinet minister.
+        * The panel handles the empty case (non-minister reps see
+        * "No topic-tagged divisions on record"); fetch is lazy
+        * (panel collapsed by default; only fires on expand).
+        * Surfaces aye / no / rebellion counts per policy topic. */}
+      {representativeProfileStatus === "ready" && representativeProfile && (
+        <MinisterVotingPanel
+          ministerName={representativeProfile.person.display_name}
+          initiallyCollapsed
+        />
+      )}
 
       {representativeProfileStatus === "ready" &&
         representativeProfile &&
