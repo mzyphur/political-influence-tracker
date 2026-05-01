@@ -1,5 +1,73 @@
 # Build Log
 
+## 2026-05-01 (Batch K — public-readiness sprint: Word letter exports + AGPL-3.0 source-code licence + public GitHub mirror live)
+
+Three changes landed:
+
+- **K #1: Ready-to-sign Word .docx versions of the APH + AEC GIS
+  exception letters** (commit `32660c3`). Three Word files under
+  `docs/letters/word/`: APH House, APH Senate, AEC GIS. Generated
+  from a new `scripts/generate_letter_docx.py` (committed) using
+  python-docx in a one-off `/tmp` venv (NOT added to the backend
+  lockfile — render-only dependency). Calibri 11pt, 2.5cm margins,
+  right-aligned sender block + date placeholder, left-aligned
+  recipient, bold subject line, numbered-list questions, signature
+  block. Only the letter content carries over from the markdown
+  drafts; the meta-content (status header, project context, action
+  items) does NOT appear in the Word output. The two APH variants
+  resolve the markdown draft's bracketed alternatives ("Members' /
+  Senators'", "Votes & Proceedings / Journals") so the project lead
+  doesn't have to hand-pick them. Placeholders the project lead
+  fills in before signing: `[Project Lead Name]`, sender address
+  block, `[Date]`, signature line.
+- **K #2: AGPL-3.0 source-code licence** (commit `8388cdc`).
+  Canonical GNU AGPL-3.0 text fetched from https://www.gnu.org/licenses/agpl-3.0.txt
+  on 2026-05-01 and saved at the project root as `LICENSE`. README
+  gains a "Source code licence" section above the existing
+  source-data licences section, explaining the AGPL choice and
+  clarifying that the AGPL applies to the project's code only —
+  the upstream publisher data licences in `docs/source_licences.md`
+  continue to bind regardless. The AGPL's network-service clause
+  is the load-bearing reason for the choice: anyone running a
+  modified version as a public-facing service must offer the source
+  of their modifications. `.gitignore` extended with the standard
+  `~$*` pattern so MS Word lock files don't get accidentally
+  committed when the project lead opens a `.docx` for review.
+- **K #3: Public GitHub mirror live + `METHODOLOGY_REPO_URL` wired
+  to load from `frontend/.env.local`** (commit TBD this batch).
+  Public mirror: https://github.com/mzyphur/political-influence-tracker
+  (AGPL-3.0; the project's README, methodology HTML, source code,
+  schema migrations, scripts, and ready-to-sign Word letter exports
+  are all published; `data/raw/`, `data/processed/`, `data/audit/`,
+  `.env`, `.env.*`, `node_modules/`, `.venv/`, `.claude/` continue
+  to be gitignored — none of the licensed source data leaves the
+  local working tree). `frontend/scripts/sync-methodology-version.mjs`
+  gains a tiny self-contained dotenv-style loader that reads
+  `frontend/.env.local` (then `frontend/.env`) and seeds any
+  unset `process.env` values, so a reader who clones the project
+  and drops `METHODOLOGY_REPO_URL=https://github.com/...` into
+  their gitignored `.env.local` gets the methodology-page commit
+  link wrapper automatically on the next `npm run build`. No new
+  npm dependency. `frontend/.env.example` documents the variable
+  with a recommended value pointing at the public mirror.
+  Methodology page revision marker now renders as
+  `<a href="https://github.com/mzyphur/political-influence-tracker/commit/<sha>" rel="noreferrer" target="_blank"><sha></a>`
+  inside the existing `<code data-methodology-version-sha>` tag —
+  the CSS hook still applies; the `-dirty` suffix is kept in the
+  link text but stripped from the URL (because `commit/<sha>-dirty`
+  doesn't resolve on the remote).
+
+The push of `main` to the public mirror is the project-lead-side
+finishing step (gh CLI auth requires a one-shot interactive browser
+flow that an agent context can't drive without a pre-existing PAT).
+Once `gh auth login` is completed (or `git push` is run once
+interactively from Terminal so macOS Keychain caches the
+credential), all subsequent agent pushes will succeed without
+intervention.
+
+358/358 backend pytest pass. ruff clean. frontend production build
+clean.
+
 ## 2026-05-01 (Batch J — postcode crosswalk expansion: 191 → 448 rows; 127 of 150 federal House seats surfaced; methodology page documents coverage scope + limitations)
 
 Three staged bulk-fetch PRs landed against the live AEC Electorate

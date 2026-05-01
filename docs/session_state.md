@@ -5,9 +5,11 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-05-01** (end of Batch J — three staged postcode
-crosswalk expansion runs lifted live coverage from 191 to 448
-crosswalk rows / 127 federal House electorates).
+Last updated: **2026-05-01** (end of Batch K — public GitHub mirror
+live at https://github.com/mzyphur/political-influence-tracker under
+AGPL-3.0; `METHODOLOGY_REPO_URL` wired to load from
+`frontend/.env.local`; ready-to-sign Word .docx versions of the
+APH + AEC GIS exception letters added under `docs/letters/word/`).
 
 ## Current state
 
@@ -88,6 +90,31 @@ crosswalk rows / 127 federal House electorates).
   (the actual bulk fetch is intentionally a maintainer decision, not
   an agent run). 356/356 backend pytest green. ruff clean. frontend
   build clean.
+- **Batch K — public-readiness sprint** (commits `32660c3`, `8388cdc`,
+  TBD this batch):
+  - **K #1**: ready-to-sign Word .docx versions of the APH + AEC GIS
+    exception letters under `docs/letters/word/` (3 files: APH House,
+    APH Senate, AEC GIS); generator at `scripts/generate_letter_docx.py`;
+    python-docx installed in a one-off `/tmp` venv (not added to the
+    backend lockfile — render-only dependency).
+  - **K #2**: AGPL-3.0 source-code licence at `LICENSE`; README gains
+    a "Source code licence" section explaining the AGPL choice;
+    `.gitignore` extended with `~$*` so MS Word lock files don't
+    accidentally get committed.
+  - **K #3**: public GitHub mirror live at
+    https://github.com/mzyphur/political-influence-tracker;
+    `METHODOLOGY_REPO_URL` wired to load from
+    `frontend/.env.local` (or `.env`) via a tiny self-contained
+    dotenv loader added to `frontend/scripts/sync-methodology-version.mjs`
+    (no new npm dependency); `frontend/.env.example` documents the
+    variable; the methodology-page revision marker now renders as
+    a clickable `commit/<sha>` link automatically on every build.
+  - **Push of `main` to the public mirror** is the project-lead-side
+    finishing step. The repo is initialised, the remote is added,
+    and the working tree is clean. `gh auth login` (interactive
+    browser device-flow) needs to be run once by the project lead;
+    after that all agent pushes work seamlessly.
+
 - **Batch J — postcode crosswalk expansion** (no new source-file
   changes; pure live-data round; commits TBD this batch):
   - **J #1**: 195-postcode QLD/SA/WA/TAS focus run (every 20th
@@ -483,10 +510,10 @@ Modified:
   `docs/influence_network_model.md`, `docs/operations.md`,
   `docs/reproducibility.md`
 
-## When you start: Batches D + E + F + G + H + I + J are closed; next-step menu
+## When you start: Batches D + E + F + G + H + I + J + K are closed; next-step menu
 
 The federal-launch path is structurally complete. Live data state at
-end of Batch J:
+end of Batch K:
 
 - 314,040 non-rejected `influence_event` rows; $13.48B reported total.
 - 318 `person`, 150 federal House `electorate` rows.
@@ -532,12 +559,21 @@ read this:
    residential candidates remaining (after Batch I + Batch J
    excluded ~614 of them); each ~200-postcode batch lifts crosswalk
    rows by ~75-100 with a 35-60% silent-skip rate.
-3. **Methodology page permalink upgrade.** `git remote -v` shows
-   no public mirror yet. When the project publishes to GitHub /
-   GitLab / Sourcehut, set `METHODOLOGY_REPO_URL` in the build
-   environment and the marker becomes a clickable
-   `commit/<sha>` link automatically (the hook is wired and
-   idempotent — see `frontend/scripts/sync-methodology-version.mjs`).
+3. **Methodology page permalink upgrade — DONE in Batch K.**
+   Public mirror is live at
+   https://github.com/mzyphur/political-influence-tracker; the
+   `METHODOLOGY_REPO_URL` env var is wired to load from
+   `frontend/.env.local` (or `frontend/.env`) by the prebuild hook
+   so every `npm run build` automatically wraps the SHA marker in
+   a clickable `commit/<sha>` link. No further action.
+
+3a. **Project-lead-side: push `main` to the public mirror.** The
+    git remote `origin` is added; the working tree is clean; the
+    branch tracks `main`. The push needs one-time credential setup:
+    run `gh auth login` (interactive browser flow), then `gh auth
+    setup-git` so the macOS Keychain caches the credentials. After
+    that, `git push -u origin main` from this directory completes
+    the publish. Subsequent agent pushes work seamlessly.
 4. **AIMS-eAtlas browser-fetch follow-up (low priority).** The
    data.gov.au verbatim "Licence Not Specified" already drives the
    conservative blocked status; eAtlas might have additional

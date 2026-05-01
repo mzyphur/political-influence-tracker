@@ -80,7 +80,21 @@ disclosed person-level money with campaign-support records, party-
 mediated party/entity context, or modelled allocation. Every public
 claim must travel with its evidence tier and attribution limit.
 
-## Current state (live, end of Batch J — 2026-05-01)
+## Current state (live, end of Batch K — 2026-05-01)
+
+**Public mirror is live** at
+[https://github.com/mzyphur/political-influence-tracker](https://github.com/mzyphur/political-influence-tracker)
+under **AGPL-3.0**. Source-data licences in `docs/source_licences.md`
+continue to bind the data layer regardless. `data/raw/`,
+`data/processed/`, `data/audit/`, `.env`, `.env.*`, `.claude/`
+remain gitignored — none of the licensed source data has left the
+local working tree.
+
+`METHODOLOGY_REPO_URL` is wired to load from `frontend/.env.local`
+(or `frontend/.env`) via a tiny self-contained dotenv loader inside
+`frontend/scripts/sync-methodology-version.mjs`. Every `npm run
+build` automatically wraps the methodology page's revision marker
+in a clickable `commit/<sha>` link. No new npm dependency.
 
 - **Backend pytest:** 358/358 passing
 - **Backend ruff:** clean
@@ -160,6 +174,22 @@ Live database (Postgres at
   ranges 0200-0299 ACT / 0800-0899 NT, multi-electorate postcodes,
   inner-metro fragmentation). Methodology version bumped to
   2026-05-01.
+- **K**: public-readiness sprint. Three pieces:
+  (i) ready-to-sign Word .docx exports of the APH House / APH
+  Senate / AEC GIS exception letters under `docs/letters/word/`
+  (generator at `scripts/generate_letter_docx.py`; python-docx in
+  a one-off `/tmp` venv, NOT added to the backend lockfile);
+  (ii) AGPL-3.0 source-code licence at `LICENSE` + README "Source
+  code licence" section + `~$*` pattern in `.gitignore` so MS
+  Word lock files don't accidentally get committed;
+  (iii) public GitHub mirror live at
+  https://github.com/mzyphur/political-influence-tracker;
+  `METHODOLOGY_REPO_URL` wired to load from `frontend/.env.local`
+  via a tiny dotenv loader added to
+  `frontend/scripts/sync-methodology-version.mjs` (no new npm
+  dependency); `frontend/.env.example` documents the variable;
+  the methodology page revision marker now renders as a clickable
+  `commit/<sha>` link automatically on every build.
 
 ## Critical architectural decisions to preserve
 
@@ -234,9 +264,15 @@ These items are PROJECT-LEAD-side or genuinely-outside-this-session:
    `docs/letters/`. APH first (bigger blocker). Replies archive
    under `docs/letters/replies/<recipient>_<YYYYMMDD>.{pdf,txt,html}`
    per `docs/letters/README.md`.
-2. **Publish to a public git mirror.** Set `METHODOLOGY_REPO_URL` in
-   the build environment when this lands; the methodology marker
-   becomes a clickable `commit/<sha>` link automatically.
+2. **Publish to a public git mirror — DONE in Batch K.** Live at
+   https://github.com/mzyphur/political-influence-tracker (AGPL-3.0).
+   `METHODOLOGY_REPO_URL` is wired to load from `frontend/.env.local`
+   via the prebuild dotenv loader; every `npm run build`
+   auto-wraps the SHA marker in a clickable `commit/<sha>` link.
+   The first push of `main` is project-lead-side (gh CLI requires
+   one-time `gh auth login` interactive browser flow, which an
+   agent context can't drive). After that one step, all agent
+   pushes work seamlessly from this directory.
 3. **Postcode batches — Batch J completed three more staged runs**
    (614 NEW postcodes, 191 → 448 crosswalk rows / 127 of 150 federal
    House seats covered). Diminishing returns now: each ~200-postcode

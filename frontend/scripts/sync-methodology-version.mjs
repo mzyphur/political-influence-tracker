@@ -32,6 +32,43 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Minimal dotenv-style loader. Reads `.env.local` first, then `.env`
+ * (the more-specific local override wins), parsing simple
+ * `KEY=VALUE` lines. Lines beginning with `#` or empty lines are
+ * skipped. Surrounding single or double quotes around the value are
+ * stripped. An existing `process.env[KEY]` is never overwritten — an
+ * inline `KEY=value npm run build` still trumps a file-set value.
+ *
+ * No `dotenv` dependency is added; this script stays self-contained.
+ */
+function loadEnvFile(path) {
+  if (!existsSync(path)) return;
+  const content = readFileSync(path, "utf8");
+  for (const line of content.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/);
+    if (!match) continue;
+    const key = match[1];
+    let value = match[2];
+    // Strip a single matching pair of surrounding quotes.
+    if (
+      (value.startsWith('"') && value.endsWith('"')) ||
+      (value.startsWith("'") && value.endsWith("'"))
+    ) {
+      value = value.slice(1, -1);
+    }
+    if (process.env[key] === undefined) {
+      process.env[key] = value;
+    }
+  }
+}
+
+const frontendDir = join(__dirname, "..");
+loadEnvFile(join(frontendDir, ".env.local"));
+loadEnvFile(join(frontendDir, ".env"));
+
 function findGitRoot(start) {
   let current = start;
   while (current && current !== "/" && current.length > 1) {
