@@ -19,10 +19,10 @@
  */
 
 import { useEffect, useState } from "react";
-import { Banknote, Briefcase, ChevronDown, ChevronUp, Loader2 } from "lucide-react";
-import { fetchIndustryAggregate } from "../api";
+import { Banknote, Briefcase, ChevronDown, ChevronUp, Gift, Loader2, Plane } from "lucide-react";
+import { fetchIndustryAnatomy } from "../api";
 import { formatMoney } from "../map";
-import type { IndustryAggregateRow, LoadState } from "../types";
+import type { IndustryAnatomyRow, LoadState } from "../types";
 
 const FRIENDLY_SECTOR_LABELS: Record<string, string> = {
   fossil_fuels: "Fossil fuels (general)",
@@ -84,7 +84,7 @@ export function IndustryActivityCard({
   initiallyCollapsed = false,
   rowLimit = 12
 }: IndustryActivityCardProps) {
-  const [rows, setRows] = useState<IndustryAggregateRow[]>([]);
+  const [rows, setRows] = useState<IndustryAnatomyRow[]>([]);
   const [status, setStatus] = useState<LoadState>("idle");
   const [error, setError] = useState<string>("");
   const [caveat, setCaveat] = useState<string>("");
@@ -95,12 +95,12 @@ export function IndustryActivityCard({
     let cancelled = false;
     setStatus("loading");
     setError("");
-    fetchIndustryAggregate({ limit: 200 })
+    fetchIndustryAnatomy({ limit: 200 })
       .then((response) => {
         if (cancelled) return;
-        // Filter out duplicate-sector rows (some sectors come from
-        // multiple prompt versions; we surface highest activity).
-        const seen = new Map<string, IndustryAggregateRow>();
+        // Filter out duplicate-sector rows (multiple v1/v2 prompt
+        // versions can yield duplicates; pick highest-activity row).
+        const seen = new Map<string, IndustryAnatomyRow>();
         for (const row of response.rows) {
           const existing = seen.get(row.sector);
           const score =
@@ -112,13 +112,15 @@ export function IndustryActivityCard({
           if (!existing || score > existingScore) seen.set(row.sector, row);
         }
         const dedup = Array.from(seen.values());
-        // Filter out the catch-alls that aren't useful for industry analysis.
+        // Filter out catch-alls that aren't useful for industry analysis.
         const filtered = dedup.filter(
           (r) =>
             r.sector !== "unknown" &&
             r.sector !== "individual_uncoded" &&
             ((r.total_money_aud ?? 0) > 0 ||
-              (r.total_contract_value_aud ?? 0) > 0)
+              (r.total_contract_value_aud ?? 0) > 0 ||
+              (r.gift_count ?? 0) > 0 ||
+              (r.sponsored_travel_count ?? 0) > 0)
         );
         filtered.sort((a, b) => {
           const sa =
@@ -146,11 +148,11 @@ export function IndustryActivityCard({
       <header className="industry-activity-header">
         <div>
           <span className="result-type">Industry activity (federal)</span>
-          <h3>By industry sector — donations vs contracts</h3>
+          <h3>Influence anatomy by sector</h3>
           <p className="muted small">
-            Tier 1 (donor) and tier 2 (contract) totals are surfaced
-            side-by-side. Never summed across the boundary. See{" "}
-            <a href="/methodology.html#evidence-tiers">methodology</a>.
+            Every evidence stream surfaced side-by-side: donations,
+            gifts, sponsored travel, contracts. Never summed across
+            tiers. See <a href="/methodology.html#evidence-tiers">methodology</a>.
           </p>
         </div>
         <button
@@ -186,14 +188,22 @@ export function IndustryActivityCard({
                 <thead>
                   <tr>
                     <th scope="col">Sector</th>
-                    <th scope="col" className="numeric">
-                      <Banknote size={13} aria-hidden="true" /> Donations <span className="tier-pill tier-1">tier 1</span>
+                    <th scope="col" className="numeric" title="Direct + party-mediated donations (deterministic, evidence tier 1)">
+                      <Banknote size={13} aria-hidden="true" /> Donations
+                      <span className="tier-pill tier-1">t1</span>
                     </th>
-                    <th scope="col" className="numeric">
-                      <Briefcase size={13} aria-hidden="true" /> Contracts <span className="tier-pill tier-2">tier 2</span>
+                    <th scope="col" className="numeric" title="Disclosed gifts received by MPs from sector entities (LLM-extracted from APH register, evidence tier 2)">
+                      <Gift size={13} aria-hidden="true" /> Gifts
+                      <span className="tier-pill tier-2">t2</span>
                     </th>
-                    <th scope="col" className="numeric">Donor entities</th>
-                    <th scope="col" className="numeric">Contracts</th>
+                    <th scope="col" className="numeric" title="Sponsored travel funded by sector entities (LLM-extracted, evidence tier 2)">
+                      <Plane size={13} aria-hidden="true" /> Travel
+                      <span className="tier-pill tier-2">t2</span>
+                    </th>
+                    <th scope="col" className="numeric" title="Government contract awards (LLM-tagged, evidence tier 2)">
+                      <Briefcase size={13} aria-hidden="true" /> Contracts
+                      <span className="tier-pill tier-2">t2</span>
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -201,15 +211,23 @@ export function IndustryActivityCard({
                     <tr key={row.sector}>
                       <th scope="row">{friendlySectorLabel(row.sector)}</th>
                       <td className="numeric">
-                        {row.total_money_aud != null ? formatMoney(row.total_money_aud) : "—"}
+                        {row.total_money_aud != null
+                          ? formatMoney(row.total_money_aud)
+                          : "—"}
+                      </td>
+                      <td className="numeric">
+                        {(row.gift_count ?? 0) > 0 ? row.gift_count : "—"}
+                      </td>
+                      <td className="numeric">
+                        {(row.sponsored_travel_count ?? 0) > 0
+                          ? row.sponsored_travel_count
+                          : "—"}
                       </td>
                       <td className="numeric">
                         {row.total_contract_value_aud != null
                           ? formatMoney(row.total_contract_value_aud)
                           : "—"}
                       </td>
-                      <td className="numeric">{row.distinct_donor_entities ?? "—"}</td>
-                      <td className="numeric">{row.contract_count ?? "—"}</td>
                     </tr>
                   ))}
                 </tbody>
