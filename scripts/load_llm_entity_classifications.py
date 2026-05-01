@@ -288,17 +288,27 @@ def main(argv: list[str] | None = None) -> int:
             file_promoted = 0
             file_failed = 0
             for line_no, record in _read_records(jsonl_path):
+                # Use a SAVEPOINT per row so that a single failing
+                # entity_type promotion (e.g. UniqueViolation on
+                # entity_normalized_type_idx) only rolls back that
+                # one row, not all the previous successful upserts
+                # in the current file's transaction.
+                with conn.cursor() as cur:
+                    cur.execute("SAVEPOINT row_attempt")
                 try:
                     inserted, promoted = _upsert_classification(conn, record)
                 except Exception as exc:  # noqa: BLE001
                     file_failed += 1
                     total_failed += 1
-                    conn.rollback()
+                    with conn.cursor() as cur:
+                        cur.execute("ROLLBACK TO SAVEPOINT row_attempt")
                     print(
                         f"  [{jsonl_path.name}:{line_no}] failed: {exc!r}",
                         file=sys.stderr,
                     )
                     continue
+                with conn.cursor() as cur:
+                    cur.execute("RELEASE SAVEPOINT row_attempt")
                 if inserted:
                     file_loaded += 1
                     total_loaded += 1

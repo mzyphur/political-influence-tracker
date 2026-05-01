@@ -502,6 +502,8 @@
           <a href="#campaign-support-tiers">Campaign support tiers</a>
           <a href="#postcode-coverage">Postcode coverage</a>
           <a href="#llm-assisted-extraction">LLM-assisted extraction</a>
+          <a href="#cross-correlation-views">Cross-correlation views</a>
+          <a href="#influence-streams-reference">Influence streams</a>
           <a href="#reproducibility">Reproduce these numbers</a>
           <a href="#claims">Claim discipline</a>
           <a href="#version">Version</a>
@@ -1177,6 +1179,129 @@
             The full architectural discussion lives at
             <a href="https://github.com/mzyphur/political-influence-tracker/blob/main/docs/llm_extraction_pipeline.md" rel="noreferrer" target="_blank">docs/llm_extraction_pipeline.md</a>.
           </p>
+
+          <h3 id="llm-stages-status">LLM extraction stages — current status</h3>
+          <p>
+            Five LLM-assisted extraction stages are in production
+            against federal Australian government data. Each stage has
+            a versioned prompt, hash-cached responses, and an inter-rater
+            reliability baseline against the project's
+            <a href="https://github.com/mzyphur/political-influence-tracker/blob/main/docs/scientific_validation_protocol.md" rel="noreferrer" target="_blank">scientific validation protocol</a>.
+          </p>
+          <ul>
+            <li>
+              <strong>Stage 1 — Entity industry classification.</strong>
+              28,218 entities classified at v1 (33-sector taxonomy);
+              23,631 still-unknown entities re-classified at v2
+              (40-sector taxonomy with energy + mining commodity
+              splits — coal / gas / petroleum / uranium / iron_ore /
+              critical_minerals / mining_other). Cost: $104 USD (v1) +
+              $87 USD (v2). v1↔v2 inter-rater reliability:
+              <strong>Cohen's κ = 0.887 (almost perfect)</strong> on
+              N=23,500 overlap entities.
+            </li>
+            <li>
+              <strong>Stage 2 — Register of Interests deep extraction.</strong>
+              3,547 disclosure items extracted from 2,852 House register
+              sections (post-skip of preamble + nil returns). Items
+              include 347 gifts, 256 sponsored travel rows, 645
+              memberships, 702 investments, 370 liabilities. Top gift
+              providers surfaced: Qantas (55 gifts to 43 distinct MPs),
+              Virgin (37 to 28 MPs), Foxtel (25 to 25 MPs). Cost: $11 USD.
+            </li>
+            <li>
+              <strong>Stage 3 — AusTender contract topic tagging.</strong>
+              v1 (Haiku 4.5) + v2 (Sonnet 4.6) pilot of 700 contracts;
+              v3 prompt drafted with 40-sector taxonomy. v1↔v2 IRR:
+              κ = 0.76 (substantial). Full 73,458-contract corpus run
+              pending. Cost projection: $400 USD regular API or $200 USD
+              via Anthropic Batches API (50% off).
+            </li>
+            <li>
+              <strong>Stage 3-grants — GrantConnect grant tagging
+              (parallel to Stage 3).</strong> Pipeline scaffolded
+              end-to-end: parser, loader, CLI command, LLM tagger
+              prompt + driver. Awaiting first GrantConnect CSV
+              download from data.gov.au. Cost projection: $275 USD/year
+              federal grants.
+            </li>
+            <li>
+              <strong>Stage 4a — Portfolio → agency → minister mapping
+              (deterministic, no LLM).</strong> 9 cabinet ministries
+              seeded covering federal Albanese 2nd Cabinet + all 8
+              state/territory governments (Minns NSW, Allan VIC,
+              Crisafulli QLD, Cook WA, Malinauskas SA, Rockliff TAS,
+              Barr ACT, Finocchiaro NT). 73 portfolio-agency mappings
+              + 76 cabinet ministers. Closes the structural influence-
+              narrative gap: contracts → ministers → portfolio →
+              donor.
+            </li>
+          </ul>
+
+          <h3 id="cross-correlation-views">Cross-source correlation surfaces</h3>
+          <p>
+            The project's headline pro-democracy transparency views
+            join multiple evidence streams per industry sector. They
+            surface tier-1 (deterministic) and tier-2 (LLM-tagged)
+            amounts as <em>separate columns</em>; the project's claim-
+            discipline rule prohibits summing across evidence tiers.
+          </p>
+          <ul>
+            <li>
+              <strong><code>v_industry_anatomy</code></strong> — THE
+              comprehensive view: per-sector aggregation of donations
+              + gifts + sponsored travel + memberships + investments
+              + contracts. Every evidence stream side-by-side.
+            </li>
+            <li>
+              <strong><code>v_contract_donor_overlap</code></strong> —
+              entities that received Australian Government contracts
+              AND appear as donors / gift-givers / hosts in disclosure
+              records.
+            </li>
+            <li>
+              <strong><code>v_contract_minister_responsibility</code></strong>
+              — every tagged contract joined to the responsible minister
+              + portfolio (via the Stage 4a portfolio mapping). Powers
+              "did supplier X donate to the minister whose portfolio
+              oversaw the agency that paid X?" surfaces.
+            </li>
+            <li>
+              <strong><code>v_donor_recipient_voting_alignment</code></strong>
+              — per (donor → recipient MP → policy topic) tuple:
+              donor's industry + donation amount alongside the
+              recipient MP's voting record on topics affecting that
+              industry. RAW counts only — the view does NOT auto-
+              label any vote as "aligned" or "opposed". That would
+              imply causation; the project's claim-discipline rule
+              forbids.
+            </li>
+            <li>
+              <strong><code>v_sector_money_outflow</code></strong> —
+              per-sector contract awards + grant awards (Stage 3 +
+              Stage 3-grants). The comprehensive
+              government-money-outflow view.
+            </li>
+            <li>
+              <strong><code>v_lobbyist_client_influence_overlap</code></strong>
+              — three-way correlation: lobbyist firm + client + client
+              donations. Schema ready; loader pending Stage 4b actual
+              register fetch.
+            </li>
+          </ul>
+
+          <h3 id="influence-streams-reference">Comprehensive influence-streams reference</h3>
+          <p>
+            For a full audit of every input stream (donations, gifts,
+            travel, memberships, lobbyist representation, etc.) and
+            every outcome stream (contracts, grants, voting record,
+            etc.) the project tracks or plans to track, see
+            <a href="https://github.com/mzyphur/political-influence-tracker/blob/main/docs/influence_streams_reference.md" rel="noreferrer" target="_blank">docs/influence_streams_reference.md</a>.
+            14 input streams + 17 outcome streams catalogued, each
+            with status (LIVE / SCAFFOLDED / NOT YET LOADED / NOT
+            STARTED), source, evidence tier, and the user-facing
+            question it answers.
+          </p>
         </article>
 
         <article class="panel wide" id="reproducibility">
@@ -1317,7 +1442,7 @@ make reproduce-federal</code></pre>
           <strong>Methodology version:</strong>
           <code data-methodology-version-date>2026-05-01</code>
           &middot; Internal revision marker
-          <code data-methodology-version-sha><a href="https://github.com/mzyphur/political-influence-tracker/commit/0c9dc27" rel="noreferrer" target="_blank">0c9dc27-dirty</a></code>
+          <code data-methodology-version-sha><a href="https://github.com/mzyphur/political-influence-tracker/commit/175591c" rel="noreferrer" target="_blank">175591c-dirty</a></code>
           (auto-injected at build time from
           <code>git rev-parse --short HEAD</code>; the committed values are a
           fallback for readers who run the dev server without first running
