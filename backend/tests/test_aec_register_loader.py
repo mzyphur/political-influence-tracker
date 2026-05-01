@@ -855,6 +855,135 @@ def test_personality_vehicle_party_row_surfaces_flag_in_api(
     )
 
 
+def test_federal_party_exposure_does_not_include_state_jurisdiction_rows(
+    integration_db: IntegrationDatabase,  # noqa: F811
+) -> None:
+    """Sub-national rollout regression guard (Batch R PR 3).
+
+    The `_representative_party_exposure_summary` query is anchored on
+    `office_term.party_id`. For a federal MP, `office_term.party_id`
+    points at a FEDERAL canonical party row; the function MUST NOT
+    return any state-jurisdiction party rows on the federal MP's
+    profile, regardless of any state-jurisdiction party_entity_link
+    rows that may have been emitted by the dual-call resolver loader.
+
+    This test seeds:
+      * A federal canonical ALP row + an office_term linking the MP to
+        it (federal exposure surface).
+      * A QLD-jurisdiction ALP row + a party_entity_link from that
+        QLD row to the same entity the federal row also links to. (As
+        the dual-call resolver would emit.)
+      * A recipient-side influence_event tied to that entity.
+
+    Then asserts that the API surface for the federal MP returns the
+    federal row and does NOT return the QLD row.
+
+    The new `party_jurisdiction_code` field on each row MUST equal
+    'CWLTH' for the federal row.
+    """
+    from au_politics_money.api.queries import (
+        _representative_party_exposure_summary,
+    )
+
+    with connect(integration_db.url) as conn:
+        federal_alp_id = _seed_canonical_alp_party(conn)
+        qld_alp_id = _seed_qld_alp_party(conn)
+        with conn.cursor() as cur:
+            # Re-point the integration fixture's office_term at the
+            # FEDERAL ALP so the surface returns it.
+            cur.execute(
+                "UPDATE office_term SET party_id = %s WHERE person_id = %s",
+                (federal_alp_id, integration_db.person_id),
+            )
+            # Add party_entity_link rows for BOTH federal AND QLD ALP
+            # parties pointing at the same entity (as the dual-call
+            # resolver would emit).
+            for party_id in (federal_alp_id, qld_alp_id):
+                cur.execute(
+                    """
+                    INSERT INTO party_entity_link (
+                        party_id, entity_id, link_type, method, confidence,
+                        review_status, reviewer, reviewed_at,
+                        evidence_note, metadata
+                    )
+                    VALUES (
+                        %s, %s, 'exact_party_entity', 'official',
+                        'exact_identifier', 'reviewed',
+                        'pytest:state-rollout-regression', now(),
+                        'Pytest dual-call simulation', '{}'::jsonb
+                    )
+                    ON CONFLICT (party_id, entity_id, link_type) DO NOTHING
+                    """,
+                    (party_id, integration_db.entity_id),
+                )
+
+            # Add a recipient-side event so
+            # `_party_reviewed_money_summary` returns a non-empty roll-up
+            # for both party rows.
+            cur.execute(
+                "SELECT id FROM jurisdiction WHERE code = 'CWLTH'"
+            )
+            cwlth_id = int(cur.fetchone()[0])
+            cur.execute(
+                "SELECT id FROM source_document WHERE source_id = 'pytest-source' LIMIT 1"
+            )
+            source_document_id = int(cur.fetchone()[0])
+            cur.execute(
+                """
+                INSERT INTO influence_event (
+                    external_key, event_family, event_type,
+                    recipient_entity_id, recipient_raw_name,
+                    jurisdiction_id, amount, amount_status, event_date,
+                    chamber, disclosure_system, evidence_status,
+                    extraction_method, review_status,
+                    description, source_document_id, source_ref,
+                    missing_data_flags, metadata
+                )
+                VALUES (
+                    'pytest:state-rollout:recipient-event',
+                    'money', 'donation_or_gift',
+                    %s, 'Australian Labor Party',
+                    %s, 4242.42, 'reported', '2026-04-15', 'house',
+                    'pytest fixture', 'official_record_parsed',
+                    'fixture_seed', 'not_required',
+                    'Pytest fixture event with party-linked entity as recipient.',
+                    %s, 'pytest-state-rollout', '[]'::jsonb, '{}'::jsonb
+                )
+                """,
+                (integration_db.entity_id, cwlth_id, source_document_id),
+            )
+            conn.commit()
+
+        summary = _representative_party_exposure_summary(
+            conn, person_id=integration_db.person_id
+        )
+
+    surfaced_party_ids = {int(row["party_id"]) for row in summary}
+    assert federal_alp_id in surfaced_party_ids, (
+        "Federal MP's profile should surface the federal canonical ALP "
+        "row via office_term."
+    )
+    assert qld_alp_id not in surfaced_party_ids, (
+        "Federal MP's profile MUST NOT include the QLD-jurisdiction ALP "
+        "row, even though a party_entity_link to that entity exists. "
+        "This is the load-bearing 'no cross-jurisdiction conflation' "
+        "guarantee for the sub-national rollout."
+    )
+
+    # The new party_jurisdiction_code field must reach the API response.
+    federal_row = next(
+        row for row in summary if int(row["party_id"]) == federal_alp_id
+    )
+    assert federal_row["party_jurisdiction_code"] == "CWLTH", (
+        f"Federal ALP row should have party_jurisdiction_code='CWLTH'; "
+        f"got {federal_row['party_jurisdiction_code']!r}"
+    )
+    assert federal_row["party_jurisdiction_level"] == "federal", (
+        f"Federal ALP row should have party_jurisdiction_level='federal'; "
+        f"got {federal_row['party_jurisdiction_level']!r}"
+    )
+
+
 def test_get_or_create_party_preserves_curated_short_name_post_dedup(
     integration_db: IntegrationDatabase,  # noqa: F811
     tmp_path: Path,
@@ -970,7 +1099,106 @@ def test_source_jurisdiction_disambiguates_federal_vs_state_alp_rows(
         "federal-jurisdiction ALP row."
     )
     assert links, "No reviewed links were created"
-    assert all(link[0] == federal_alp_id for link in links), (
-        f"Reviewed links must point to the federal-jurisdiction ALP row "
-        f"(id={federal_alp_id}); got {links}"
+    federal_link_party_ids = {link[0] for link in links}
+    # The federal canonical ALP must be present.
+    assert federal_alp_id in federal_link_party_ids, (
+        f"Reviewed links must include the federal-jurisdiction ALP row "
+        f"(id={federal_alp_id}); got {federal_link_party_ids}"
+    )
+    # As of the state-rollout dual-call, the QLD-jurisdiction row may
+    # also be linked when the segment carries a state-branch suffix.
+    # The "(NSW Branch)" segment in this fixture is detected as NSW, so
+    # NO QLD link is expected — only the federal one. (Assert this
+    # explicitly to guard against false-positive cross-jurisdiction
+    # fan-out.)
+    assert qld_alp_id not in federal_link_party_ids, (
+        f"NSW-branch segment should NOT produce a link to the QLD-"
+        f"jurisdiction ALP row (id={qld_alp_id}); got {federal_link_party_ids}"
+    )
+
+
+def test_qld_state_branch_emits_dual_links_to_federal_and_state_alp(
+    integration_db: IntegrationDatabase,  # noqa: F811
+    tmp_path: Path,
+) -> None:
+    """Dual-call regression guard for the sub-national rollout (Batch R).
+
+    When a register-row segment names "Australian Labor Party (State of
+    Queensland)", the loader's dual-call resolver must emit TWO
+    reviewed `party_entity_link` rows:
+      1. One to the federal canonical ALP row (existing behaviour).
+      2. One to the QLD-jurisdiction ALP row (new behaviour).
+
+    The federal link is the unchanged pre-rollout output; the QLD link
+    is the new state-side fan-out. Both are reviewed/official links
+    pointing at the SAME entity, just with different `party_id`s.
+
+    The unique-constraint on `party_entity_link` is
+    `(party_id, entity_id, link_type)`, so the two rows coexist
+    cleanly. The result counters distinguish them via
+    `reviewed_party_entity_links_upserted` (federal) and
+    `state_party_entity_links_upserted` (state).
+
+    Crucially this DOES NOT change direct-money totals — that
+    invariant is guarded by
+    test_loader_does_not_change_direct_representative_money_totals
+    elsewhere in this file.
+    """
+    with connect(integration_db.url) as conn:
+        federal_alp_id = _seed_canonical_alp_party(conn)
+        qld_alp_id = _seed_qld_alp_party(conn)
+        assert federal_alp_id != qld_alp_id, (
+            "Test must seed two distinct ALP rows in different jurisdictions"
+        )
+        conn.commit()
+        jsonl_path, summary_path = _write_artefacts(
+            tmp_path,
+            "associatedentity",
+            [
+                {
+                    "ClientIdentifier": "70043",
+                    "ClientName": "Fixture QLD Dual Link Holdings Pty Ltd",
+                    "AssociatedParties": "Australian Labor Party (State of Queensland); ",
+                }
+            ],
+            timestamp="20260501T000000Z",
+        )
+        result = load_aec_register_of_entities(
+            conn,
+            client_type="associatedentity",
+            jsonl_path=jsonl_path,
+            summary_path=summary_path,
+        )
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT party_id
+                FROM party_entity_link
+                WHERE reviewer = %s
+                  AND review_status = 'reviewed'
+                  AND method = 'official'
+                  AND metadata->>'aec_register_client_identifier' = '70043'
+                """,
+                (SYSTEM_REVIEWER,),
+            )
+            party_ids = {int(row[0]) for row in cur.fetchall()}
+
+    # The federal canonical ALP link must exist (pre-rollout invariant).
+    assert federal_alp_id in party_ids, (
+        f"Expected federal canonical ALP row (id={federal_alp_id}) in the "
+        f"reviewed party_entity_link rows for this entity; got {party_ids}"
+    )
+    # The QLD-jurisdiction ALP link must also exist (state-rollout fan-out).
+    assert qld_alp_id in party_ids, (
+        f"Expected QLD-jurisdiction ALP row (id={qld_alp_id}) in the "
+        f"reviewed party_entity_link rows; the dual-call resolver did not "
+        f"fan out the state-side link. Got {party_ids}"
+    )
+    # Result counters must reflect the two separate fan-outs.
+    assert result["reviewed_party_entity_links_upserted"] >= 1, (
+        "Federal-side link counter not incremented"
+    )
+    assert result["state_party_entity_links_upserted"] >= 1, (
+        "State-side link counter not incremented; the dual-call did not "
+        "emit a state link as expected."
     )

@@ -418,6 +418,19 @@ export type RepresentativePartyExposureSummary = {
    * `schema/037_seed_candidate_vehicle_party_rows.sql` for personality-
    * vehicle parties. Display alongside the chip when present. */
   affiliated_person_hint: string | null;
+  /** Sub-national rollout (Batch R). The party row's jurisdiction so
+   * the frontend can render federal vs state-jurisdiction party-
+   * mediated exposure in distinct sections. For the federal launch,
+   * every row returned by `_representative_party_exposure_summary`
+   * is federal (the office_term-anchored query only finds the MP's
+   * currently-seated party, which is federal). State-jurisdiction
+   * rows will reach the response only via a future bridge layer.
+   * `party_jurisdiction_code` matches `jurisdiction.code` in the DB
+   * (e.g. `"CWLTH"` for federal, `"QLD"` / `"NSW"` / etc. for state). */
+  party_jurisdiction_id: number | null;
+  party_jurisdiction_code: string | null;
+  party_jurisdiction_level: string | null;
+  party_jurisdiction_name: string | null;
   claim_scope: string;
 };
 

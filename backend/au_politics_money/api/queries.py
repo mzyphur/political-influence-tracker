@@ -4606,9 +4606,21 @@ def _representative_party_exposure_summary(
             (party.metadata->>'is_personality_vehicle' = 'true')
                 AS is_personality_vehicle,
             party.metadata->>'affiliated_person_hint'
-                AS affiliated_person_hint
+                AS affiliated_person_hint,
+            -- Sub-national rollout (Batch R). Surface the party row's
+            -- jurisdiction so the frontend can render federal vs
+            -- state-jurisdiction party-mediated exposure in distinct
+            -- panels. Federal-launch surface only includes office-term
+            -- federal-party rows; state-jurisdiction rows reach the
+            -- API only via a future bridge layer (deferred).
+            party.jurisdiction_id AS party_jurisdiction_id,
+            party_jurisdiction.code AS party_jurisdiction_code,
+            party_jurisdiction.level AS party_jurisdiction_level,
+            party_jurisdiction.name AS party_jurisdiction_name
         FROM office_term
         JOIN party ON party.id = office_term.party_id
+        LEFT JOIN jurisdiction party_jurisdiction
+          ON party_jurisdiction.id = party.jurisdiction_id
         LEFT JOIN electorate ON electorate.id = office_term.electorate_id
         LEFT JOIN (
             SELECT party_id, count(DISTINCT person_id) AS current_representative_count
@@ -4688,6 +4700,19 @@ def _representative_party_exposure_summary(
                     party.get("is_personality_vehicle")
                 ),
                 "affiliated_person_hint": party.get("affiliated_person_hint"),
+                # Sub-national rollout (Batch R). The party row's
+                # jurisdiction is surfaced so the frontend can render
+                # federal vs state-jurisdiction party-mediated exposure
+                # in distinct sections. For the federal launch, every
+                # row returned here is federal (the office_term-anchored
+                # query only finds the MP's currently-seated party,
+                # which is federal); state-jurisdiction rows reach the
+                # API only via a future bridge layer (deferred per
+                # docs/sub_national_party_seeds_plan.md).
+                "party_jurisdiction_id": party.get("party_jurisdiction_id"),
+                "party_jurisdiction_code": party.get("party_jurisdiction_code"),
+                "party_jurisdiction_level": party.get("party_jurisdiction_level"),
+                "party_jurisdiction_name": party.get("party_jurisdiction_name"),
                 "claim_scope": (
                     "Analytical equal-share exposure to all loaded reviewed party/entity "
                     "receipts for the current party; not a disclosed personal receipt "

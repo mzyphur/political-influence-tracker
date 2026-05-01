@@ -1308,6 +1308,43 @@ function benefitProviderDetail(provider: {
     .join(" · ");
 }
 
+/**
+ * Map a `party_jurisdiction_code` to a human-friendly badge string.
+ * The federal launch's API surface only returns federal rows (the
+ * office_term-anchored query), so this typically reads "Federal" or
+ * is omitted. State-jurisdiction rows would surface only via a
+ * future bridge layer (deferred per
+ * `docs/sub_national_party_seeds_plan.md`).
+ *
+ * Returning `null` for federal rows on a federal MP keeps the
+ * existing detail line uncluttered (federal is the implicit default);
+ * non-federal jurisdictions get an explicit chip.
+ */
+function partyJurisdictionChip(
+  code: string | null | undefined,
+  level: string | null | undefined
+): string | null {
+  if (!code) return null;
+  const upperCode = code.toUpperCase();
+  if (upperCode === "CWLTH" || level === "federal") {
+    // Federal is implicit on the federal-launch surface; no chip needed.
+    return null;
+  }
+  // Friendly label for the recognized state codes; fall back to the
+  // raw code so any future jurisdiction surfaces something readable.
+  const stateLabel: Record<string, string> = {
+    NSW: "NSW state",
+    VIC: "VIC state",
+    QLD: "QLD state",
+    SA: "SA state",
+    WA: "WA state",
+    TAS: "TAS state",
+    NT: "NT territory",
+    ACT: "ACT territory"
+  };
+  return stateLabel[upperCode] ?? `${upperCode} jurisdiction`;
+}
+
 function partyExposureDetail(summary: {
   party_name: string;
   event_count: number;
@@ -1322,6 +1359,8 @@ function partyExposureDetail(summary: {
   party_context_label?: string | null;
   is_personality_vehicle?: boolean;
   affiliated_person_hint?: string | null;
+  party_jurisdiction_code?: string | null;
+  party_jurisdiction_level?: string | null;
   claim_scope: string;
 }) {
   const periodScope =
@@ -1341,8 +1380,13 @@ function partyExposureDetail(summary: {
         summary.affiliated_person_hint ? ` for ${summary.affiliated_person_hint}` : ""
       } — not an ideological federal party`
     : null;
+  const jurisdictionChip = partyJurisdictionChip(
+    summary.party_jurisdiction_code,
+    summary.party_jurisdiction_level
+  );
   return [
     personalityChip,
+    jurisdictionChip,
     `${summary.event_count.toLocaleString("en-AU")} reviewed party/entity receipt records`,
     `${formatMoney(summary.party_context_reported_amount_total)} loaded-period party context`,
     summary.allocation_denominator

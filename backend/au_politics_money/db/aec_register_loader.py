@@ -41,8 +41,10 @@ from psycopg.types.json import Jsonb
 
 from au_politics_money.config import PROCESSED_DIR
 from au_politics_money.ingest.aec_register_branch_resolver import (
+    CompositeResolution,
     PartyDirectory,
     SegmentResolution,
+    resolve_segment_with_state_branch,
     resolve_segments,
 )
 from au_politics_money.ingest.aec_register_entities import (
@@ -80,6 +82,34 @@ def _ensure_party_directory(conn) -> PartyDirectory:
         cur.execute("SELECT id, name, short_name, jurisdiction_id FROM party")
         rows = cur.fetchall()
     return PartyDirectory.from_rows(rows)
+
+
+def _state_jurisdiction_id_by_code(conn) -> dict[str, int]:
+    """Return ``{state_code: jurisdiction_id}`` for every state-level
+    jurisdiction in the local DB (e.g. ``{"QLD": 41, "NSW": 43, ...}``).
+
+    Used by the dual-call resolver to enable a second resolution pass
+    biased toward a state jurisdiction when a register-row segment
+    carries an explicit state-branch suffix. The mapping is fetched
+    once per loader call and threaded through the per-segment resolver.
+
+    Returns an empty dict if no state-level jurisdictions are seeded
+    (in which case the dual-call falls back to federal-only behaviour
+    transparently — same outcome as pre-rollout).
+
+    See ``docs/sub_national_party_seeds_plan.md`` for the rollout plan.
+    """
+    with conn.cursor() as cur:
+        cur.execute(
+            """
+            SELECT id, code
+            FROM jurisdiction
+            WHERE level = 'state' AND code IS NOT NULL
+            ORDER BY id
+            """
+        )
+        rows = cur.fetchall()
+    return {str(code).upper(): int(juris_id) for juris_id, code in rows}
 
 
 def _commonwealth_jurisdiction_id(conn) -> int | None:
@@ -505,11 +535,13 @@ def load_aec_register_of_entities(
 
     party_directory = party_directory_factory(conn)
     source_jurisdiction_id = _commonwealth_jurisdiction_id(conn)
+    state_jurisdiction_id_by_code = _state_jurisdiction_id_by_code(conn)
     reviewed_at = now_factory()
     resolver_status_counts: dict[str, int] = {}
     observations_upserted = 0
     entities_upserted = 0
     links_created = 0
+    state_links_created = 0
     individual_segments_skipped = 0
     multi_match_segments_skipped = 0
     no_match_segments_skipped = 0
@@ -538,13 +570,28 @@ def load_aec_register_of_entities(
             entities_upserted += 1
 
             segments = list(record.get("associated_party_segments") or [])
+            # `resolutions` carries the federal-side resolution per
+            # segment (the pre-rollout shape). `composite_resolutions`
+            # additionally carries the state-side resolution when a
+            # segment's branch suffix names a state jurisdiction
+            # (`docs/sub_national_party_seeds_plan.md`). The
+            # observation-level metadata stays federal-only (the
+            # observation table records ONE canonical resolution per
+            # row); the state link, when present, is fanned out at the
+            # link-creation step below.
             resolutions: list[SegmentResolution] = []
+            composite_resolutions: list[CompositeResolution] = []
             if record["client_type"] == "associatedentity" and segments:
-                resolutions = resolve_segments(
-                    segments,
-                    party_directory,
-                    source_jurisdiction_id=source_jurisdiction_id,
-                )
+                composite_resolutions = [
+                    resolve_segment_with_state_branch(
+                        segment,
+                        party_directory,
+                        source_jurisdiction_id=source_jurisdiction_id,
+                        state_jurisdiction_id_by_code=state_jurisdiction_id_by_code,
+                    )
+                    for segment in segments
+                ]
+                resolutions = [c.federal for c in composite_resolutions]
             elif record["client_type"] == "politicalparty":
                 # Resolve the entity's own ClientName against the party
                 # directory just to record the match, but do NOT auto-link
@@ -583,7 +630,8 @@ def load_aec_register_of_entities(
                 # auto party_entity_link creation per the C-rule.
                 continue
 
-            for resolution in resolutions:
+            for composite in composite_resolutions:
+                resolution = composite.federal
                 if resolution.resolver_status in RESOLVED_STATUSES:
                     if resolution.canonical_party_id is None:
                         continue
@@ -604,6 +652,32 @@ def load_aec_register_of_entities(
                 else:
                     no_match_segments_skipped += 1
 
+                # State-side fan-out: when the composite carries a
+                # successfully-resolved state branch, emit a SECOND
+                # reviewed party_entity_link pointing at the state-
+                # jurisdiction canonical row. This is the dual-call
+                # behaviour from `docs/sub_national_party_seeds_plan.md`.
+                # The federal link is unchanged; the state link is a
+                # peer with its own party_id but the same entity_id.
+                # The unique-constraint is `(party_id, entity_id,
+                # link_type)` so the two rows coexist cleanly.
+                state_resolution = composite.state
+                if (
+                    state_resolution is not None
+                    and state_resolution.resolver_status in RESOLVED_STATUSES
+                    and state_resolution.canonical_party_id is not None
+                ):
+                    if _create_reviewed_party_entity_link(
+                        conn,
+                        party_id=state_resolution.canonical_party_id,
+                        entity_id=entity_id,
+                        resolution=state_resolution,
+                        client_identifier=record["client_identifier"],
+                        source_document_id=source_document_id,
+                        reviewed_at=reviewed_at,
+                    ):
+                        state_links_created += 1
+
     conn.commit()
 
     return {
@@ -613,6 +687,7 @@ def load_aec_register_of_entities(
         "observations_upserted": observations_upserted,
         "entities_upserted": entities_upserted,
         "reviewed_party_entity_links_upserted": links_created,
+        "state_party_entity_links_upserted": state_links_created,
         "individual_segments_skipped": individual_segments_skipped,
         "multi_match_segments_skipped": multi_match_segments_skipped,
         "no_match_segments_skipped": no_match_segments_skipped,

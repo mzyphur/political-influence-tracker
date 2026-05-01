@@ -878,3 +878,169 @@ def resolve_segments(
         )
         for segment in segments
     ]
+
+
+# ----------------------------------------------------------------------
+# State-branch detection (deferred sub-national rollout, Batch R)
+# ----------------------------------------------------------------------
+#
+# Per `docs/sub_national_party_seeds_plan.md`, a register-row segment
+# such as "Australian Greens (Queensland)" should also resolve to the
+# QLD-jurisdiction Greens canonical row in addition to the federal
+# canonical row. The federal call is unchanged; this section adds an
+# OPTIONAL second resolution pass biased toward a specific state
+# jurisdiction.
+#
+# Detection is deterministic, NOT fuzzy: we match against an explicit
+# list of known state-name strings inside parenthetical or trailing
+# wording. State names are stable (the AEC's published wording uses
+# the same forms across thousands of records), so a closed-list match
+# is appropriate and correct. If no state suffix is detected we
+# return None and the loader emits only the federal link, matching
+# pre-rollout behaviour.
+
+# State-name canonical-code mapping. Each entry maps a regex pattern
+# against the segment to the canonical state code (matches
+# jurisdiction.code in the DB). Patterns are anchored against the
+# trailing portion of the segment so we don't pick up incidental
+# mentions of a state name inside an entity's full name (e.g. an
+# entity called "Queensland Property Holdings" is NOT a QLD branch).
+# State-branch detection patterns. We restrict matches to:
+#   * Trailing parenthetical wordings — "(Queensland)", "(QLD Branch)",
+#     "(State of Queensland)", "(Victorian Division)", etc.
+#   * Trailing "<canonical-party> Branch" wordings published by the
+#     AEC for some parties — "Australian Labor Party (Northern
+#     Territory) Branch".
+#
+# We deliberately do NOT match bare `of <state>` suffixes (e.g. "Bank
+# of Western Australia") because they generate too many false positives
+# on entity names that incidentally contain a state name. The closed
+# parenthetical forms are unambiguous.
+_STATE_BRANCH_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
+    # Queensland forms.
+    (re.compile(r"\(\s*State of Queensland\s*\)\s*(?:Branch)?\s*$", re.IGNORECASE), "QLD"),
+    (re.compile(r"\(\s*Queensland(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "QLD"),
+    (re.compile(r"\(\s*Q\.?L\.?D\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "QLD"),
+    # New South Wales forms.
+    (re.compile(r"\(\s*New South Wales(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "NSW"),
+    (re.compile(r"\(\s*N\.?S\.?W\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "NSW"),
+    # Victoria forms.
+    (re.compile(r"\(\s*Vict?ori(?:a|an)(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "VIC"),
+    (re.compile(r"\(\s*V\.?I\.?C\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "VIC"),
+    # South Australia forms.
+    (re.compile(r"\(\s*South Australia(?:n)?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "SA"),
+    (re.compile(r"\(\s*S\.?A\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "SA"),
+    # Western Australia forms.
+    (re.compile(r"\(\s*Western Australia(?:n)?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "WA"),
+    (re.compile(r"\(\s*W\.?A\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "WA"),
+    # Tasmania forms.
+    (re.compile(r"\(\s*Tasmania(?:n)?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "TAS"),
+    (re.compile(r"\(\s*T\.?A\.?S\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "TAS"),
+    # Northern Territory forms.
+    (re.compile(r"\(\s*Northern Territory(?:\s+(?:Branch|Division))?\s*\)\s*(?:Branch)?\s*$", re.IGNORECASE), "NT"),
+    (re.compile(r"\(\s*N\.?T\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "NT"),
+    # Australian Capital Territory forms.
+    (re.compile(r"\(\s*Australian Capital Territory(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "ACT"),
+    (re.compile(r"\(\s*A\.?C\.?T\.?(?:\s+(?:Branch|Division))?\s*\)\s*$", re.IGNORECASE), "ACT"),
+)
+
+
+def detect_state_branch(segment: str) -> str | None:
+    """Return the state code (e.g. ``"QLD"``) if `segment` carries an
+    explicit state-branch suffix, else ``None``.
+
+    Matching is deterministic — every recognised wording is enumerated
+    in :data:`_STATE_BRANCH_PATTERNS`. The detector is conservative:
+    it only matches state names in trailing parenthetical/`of <state>`
+    positions to avoid catching incidental state mentions inside an
+    entity's full name (e.g. "Queensland Property Holdings" is NOT a
+    QLD branch).
+
+    Returns the upper-case state code matching :data:`jurisdiction.code`
+    in the DB. The caller looks up the corresponding state
+    `jurisdiction_id` and passes it as the second resolver call's
+    `source_jurisdiction_id`.
+    """
+    if not segment:
+        return None
+    cleaned = " ".join(segment.split())
+    for pattern, state_code in _STATE_BRANCH_PATTERNS:
+        if pattern.search(cleaned):
+            return state_code
+    return None
+
+
+@dataclass(frozen=True)
+class CompositeResolution:
+    """Result of a federal-plus-optional-state resolution pass.
+
+    The federal resolution is always present (matches the pre-rollout
+    behaviour). The state resolution is present only when the segment
+    carries an explicit state-branch suffix AND a matching state
+    jurisdiction is provided by the loader. The loader uses both to
+    emit one or two ``party_entity_link`` rows per observation.
+    """
+
+    segment: str
+    federal: SegmentResolution
+    state: SegmentResolution | None
+    state_jurisdiction_id: int | None
+    state_code: str | None
+
+
+def resolve_segment_with_state_branch(
+    segment: str,
+    directory: PartyDirectory,
+    *,
+    source_jurisdiction_id: int | None,
+    state_jurisdiction_id_by_code: dict[str, int] | None = None,
+) -> CompositeResolution:
+    """Run the federal resolver, plus a second pass biased toward the
+    state jurisdiction implied by the segment's branch suffix when
+    one is detected.
+
+    `state_jurisdiction_id_by_code` is the mapping from canonical
+    state code (``"QLD"``, ``"NSW"``, …) to the local DB's
+    ``jurisdiction.id`` for that state. The loader builds it once
+    per call from the DB. If the mapping is omitted (or the detected
+    state has no entry), the second pass is skipped and the
+    composite returns ``state=None``.
+
+    Each resolution stage stays single-call deterministic; the
+    composite layer only orchestrates whether to invoke the second
+    call. The federal call's behaviour and outputs are unchanged.
+    """
+    federal = resolve_segment(
+        segment, directory, source_jurisdiction_id=source_jurisdiction_id
+    )
+    state_code = detect_state_branch(segment)
+    if state_code is None or state_jurisdiction_id_by_code is None:
+        return CompositeResolution(
+            segment=segment,
+            federal=federal,
+            state=None,
+            state_jurisdiction_id=None,
+            state_code=state_code,
+        )
+    state_juris_id = state_jurisdiction_id_by_code.get(state_code)
+    if state_juris_id is None or state_juris_id == source_jurisdiction_id:
+        # No state row for this state, or the "state" jurisdiction is
+        # actually the same as the source jurisdiction (no second pass
+        # would add anything). Return federal-only.
+        return CompositeResolution(
+            segment=segment,
+            federal=federal,
+            state=None,
+            state_jurisdiction_id=state_juris_id,
+            state_code=state_code,
+        )
+    state_resolution = resolve_segment(
+        segment, directory, source_jurisdiction_id=state_juris_id
+    )
+    return CompositeResolution(
+        segment=segment,
+        federal=federal,
+        state=state_resolution,
+        state_jurisdiction_id=state_juris_id,
+        state_code=state_code,
+    )

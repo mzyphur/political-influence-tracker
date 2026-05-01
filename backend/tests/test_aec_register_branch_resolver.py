@@ -747,3 +747,189 @@ def test_v2_seeded_canonical_parties_resolve_via_exact_match(
     )
     assert res.resolver_status == "resolved_exact"
     assert res.canonical_party_id == expected_party_id
+
+
+# --- State-branch detection (sub-national rollout, Batch R) ---------------
+
+
+@pytest.mark.parametrize(
+    "segment,expected_state_code",
+    [
+        # Queensland forms.
+        ("Australian Labor Party (Queensland)", "QLD"),
+        ("Liberal National Party (Queensland Division)", "QLD"),
+        ("Australian Labor Party (State of Queensland)", "QLD"),
+        ("Australian Greens (QLD Branch)", "QLD"),
+        # NSW forms.
+        ("Australian Greens (NSW Branch)", "NSW"),
+        ("Liberal Party (New South Wales Division)", "NSW"),
+        ("Australian Greens (N.S.W.)", "NSW"),
+        # Victorian forms.
+        ("Liberal Party of Australia (Victorian Division)", "VIC"),
+        ("Australian Greens (Victoria Branch)", "VIC"),
+        ("Australian Labor Party (VIC)", "VIC"),
+        # SA / WA / TAS / NT / ACT forms.
+        ("National Party of Australia (S.A.)", "SA"),
+        ("Australian Greens (Western Australia)", "WA"),
+        ("Australian Labor Party (Tasmania Branch)", "TAS"),
+        ("Country Liberal Party (Northern Territory)", "NT"),
+        ("Australian Labor Party (ACT Branch)", "ACT"),
+    ],
+)
+def test_detect_state_branch_recognises_known_wordings(
+    segment: str, expected_state_code: str
+) -> None:
+    from au_politics_money.ingest.aec_register_branch_resolver import (
+        detect_state_branch,
+    )
+
+    assert detect_state_branch(segment) == expected_state_code
+
+
+@pytest.mark.parametrize(
+    "segment",
+    [
+        # Bare federal canonical names: NO state suffix.
+        "Australian Labor Party",
+        "Liberal National Party",
+        "Australian Greens",
+        # Entity name with an incidental state mention — must NOT match.
+        # The detector is restricted to TRAILING parenthetical state
+        # wordings, so an entity whose name happens to contain a state
+        # name (without the parenthetical form) is left alone.
+        "Queensland Property Holdings Pty Ltd",
+        "New South Wales Trades & Labour Council",
+        "Bank of Western Australia",
+    ],
+)
+def test_detect_state_branch_does_not_match_incidental_mentions(
+    segment: str,
+) -> None:
+    from au_politics_money.ingest.aec_register_branch_resolver import (
+        detect_state_branch,
+    )
+
+    assert detect_state_branch(segment) is None
+
+
+def test_resolve_segment_with_state_branch_returns_federal_only_when_no_state(
+    deduped_directory: PartyDirectory,
+) -> None:
+    """A bare federal canonical name with no state suffix should
+    produce a CompositeResolution whose `state` is None.
+    """
+    from au_politics_money.ingest.aec_register_branch_resolver import (
+        resolve_segment_with_state_branch,
+    )
+
+    composite = resolve_segment_with_state_branch(
+        "Australian Labor Party",
+        deduped_directory,
+        source_jurisdiction_id=1,
+        state_jurisdiction_id_by_code={"QLD": 41},
+    )
+    assert composite.federal.canonical_party_id == 1
+    assert composite.federal.resolver_status == "resolved_exact"
+    assert composite.state is None
+    assert composite.state_jurisdiction_id is None
+    assert composite.state_code is None
+
+
+def test_resolve_segment_with_state_branch_emits_state_resolution_for_qld() -> None:
+    """A QLD-branch segment that resolves via the existing branch alias
+    rules should produce two resolutions: federal (canonical Australian
+    Labor Party) and state (QLD-jurisdiction Australian Labor Party).
+
+    Uses 'Australian Labor Party (State of Queensland)' which is
+    explicitly handled by the existing
+    `alp_state_of_queensland_to_alp_parent_v1` branch alias rule (the
+    rewrite folds it to bare 'Australian Labor Party' which then
+    matches via the source-jurisdiction-disambiguation rule).
+    """
+    from au_politics_money.ingest.aec_register_branch_resolver import (
+        resolve_segment_with_state_branch,
+    )
+
+    # Directory mirrors the live state where federal ALP id=1 and QLD
+    # state ALP id=152936 (per migration 034 + the existing QLD ECQ
+    # ingest-side row).
+    directory = PartyDirectory.from_rows(
+        [
+            (1, "Australian Labor Party", "ALP", 1),  # federal
+            (152936, "Australian Labor Party", "ALP", 41),  # QLD state
+        ]
+    )
+
+    composite = resolve_segment_with_state_branch(
+        "Australian Labor Party (State of Queensland)",
+        directory,
+        source_jurisdiction_id=1,
+        state_jurisdiction_id_by_code={"QLD": 41},
+    )
+    # Federal call: source_jurisdiction_id=1 should disambiguate to
+    # federal canonical row (party_id=1) via the alp_state_of_queensland
+    # alias rule + source-jurisdiction disambiguation.
+    assert composite.federal.canonical_party_id == 1
+    # State call: source_jurisdiction_id=41 should disambiguate to the
+    # QLD-jurisdiction row (party_id=152936).
+    assert composite.state is not None
+    assert composite.state.canonical_party_id == 152936
+    assert composite.state_jurisdiction_id == 41
+    assert composite.state_code == "QLD"
+
+
+def test_resolve_segment_with_state_branch_skips_state_when_no_mapping() -> None:
+    """If the loader doesn't pass a state-jurisdiction mapping (or the
+    detected state isn't in the mapping), the second pass is skipped.
+    """
+    from au_politics_money.ingest.aec_register_branch_resolver import (
+        resolve_segment_with_state_branch,
+    )
+
+    directory = PartyDirectory.from_rows(
+        [(1, "Australian Labor Party", "ALP", 1)]
+    )
+
+    # Case A: no mapping at all.
+    composite_a = resolve_segment_with_state_branch(
+        "Australian Labor Party (State of Queensland)",
+        directory,
+        source_jurisdiction_id=1,
+        state_jurisdiction_id_by_code=None,
+    )
+    assert composite_a.state is None
+    assert composite_a.state_code == "QLD"  # detected, but no mapping
+
+    # Case B: mapping does not include QLD.
+    composite_b = resolve_segment_with_state_branch(
+        "Australian Labor Party (State of Queensland)",
+        directory,
+        source_jurisdiction_id=1,
+        state_jurisdiction_id_by_code={"NSW": 43},
+    )
+    assert composite_b.state is None
+    assert composite_b.state_code == "QLD"
+
+
+def test_resolve_segment_with_state_branch_skips_when_state_equals_source() -> None:
+    """If the detected state happens to equal the source jurisdiction,
+    a second pass would add nothing — skip it.
+    """
+    from au_politics_money.ingest.aec_register_branch_resolver import (
+        resolve_segment_with_state_branch,
+    )
+
+    directory = PartyDirectory.from_rows(
+        [(152936, "Australian Labor Party", "ALP", 41)]
+    )
+
+    composite = resolve_segment_with_state_branch(
+        "Australian Labor Party (State of Queensland)",
+        directory,
+        source_jurisdiction_id=41,  # source IS QLD
+        state_jurisdiction_id_by_code={"QLD": 41},
+    )
+    # Detection still flags QLD, but no second pass.
+    assert composite.state is None
+    assert composite.state_code == "QLD"
+    assert composite.state_jurisdiction_id == 41
