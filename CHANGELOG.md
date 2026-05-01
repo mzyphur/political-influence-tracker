@@ -13,6 +13,79 @@ section below corresponds to an internal "batch" landed on `main`.
 
 ## [Unreleased] — pre-launch ramp toward May 2026
 
+### Batch X / Y — strategic-breadth expansion + AusTender ingestion stack
+
+**Strategic assessment delivered.** A deep audit of the database
+(314,040 events, 47% entities unclassified, 56% events undated)
+plus the gap between documented sources in `data_sources.md` and
+the broader public-record landscape across federal, state, and
+local government in Australia. Identified a Tier-1 set of high-
+value untapped public-record sources — Commonwealth contracts
+(AusTender), Commonwealth grants (GrantConnect), the Foreign
+Influence Transparency Scheme register (FITS), Senate Order on
+Departmental and Agency Contracts, ANAO performance audits,
+Federal Register of Legislation, APH Bills Search, APH Committee
+Inquiries (submissions and transcripts), and ParlInfo full-text
+Hansard.
+
+**12 new federal source records registered** in `sources.py`:
+
+- `austender_contract_notices_current` — every Commonwealth
+  contract ≥ $10k (live tenders.gov.au)
+- `austender_contract_notices_historical` — yearly bulk CSV via
+  data.gov.au under CC-BY 3.0 AU; smoke-tested 17-18 file
+  (73,458 rows / $43.28B / SHA-256 verified)
+- `grantconnect_grants` — every Commonwealth grant > $0
+- `fits_register` — Foreign Influence Transparency Scheme
+- `senate_order_contracts` — twice-yearly per-portfolio listings
+- `anao_performance_audits` — Auditor-General performance audits
+- `federal_register_of_legislation` — Acts + subordinate legislation
+- `aph_bills_search` — per-Bill progress + speeches
+- `aph_committee_inquiries` — submissions + transcripts
+- `aph_hansard_full_text_proquest` — speech-level Hansard
+- `grants_gov_au_open_grants` — forecast register
+- `modern_slavery_register` — mandatory ≥ $100M turnover statements
+
+**11 new state-level source records registered**:
+
+- 8 state lobbyist registers (NSW, VIC, QLD, WA, SA, TAS, ACT, NT)
+- 3 state parliamentary Hansard sources (NSW, VIC, QLD)
+
+Total registered SourceRecord entries: 97 (was 74).
+
+**Reproducible CC-BY-licensed data.gov.au fetcher** at
+[`scripts/fetch_data_gov_au_resource.sh`](scripts/fetch_data_gov_au_resource.sh).
+Refuses non-CC-BY licences by default; produces SHA-256-attested
+archives under `data/raw/<source>/<UTC-stamp>/`. Smoke-tested
+end-to-end against the AusTender historical-contracts 2017-18
+CSV (CKAN id `5c7fa69b-…`).
+
+**AusTender CSV→JSONL parser** at
+[`backend/au_politics_money/ingest/austender.py`](backend/au_politics_money/ingest/austender.py).
+Reads the historical contract-notice CSVs, normalises every row
+to a stable `austender_v1` JSONL schema, and writes a per-file
+summary JSON with aggregate statistics (top agencies / suppliers
+/ UNSPSC / consultancy + confidentiality flag rates / publish-
+date span). Personal-identifying fields (Contact Name / Phone)
+are deliberately excluded for privacy-conservativism. 39 unit
+tests pin the parser shape (date / money / boolean / ABN
+helpers + end-to-end synthetic CSV). New CLI command
+`au-politics-money normalize-austender-csv <archive_dir>` runs
+the parser against a downloaded archive.
+
+**Live smoke against the 2017-18 AusTender CSV**:
+
+- 73,458 contract notices parsed
+- 60,590 with non-NULL contract values
+- $43.28 BILLION total reported value
+- Top spending agency: Department of Defence ($24.8B)
+- Top supplier: CSL Behring (Australia) Pty Ltd ($3.35B)
+- Date span: 2004-07-14 to 2018-06-29
+
+The loader that lifts AusTender JSONL records into
+`influence_event` (via the schema's existing `procurement` event
+family — no migration needed) is a follow-up batch.
+
 ### Batch R — sub-national rollout activation + gifts/hospitality UX redesign
 
 - **Activated** the deferred sub-national rollout for QLD. The
