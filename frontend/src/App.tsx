@@ -33,6 +33,7 @@ import {
 import { MapCanvas } from "./components/MapCanvas";
 import { DetailsPanel } from "./components/DetailsPanel";
 import { EntityProfilePanel } from "./components/EntityProfilePanel";
+import { IndustryActivityCard } from "./components/IndustryActivityCard";
 import { InfluenceGraphPanel } from "./components/InfluenceGraphPanel";
 import { PartyProfilePanel } from "./components/PartyProfilePanel";
 import {
@@ -960,6 +961,9 @@ function App() {
               }
               onClose={() => setSelectedSearchResult(null)}
             />
+          )}
+          {!selectedSearchResult && !selectedFeature && (
+            <IndustryActivityCard initiallyCollapsed rowLimit={12} />
           )}
         </aside>
         )}
