@@ -1,5 +1,122 @@
 # Build Log
 
+## 2026-05-01 (Batch BB — Stages 2+3 LLM stack + cross-source correlation + scientific validation + sector taxonomy v2)
+
+Major batch landing four commits + two GitHub mirror pushes during
+a single extended autonomous session. All three sub-batches passed
+ruff lint clean + manual schema verification. Built on top of
+Batch AA's Stage 1 in-flight run (which continues throughout
+Batch BB).
+
+Commits:
+
+* **bf1194f — Batch BB-1: Stages 2+3 LLM stack + cross-source
+  correlation surface.**
+  - Stage 3 (AusTender contract topic tagging):
+    `prompts/austender_contract_topic_tag/v1.md` (Haiku 4.5)
+    pilot ran 482/500 + recovered, 1 schema mismatch ("furniture"
+    not in 33-sector enum), prompt-cache did NOT fire reliably
+    below 1024-token threshold.
+    Bumped to v2 (`prompts/austender_contract_topic_tag/v2.md`,
+    Sonnet 4.6, expanded system instruction to ~3666 tokens with
+    worked examples #A-#E + explicit "furniture not a valid
+    sector" reinforcement). v2 pilot 200/200 success at $1.09 USD
+    true cost incl cache; 99% high-confidence. Cache CONFIRMED
+    firing.
+    `backend/schema/039_austender_contract_topic_tag.sql` +
+    `scripts/llm_tag_austender_contracts.py` (default
+    concurrency=10) + `scripts/load_llm_austender_topic_tags.py`.
+  - Stage 2 (Register of Interests deep extraction):
+    `prompts/register_of_interests_extraction/v1.md` (Sonnet 4.6;
+    12 item_type values + 9 counterparty_type values). Pilot:
+    100 sections → 109 disclosure items extracted, $0.38 USD.
+    `backend/schema/040_llm_register_of_interests_observation.sql`
+    + `scripts/llm_extract_register_of_interests.py` +
+    `scripts/load_llm_register_of_interests.py`.
+  - Cross-source correlation surface:
+    `backend/schema/041_contract_donor_overlap_views.sql` —
+    three views (`v_contract_supplier_aggregates`,
+    `v_donor_entity_aggregates`, `v_contract_donor_overlap`).
+    The headline view never sums tier-1 + tier-2 evidence. Pilot
+    findings: 6 supplier-donor overlaps from 200 contracts,
+    totalling $5.67B contracts × $2.57M donations across BAE
+    Systems, Luerssen, Veolia, Raytheon, Settlement Services
+    International, Pfizer, Telstra. `scripts/report_contract_donor_overlap.py`
+    exports JSON + CSV + summary stats.
+  - Strategic stocktake: `docs/influence_correlation_gaps.md`
+    (Stage 4a-e plan: portfolio mapping, lobbyist register,
+    voting records, ABS Census, ASIC beneficial ownership) and
+    `docs/llm_extraction_pipeline.md` updated with full Stage 2+3
+    + correlation + lessons learned.
+
+* **e5cde27 — Batch BB-2: scientific validation backbone +
+  industry rollup + sector v2 plan.**
+  - Inter-rater reliability infrastructure:
+    `scripts/compute_llm_inter_rater_reliability.py` (Cohen's
+    kappa + Jaccard + per-class kappa + macro/micro F1).
+    First run (Haiku v1 vs Sonnet v2 on the same 200 AusTender
+    contracts):
+    * Sector kappa: 0.76 (substantial)
+    * Procurement-class kappa: 0.71 (substantial)
+    * Policy-topics mean Jaccard: 0.81; micro-F1 0.84
+    * Confidence-label kappa: 0.06 (slight) — both models almost-
+      uniformly emit "high"; the confidence label is uninformative.
+  - Industry-level aggregate (the user-requested gas/coal/pharma
+    surface): `backend/schema/042_industry_influence_aggregate_view.sql`
+    — three views including `v_industry_influence_aggregate`
+    (FULL OUTER JOIN of donor-side and contract-side aggregates by
+    sector). Pilot data already shows defence ($6.3M donations
+    × $32B contracts), pharmaceuticals ($5.7M × $4.3B), consulting
+    ($9.8M × $2.7B), technology ($13.9M × $2.3B), construction
+    ($54M × $1.8B), mining ($1.43B disclosed donor activity).
+  - Scientific validation protocol:
+    `docs/scientific_validation_protocol.md` — methods document
+    covering evidence tier separation, claim discipline,
+    reproducibility chain, IRR procedure with Landis-Koch (1977)
+    thresholds, sample audit protocol, bias acknowledgments,
+    falsifiability commitment. Production-use threshold: kappa
+    >= 0.60 (substantial).
+  - Sector taxonomy v2 plan: `docs/sector_taxonomy_evolution.md` —
+    user feedback that fossil_fuels + mining are too coarse for
+    Australia. Plan: split fossil_fuels into coal / gas /
+    petroleum / uranium / fossil_fuels_other; add iron_ore /
+    critical_minerals / mining_other to mining. Total 40 sectors
+    in v2 (up from 33). Path A (full re-run, ~$400 USD) chosen
+    over Path B (surgical, ~$10 USD) for analytical uniformity.
+  - Citation: `CITATION.cff` (Citation File Format metadata for
+    public mirror).
+
+* **d226368 — Batch BB-3: Stage 1 v2 prompt with split energy +
+  mining sectors + migration 043.**
+  - `prompts/entity_industry_classification/v2.md` — 40-value
+    sector enum. Worked examples: Whitehaven Coal → coal, Santos
+    → gas, BHP → mining_other (diversified conglomerate handling),
+    Fortescue → iron_ore, Pilbara Minerals → critical_minerals,
+    Cameco → uranium, AGL → fossil_fuels_other (diversified
+    coal-power + gas), Lynas → critical_minerals, Newcrest →
+    mining_other.
+  - `backend/schema/043_extend_sector_taxonomy_v2.sql` — extends
+    CHECK constraints on both
+    `entity_industry_classification.public_sector` and
+    `austender_contract_topic_tag.sector` to accept all 40 v2
+    codes WHILE keeping v1 codes (`fossil_fuels`, `mining`)
+    valid. Additive migration; v1 cached + DB rows untouched.
+
+Public-mirror state (https://github.com/mzyphur/political-influence-tracker):
+
+* All three Batch-BB commits pushed.
+* HEAD at `d226368`.
+* AGPL-3.0 licensed; CITATION.cff present.
+
+Stage 1 v1 entity classification still in flight (PID 73186)
+at the time of these commits — 20,941 / 28,218 entities done
+(~74%). Continues to ~100% in background; ETA ~30 min from
+the Batch BB-3 commit.
+
+Total Batch-BB cost: ~$2 USD pilot spend + $0 deterministic
+work + ~$11 USD Stage 1 v1 in-flight. Cumulative project LLM
+spend: ~$13 USD against the $1k AUD budget envelope.
+
 ## 2026-05-01 (Batch AA — hybrid LLM-extraction pipeline + Stage 1 entity classification + cross-stack strategy)
 
 Major architectural addition: the project now has a hybrid
