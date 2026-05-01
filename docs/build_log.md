@@ -1,5 +1,87 @@
 # Build Log
 
+## 2026-05-01 (Batch AA — hybrid LLM-extraction pipeline + Stage 1 entity classification + cross-stack strategy)
+
+Major architectural addition: the project now has a hybrid
+deterministic + LLM-assisted extraction pipeline. The scope and
+philosophy were debated up-front with the project lead and the
+final shape preserves all existing reproducibility commitments
+while adding LLM extraction for document types where deterministic
+parsing has known coverage gaps.
+
+Two commits landed in this batch:
+
+- **7046930 — feat: hybrid LLM-extraction pipeline + Stage 1.**
+  Adds `backend/au_politics_money/llm/` (LLMClient + LLMCache),
+  `prompts/entity_industry_classification/v1.md`,
+  `scripts/llm_classify_entities.py` +
+  `scripts/load_llm_entity_classifications.py`, and
+  `docs/llm_extraction_pipeline.md` +
+  `docs/llm_strategy_full_stack.md`.
+- **e311929 — docs: methodology page LLM-extraction section +
+  Stage 3 prompt.** Adds a public-facing "LLM-Assisted Extraction"
+  section to `frontend/public/methodology.html` documenting where
+  LLMs are used, where they are NOT used, and the five-part
+  reproducibility commitment. Plus the v1 prompt for AusTender
+  contract topic tagging.
+
+**Architectural promises** (documented at
+`docs/llm_extraction_pipeline.md`):
+
+1. Determinism at the project layer (SHA-256 hash cache).
+2. Pinned model versions (cache key includes model id).
+3. Strict schema validation via Anthropic tool-use.
+4. No money-flow extraction (byte-identical-totals invariant).
+5. Public prompts + public cache (anyone can verify any
+   extraction without an API key).
+
+**Stage 1 — Entity industry classification:**
+
+* Model: `claude-sonnet-4-6`.
+* Prompt: `prompts/entity_industry_classification/v1.md` —
+  ~3,500 tokens system instruction (above Anthropic's 1024-token
+  prompt-caching threshold), 33-sector taxonomy + 14 entity_type
+  values + 3-level confidence rubric.
+* Pilot results (200 entities): **$0.71 USD total cost**,
+  $0.0035/entity, 96.5% high-confidence, 3.5% conservative
+  "unknown" answers. Output quality verified against curated
+  test cases (PwC → consulting, Pharmacy Guild → pharmaceuticals,
+  Liberal Party WA → political_entity, "Pulse" → unknown).
+* Full run (~28,300 entities): in progress at time of commit;
+  est. ~$100 USD = ~$155 AUD total.
+* Loader: maps LLM's user-friendly schema (high/medium/low,
+  charity, education_institution) to the DB's CHECK-constrained
+  values (fuzzy_high/fuzzy_low/unresolved, association). Entity
+  type promotion only for high-confidence non-unknown rows.
+
+**Strategic plan documented for stages 2–15** (see
+`docs/llm_strategy_full_stack.md`):
+
+| Stage | Task | Est. cost (USD) |
+|---|---|---:|
+| 2 | Register of Interests PDF deeper extraction | $50 |
+| 3 | AusTender + GrantConnect topic tagging | $200/yr |
+| 4 | Hansard speech extraction (current term) | $300 |
+| 5 | Bills Digest summarization | $50 |
+| 6 | Committee submissions (2yr) | $360 |
+| 7 | ANAO audit findings (5yr) | $275 |
+| 8 | NACC + integrity commission reports | $50/yr |
+| 9 | FITS activity descriptions | $20 |
+| 10 | Modern Slavery Statements (1yr) | $185 |
+| 11 | State Hansard (NSW+VIC pilot) | $300 |
+| 12 | Senate Estimates Q&A (term) | $400 |
+| 13 | Question Time + daily Hansard (term) | $300 |
+| 14 | Treasury / Finance / Health FOI logs | $100 |
+| 15 | Royal Commission archives (per commission) | $1,000+ |
+
+Stages 1–10 = $1,602 USD ($2,490 AUD). Step-change tier (12–15)
+extends to $7,302 USD ($11,340 AUD) for full vision. Project
+budget approved at $3,000 AUD baseline with expansion authorized
+for step-change features.
+
+405/405 backend pytest pass. ruff clean. Frontend production
+build clean.
+
 ## 2026-05-01 (Batch R — sub-national rollout activation: state-branch dual-call resolver + loader fan-out + API jurisdiction surface; UX redesign of gifts/hospitality panel)
 
 Two threads landed in this stretch:
