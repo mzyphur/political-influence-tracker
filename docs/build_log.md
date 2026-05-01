@@ -1,5 +1,102 @@
 # Build Log
 
+## 2026-05-02 (Batch CC — comprehensive transparency surface: anatomy view + ROI APIs + GrantConnect + lobbyist scaffold + Stage 1 v2 complete + loader bugfix)
+
+15 commits in extended day-of session. Stage 1 v2 28k full corpus
+landed. Headline pro-democracy transparency surfaces all live.
+
+End-of-Batch-CC achievements:
+
+* **Stage 1 v2 28k re-classification COMPLETE** ($87 USD, 23,631
+  entities at 40-sector taxonomy, 99 failures = 0.42%). Full-corpus
+  IRR vs v1: **kappa = 0.887 (almost perfect)** on N=23,500 overlap
+  entities. Confidence properly discriminative now (low 65% / med
+  18% / high 17% vs v1's near-uniform "high").
+* **Stage 2 ROI full corpus loaded:** 3,547 disclosure items in DB
+  (347 gifts, 256 sponsored travel, 645 memberships, 702
+  investments, 370 liabilities). Top gift providers surfaced:
+  Qantas (55 gifts to 43 distinct MPs), Virgin (37 to 28 MPs),
+  Foxtel (25 to 25 MPs).
+* **Stage 4 cabinet coverage UNIVERSAL:** 9 cabinet ministries
+  (federal Albanese 2nd + Minns NSW + Allan VIC + Crisafulli QLD +
+  Cook WA + Malinauskas SA + Rockliff TAS + Barr ACT +
+  Finocchiaro NT). 73 portfolio-agency mappings + 76 cabinet
+  ministers in DB.
+* **Industry-anatomy view live** (`v_industry_anatomy`): per-sector
+  side-by-side aggregation of donations + gifts + sponsored
+  travel + memberships + investments + contracts. THE
+  comprehensive influence-anatomy surface. Surfaced via
+  `/api/industry-anatomy` and the IndustryActivityCard frontend
+  component (4 columns: Donations / Gifts / Travel / Contracts).
+* **Cross-correlation views live:** `v_contract_donor_overlap`,
+  `v_contract_minister_responsibility`, `v_minister_voting_pattern`,
+  `v_donor_recipient_voting_alignment`, `v_sector_money_outflow`,
+  `v_lobbyist_client_influence_overlap`. Six views joining all
+  evidence streams.
+* **GrantConnect pipeline scaffolded END-TO-END** (the second
+  major government-money-outflow stream): parser + loader +
+  CLI command + Stage 3-grants LLM tagger prompt + driver. End-
+  to-end verified with synthetic 3-grant CSV. Awaiting first
+  GrantConnect CSV download from data.gov.au (~$275 USD/year
+  federal grants estimated).
+* **Federal Lobbyist Register schema scaffolded** (Stage 4b):
+  three tables (lobbyist_organisation_record, lobbyist_principal,
+  lobbyist_client_engagement) + `v_lobbyist_client_influence_overlap`
+  view. Loader + scraper pending.
+* **8 API endpoints in the Influence tag:**
+  - `/api/industry-aggregate`
+  - `/api/industry-anatomy` (THE comprehensive)
+  - `/api/contract-donor-overlap`
+  - `/api/contract-minister-responsibility`
+  - `/api/minister-voting-pattern`
+  - `/api/donor-recipient-voting-alignment`
+  - `/api/roi-items`
+  - `/api/roi-providers`
+* **3 frontend components:** IndustryActivityCard (home view),
+  MinisterVotingPanel (DetailsPanel embed), ContractDonorOverlapPanel
+  (EntityProfilePanel embed). All visible to users.
+* **Documentation:** docs/influence_streams_reference.md catalogues
+  14 input streams + 17 outcome streams; docs/scientific_validation_protocol.md
+  formalises the methodology with Cohen's kappa thresholds;
+  docs/sector_taxonomy_evolution.md documents the v1→v2 sector
+  split rationale; docs/design_decisions.md is the chronological
+  log; docs/strategic_plan_post_BB.md maps phases A-G.
+
+Batch CC commits (newest first):
+
+* `02bc443` SAVEPOINT-per-row loader bug fix + methodology page additions
+* `175591c` scripts/llm_tag_grants.py + Stage 1 v2 COMPLETE
+* `712b38e` Stage 3-grants LLM topic-tag prompt v1
+* `4654150` normalize-grants-csv CLI + end-to-end VERIFIED
+* `07deefa` GrantConnect parser + loader
+* `b095596` IndustryActivityCard switched to /api/industry-anatomy
+* `0c9dc27` Frontend types + fetcher for /api/industry-anatomy
+* `d395152` Comprehensive influence-streams reference + lobbyist scaffold
+* `ac0c72f` GrantConnect grant observation schema (migration 052)
+* `67879c4` Industry-anatomy view + ROI items/providers API
+* `ba8c8f0` CI fix (jurisdiction guard for empty test fixtures)
+* `e31a50c` fetchDonorRecipientVotingAlignment client function
+* `f8ad605` /api/donor-recipient-voting-alignment endpoint
+* `b82b56e` Wire panels into existing UI
+* `2083398` Strategic plan + lobbyist scaffolding + frontend panels
+
+Critical bugfix in this batch: **load_llm_entity_classifications.py
+SAVEPOINT-per-row.** Previous version called `conn.rollback()` on
+any per-row failure, which wiped ALL accumulated INSERTs in the
+file's transaction. Symptom: loader reported "loaded=28,214 failed=4"
+but DB had only 7,622 rows because the 4 rollbacks killed ~20k
+preceding successful inserts. Fix wraps each row in a SAVEPOINT
+so a single failure rolls back ONLY that row. Re-running the
+loader now correctly produces 28,236 model_assisted classifications
+matching the expected v1+v2 corpus.
+
+Cumulative project LLM spend through end-of-Batch-CC: ~$203 USD
+(Stage 1 v1 $104 + Stage 1 v2 $87 + Stage 2 $11 + Stages 2-3
+pilots $1).
+
+Public mirror state at end of BB+CC: HEAD `02bc443`. CI green.
+Tests 440/440. Frontend production build clean.
+
 ## 2026-05-01 (Batch BB extended — Stage 1 v2 launched + ALL-jurisdiction cabinet coverage + Stage 3 v3 prompt + frontend industry card)
 
 Massive extension of Batch BB. Twelve total commits in the day-of

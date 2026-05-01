@@ -5,11 +5,99 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-05-01** (end of Batch BB — Stages 2 + 3 +
-4a all live; cross-source correlation + industry rollup + minister
-responsibility views all working; scientific validation backbone
-shipped including IRR with Cohen's kappa; sector taxonomy v2
-designed; Stage 1 v1 28k run still in flight in the background).
+Last updated: **2026-05-02** (end of Batch CC — Stage 1 v1 + v2
+both COMPLETE + LOADED; v1↔v2 IRR κ=0.887 almost-perfect;
+Stage 2 ROI full corpus loaded (3,547 items); GrantConnect
+pipeline scaffolded end-to-end; influence-anatomy view live;
+loader SAVEPOINT bug fixed (28,236 model_assisted rows now
+correctly in DB, was 7,622 due to rollback bug); methodology
+page updated with all new sections; 27+ commits in BB+CC).
+
+## Batch CC delivered (14 commits, all on public mirror)
+
+* **2083398** Strategic plan + lobbyist scaffolding + voting/overlap panels
+* **b82b56e** Wire panels into existing UI
+* **f8ad605** /api/donor-recipient-voting-alignment endpoint
+* **e31a50c** fetchDonorRecipientVotingAlignment client function
+* **ba8c8f0** CI fix (jurisdiction guard for empty test fixtures)
+* **67879c4** Industry-anatomy view + ROI items/providers API
+* **ac0c72f** GrantConnect grant observation schema (migration 052)
+* **d395152** Influence-streams reference + Stage 4b lobbyist scaffold
+* **0c9dc27** Frontend types/fetcher for /api/industry-anatomy
+* **b095596** IndustryActivityCard switched to anatomy (4 columns)
+* **07deefa** GrantConnect parser + loader
+* **4654150** normalize-grants-csv CLI + end-to-end VERIFIED
+* **712b38e** Stage 3-grants LLM topic-tag prompt v1
+* **175591c** scripts/llm_tag_grants.py + Stage 1 v2 COMPLETE
+* **02bc443** SAVEPOINT-per-row loader bug fix + methodology page
+
+Cumulative session work (Batches BB extended + CC = 27 commits):
+* 14 schema migrations (039-052) — contract topic tags, ROI obs,
+  cross-correlation views, industry aggregate, sector taxonomy v2,
+  portfolio responsibility, federal + state cabinet seeds,
+  voting views, lobbyist scaffolding, GrantConnect, industry
+  anatomy.
+* 8 LLM-related scripts: 5 drivers (Stage 1, Stage 2, Stage 3 v1+v2,
+  Stage 3-grants) + 3 loaders + IRR analyzer + cross-correlation
+  reporter.
+* 5 prompts (entity v1, entity v2, austender v1, austender v2,
+  austender v3, ROI v1, grant_topic_tag v1).
+* 6 docs (influence_correlation_gaps, scientific_validation_protocol,
+  sector_taxonomy_evolution, design_decisions,
+  strategic_plan_post_BB, influence_streams_reference, CITATION.cff).
+* 8 API endpoints in the Influence tag.
+* 11 SQL views.
+* 4 frontend components (IndustryActivityCard, MinisterVotingPanel,
+  ContractDonorOverlapPanel, plus types/fetchers for
+  donor-recipient-voting-alignment + industry-anatomy).
+* All 9 Australian cabinet ministries seeded (federal + 8
+  state/territory): ~73 portfolios + ~76 ministers.
+
+## Live database state (2026-05-02 end of Batch CC)
+
+| Table | Rows | Notes |
+|---|---:|---|
+| influence_event (non-rejected) | 314,040 | $13.48B reported total |
+| entity (total) | 59,817 | of which 28,228 unknown after v1+v2 |
+| entity_industry_classification | 64,110 | 35,874 rule_based + 28,236 model_assisted |
+| - by prompt_version | | v1: 4,708 / v2: 23,528 |
+| austender_contract_topic_tag | 544 | v1+v2 pilots; full corpus pending |
+| llm_register_of_interests_observation | 3,547 | Stage 2 full corpus complete |
+| cabinet_ministry | 9 | 1 federal + 8 state/territory |
+| portfolio_agency | 73 | All major portfolios |
+| minister_role | 76 | All cabinet ministers |
+| vote_division | 506 | 147 House + 359 Senate |
+| person_vote | 37,886 | Individual MP votes |
+| grant_observation | 0 | Schema ready; CSV download pending |
+| llm_grant_topic_tag | 0 | Tagger ready; awaiting CSV |
+| lobbyist_organisation_record | 0 | Schema ready; loader pending |
+
+## Stage 1 IRR results (publication-grade)
+
+* **v1 (33-sector) vs v2 (40-sector) on N=23,500 overlap entities:**
+  - **Public-sector kappa: 0.887 (almost perfect — Landis-Koch)**
+  - 94.3% observed agreement
+  - Confidence kappa: 0.13 (slight) — v2 is properly discriminative
+  - Cost: $104 (v1) + $87 (v2) = $191 USD total
+
+* **Stage 3 v1 (Haiku) vs v2 (Sonnet) on N=200 contracts:**
+  - Sector kappa: 0.76 (substantial)
+  - Procurement-class kappa: 0.71 (substantial)
+  - Policy-topics mean Jaccard: 0.81; micro-F1: 0.84
+
+## What's next (priority order)
+
+1. **GrantConnect first CSV download + full pipeline run.**
+   Pipeline is scaffolded end-to-end (parser + loader + CLI +
+   LLM tagger + schema). Just needs `scripts/fetch_data_gov_au_resource.sh`
+   pointed at the GrantConnect CKAN ID. Estimated cost for full
+   federal grants corpus: ~$275 USD.
+2. **Stage 3 v3 full 73k contract run.** v3 prompt drafted with
+   40-sector taxonomy. Cost: $400 regular / $200 Batches API.
+3. **Federal Lobbyist Register data fetch.** Schema + loader scaffold
+   exist; needs Playwright or direct-API discovery for the SPA.
+4. **Stage 5+ post-launch refinements** per docs/strategic_plan_post_BB.md
+   (Hansard, committee submissions, ANAO, etc.).
 
 ## Batch BB delivered (5 commits, all on public mirror)
 
