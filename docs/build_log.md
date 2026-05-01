@@ -57,13 +57,17 @@ Three changes landed:
   link text but stripped from the URL (because `commit/<sha>-dirty`
   doesn't resolve on the remote).
 
-The push of `main` to the public mirror is the project-lead-side
-finishing step (gh CLI auth requires a one-shot interactive browser
-flow that an agent context can't drive without a pre-existing PAT).
-Once `gh auth login` is completed (or `git push` is run once
-interactively from Terminal so macOS Keychain caches the
-credential), all subsequent agent pushes will succeed without
-intervention.
+The push of `main` to the public mirror landed at end-of-Batch-K:
+the project lead completed the one-time `gh auth login` browser
+device-flow + `gh auth setup-git`; macOS Keychain has the
+credentials cached with `repo` + `workflow` scopes; `git push -u
+origin main` published HEAD `b690ec3` to the public mirror at
+https://github.com/mzyphur/political-influence-tracker. GitHub
+auto-detected the AGPL-3.0 from the committed `LICENSE`. The
+methodology page's clickable revision marker now resolves to real
+commits on the public mirror (`https://github.com/mzyphur/political-influence-tracker/commit/<sha>`,
+HTTP 200 verified for both `80158b5` and `b690ec3`). Subsequent
+agent pushes from this directory work without intervention.
 
 358/358 backend pytest pass. ruff clean. frontend production build
 clean.

@@ -265,14 +265,17 @@ These items are PROJECT-LEAD-side or genuinely-outside-this-session:
    under `docs/letters/replies/<recipient>_<YYYYMMDD>.{pdf,txt,html}`
    per `docs/letters/README.md`.
 2. **Publish to a public git mirror — DONE in Batch K.** Live at
-   https://github.com/mzyphur/political-influence-tracker (AGPL-3.0).
+   https://github.com/mzyphur/political-influence-tracker (AGPL-3.0,
+   GitHub auto-detected from the committed LICENSE). `main` was
+   pushed at end-of-Batch-K with HEAD `b690ec3`.
    `METHODOLOGY_REPO_URL` is wired to load from `frontend/.env.local`
    via the prebuild dotenv loader; every `npm run build`
-   auto-wraps the SHA marker in a clickable `commit/<sha>` link.
-   The first push of `main` is project-lead-side (gh CLI requires
-   one-time `gh auth login` interactive browser flow, which an
-   agent context can't drive). After that one step, all agent
-   pushes work seamlessly from this directory.
+   auto-wraps the SHA marker in a clickable `commit/<sha>` link
+   that now resolves on the public mirror (HTTP 200 verified).
+   `gh` is authenticated (mzyphur, HTTPS, scopes `repo` + `workflow`
+   + others) and the macOS Keychain has the credential cached, so
+   subsequent agent pushes from this directory work without any
+   intervention.
 3. **Postcode batches — Batch J completed three more staged runs**
    (614 NEW postcodes, 191 → 448 crosswalk rows / 127 of 150 federal
    House seats covered). Diminishing returns now: each ~200-postcode

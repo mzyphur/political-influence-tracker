@@ -567,13 +567,16 @@ read this:
    so every `npm run build` automatically wraps the SHA marker in
    a clickable `commit/<sha>` link. No further action.
 
-3a. **Project-lead-side: push `main` to the public mirror.** The
-    git remote `origin` is added; the working tree is clean; the
-    branch tracks `main`. The push needs one-time credential setup:
-    run `gh auth login` (interactive browser flow), then `gh auth
-    setup-git` so the macOS Keychain caches the credentials. After
-    that, `git push -u origin main` from this directory completes
-    the publish. Subsequent agent pushes work seamlessly.
+3a. **Push `main` to the public mirror — DONE in Batch K.** The
+    project lead completed the one-time `gh auth login` browser
+    device-flow and `gh auth setup-git`; macOS Keychain has cached
+    the credentials with `repo` + `workflow` scopes. `git push -u
+    origin main` published HEAD `b690ec3` to
+    https://github.com/mzyphur/political-influence-tracker. GitHub
+    auto-detected the AGPL-3.0 from the committed LICENSE. The
+    methodology page's clickable revision marker now resolves to
+    real commits on the public mirror (HTTP 200 verified). Future
+    agent pushes from this directory work without intervention.
 4. **AIMS-eAtlas browser-fetch follow-up (low priority).** The
    data.gov.au verbatim "Licence Not Specified" already drives the
    conservative blocked status; eAtlas might have additional
