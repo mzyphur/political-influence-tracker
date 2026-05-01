@@ -80,6 +80,39 @@ disclosed person-level money with campaign-support records, party-
 mediated party/entity context, or modelled allocation. Every public
 claim must travel with its evidence tier and attribution limit.
 
+## Current state (live, end of Batch BB — 2026-05-01)
+
+**STAGES 2 + 3 + 4a ALL SHIPPED IN BATCH BB.** Plus the
+scientific-validation backbone and the sector-taxonomy v2 design.
+
+Five commits on the public mirror at end-of-Batch-BB:
+- `bf1194f` Stages 2+3 LLM stack + cross-correlation
+- `e5cde27` Scientific validation backbone + industry rollup +
+  sector v2 plan + CITATION.cff
+- `d226368` Stage 1 v2 prompt + sector taxonomy v2 split (40 sectors)
+- `9c240b8` Build log Batch BB entry
+- `0d72093` Stage 4a portfolio mapping + 3 new API endpoints
+
+Live DB state: 314k influence events + 73,458 contracts + 544
+contract topic tags (v1+v2 pilots) + 109 ROI items + 1 cabinet
+ministry + 51 portfolio-agency mappings + 20 cabinet ministers.
+
+Stage 1 v1 entity classification still running in background at
+end of session; ~84% (23,664/28,218) at pause time.
+
+Read `docs/influence_correlation_gaps.md` first — that's the
+strategic-gaps stocktake the project lead and agent agreed on
+during Batch BB (federal portfolio mapping shipped; lobbyist
+register + voting view + state portfolio mapping queued).
+
+Read `docs/scientific_validation_protocol.md` next — that's the
+formal methods document (Cohen's κ + Jaccard + Landis-Koch
+thresholds + sample-audit protocol + bias acknowledgments).
+
+Read `docs/sector_taxonomy_evolution.md` for the v1→v2
+sector-split rationale (fossil_fuels and mining are too coarse
+for Australia; v2 splits into commodity-specific sub-codes).
+
 ## Current state (live, end of Batch AA — 2026-05-01)
 
 **HYBRID LLM-EXTRACTION PIPELINE LANDED.** This is the major

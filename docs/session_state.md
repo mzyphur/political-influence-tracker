@@ -5,11 +5,155 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-05-01** (end of Batch AA — hybrid LLM-extraction
-pipeline landed; Stage 1 entity industry classification in progress
-in the background; Stages 2-15 scoped in
-`docs/llm_strategy_full_stack.md`; methodology page documents the
-new LLM-assisted-extraction surface for public readers).
+Last updated: **2026-05-01** (end of Batch BB — Stages 2 + 3 +
+4a all live; cross-source correlation + industry rollup + minister
+responsibility views all working; scientific validation backbone
+shipped including IRR with Cohen's kappa; sector taxonomy v2
+designed; Stage 1 v1 28k run still in flight in the background).
+
+## Batch BB delivered (5 commits, all on public mirror)
+
+* **bf1194f — Stages 2+3 LLM stack + cross-correlation surface.**
+  Stage 3 v1→v2 (Haiku→Sonnet, caching now firing); Stage 2 ROI
+  pilot (109 items / 100 sections); cross-correlation view
+  (BAE/Pfizer/Telstra-class overlaps from 200 contracts: $5.67B
+  contracts × $2.57M donations); strategic gaps doc.
+* **e5cde27 — Scientific validation backbone + industry rollup +
+  sector v2 plan.** IRR script (Cohen's κ + Jaccard); Haiku v1
+  vs Sonnet v2 on 200 contracts: sector κ=0.76 substantial,
+  procurement κ=0.71, topics Jaccard 0.81; industry-level
+  aggregate view (defence $32B / pharma $4.3B / consulting $2.7B
+  contract totals); validation protocol; CITATION.cff.
+* **d226368 — Stage 1 v2 prompt + sector taxonomy v2 split.**
+  fossil_fuels → coal/gas/petroleum/uranium/fossil_fuels_other;
+  mining → iron_ore/critical_minerals/mining_other; 40 sectors
+  total; migration 043 (additive, v1 codes still valid).
+* **9c240b8 — Build log Batch BB entry.**
+* **0d72093 — Stage 4a portfolio mapping + 3 new API endpoints.**
+  schema 044 (cabinet_ministry + minister_role + portfolio_agency
+  + v_contract_minister_responsibility view); seed 045 (Albanese
+  2nd Cabinet, 1 ministry + 51 portfolio-agency mappings + 20
+  ministers; 19 resolved to person_id; 489/499 = 98% pilot
+  contract coverage). API: GET /api/industry-aggregate,
+  /api/contract-donor-overlap, /api/contract-minister-responsibility.
+
+## Files added/modified in Batch BB
+
+* `prompts/austender_contract_topic_tag/v2.md` (Sonnet 4.6, expanded sys prompt)
+* `prompts/register_of_interests_extraction/v1.md` (Sonnet 4.6, ROI deep extraction)
+* `prompts/entity_industry_classification/v2.md` (40-sector taxonomy)
+* `backend/schema/039_austender_contract_topic_tag.sql`
+* `backend/schema/040_llm_register_of_interests_observation.sql`
+* `backend/schema/041_contract_donor_overlap_views.sql`
+* `backend/schema/042_industry_influence_aggregate_view.sql`
+* `backend/schema/043_extend_sector_taxonomy_v2.sql` (40-sector additive)
+* `backend/schema/044_portfolio_responsibility.sql`
+* `backend/schema/045_seed_albanese_ministry_2nd.sql`
+* `scripts/llm_tag_austender_contracts.py`
+* `scripts/load_llm_austender_topic_tags.py`
+* `scripts/llm_extract_register_of_interests.py`
+* `scripts/load_llm_register_of_interests.py`
+* `scripts/report_contract_donor_overlap.py`
+* `scripts/compute_llm_inter_rater_reliability.py`
+* `backend/au_politics_money/api/app.py` (3 new endpoints)
+* `backend/au_politics_money/api/queries.py` (3 new query functions)
+* `docs/llm_extraction_pipeline.md` (updated)
+* `docs/influence_correlation_gaps.md` (NEW)
+* `docs/scientific_validation_protocol.md` (NEW)
+* `docs/sector_taxonomy_evolution.md` (NEW)
+* `CITATION.cff` (NEW)
+* `data/audit/llm_inter_rater_reliability/austender_contract_topic_tag/20260501T130236Z.{json,md}` (gitignored, but real evidence)
+
+## Critical handover for the next session
+
+**Stage 1 v1 28k run STILL RUNNING at end-of-Batch-BB.**
+Process PID 73186 (or check `ps aux | grep llm_classify_entities`).
+Output JSONL at `data/processed/llm_entity_classifications/20260501T113157Z.jsonl`.
+At session pause: 23,664/28,218 = 84% complete (rate 3.5/sec).
+ETA at this checkpoint: ~10-12 minutes.
+
+**When you reload, FIRST verify:**
+
+```bash
+wc -l "data/processed/llm_entity_classifications/20260501T113157Z.jsonl"
+ps aux | grep -i llm_classify_entities | grep -v grep
+```
+
+**If complete (~28,218 lines, no process):** run the loader.
+
+```bash
+DATABASE_URL=postgresql://au_politics:change-me-local-only@127.0.0.1:54329/au_politics \
+    backend/.venv/bin/python scripts/load_llm_entity_classifications.py
+```
+
+After the loader runs, the cross-correlation +
+industry-aggregate + minister-responsibility views automatically
+refresh with the full federal entity corpus (vs the partial 12k
+classified before Stage 1 finished).
+
+**If still running:** wait. The script writes JSONL incrementally
+and responses are cached at `data/raw/llm_extractions/`.
+
+## What's next after Stage 1 v1 lands
+
+1. **Stage 1 v2 full re-run** (~$100 USD, ~2.5h wall-clock).
+   Sonnet 4.6 with the 40-sector taxonomy. New prompt at
+   `prompts/entity_industry_classification/v2.md`.
+   Cache invalidates by prompt-version bump (v1 → v2). v1
+   cached responses remain on disk for audit; new v2 rows
+   coexist in the DB.
+2. **IRR v1 vs v2 entity classification.** Use
+   `scripts/compute_llm_inter_rater_reliability.py --task
+   entity_industry_classification`. Expected sector κ ≥ 0.85
+   on the 30 unchanged sectors. Sub-classification rate on
+   `fossil_fuels` v1 → coal/gas/petroleum/uranium v2 should
+   exceed 60%; lower indicates the model flinching to
+   `fossil_fuels_other` and the v2 prompt needs sharper
+   guidance.
+3. **Stage 3 v3 prompt** with the same 40-sector taxonomy.
+4. **Stage 3 full corpus run** (73k contracts at v3 ~$200-400 USD).
+5. **Stage 4c voting record VIEW.** Existing 506 divisions /
+   37,886 votes are in the DB (`vote_division` + `person_vote`
+   tables). A view that joins `vote_division.motion_text` to
+   `division_topic` + minister_role would surface "minister X
+   voted for/against bills affecting agencies X oversees".
+   Deterministic, $0 cost.
+6. **State + council portfolio mapping.** Same pattern as
+   federal (schema 044) but for state premiers + state
+   agencies. NSW/VIC/QLD priority. Deferred until after
+   federal launch but the structure is in place.
+7. **Frontend additions** for the 3 new API endpoints.
+   `/api/industry-aggregate` → industry-detail page.
+   `/api/contract-minister-responsibility` → drill-down on MP
+   profile showing agencies they oversaw + contracts those
+   agencies awarded. Deferred.
+
+## Live database state (end of Batch BB)
+
+| Table | Rows | Notes |
+|---|---:|---|
+| influence_event (non-rejected) | 314,040 | $13.48B reported total |
+| person | 318 | |
+| federal House electorate | 150 | |
+| reviewed party_entity_link | 148 | |
+| postcode_electorate_crosswalk | 448 | 127/150 House seats covered |
+| **austender_contract_topic_tag** | 544 | v1 + v2 pilots |
+| **llm_register_of_interests_observation** | 109 | Stage 2 pilot |
+| **entity_industry_classification (model_assisted)** | TBD | populates after Stage 1 v1 loader runs |
+| **cabinet_ministry** | 1 | Albanese 2nd Cabinet |
+| **minister_role** | 20 | 19 resolved to person_id |
+| **portfolio_agency** | 51 | across 18 portfolios |
+
+## Quality + reliability evidence
+
+| Stage | n | Sector κ | Notes |
+|---|---:|---:|---|
+| 3 IRR (Haiku v1 vs Sonnet v2) | 200 | **0.76** substantial | procurement κ 0.71; topics Jaccard 0.81; production-grade |
+| 3 manual audit | 10 | 7 correct / 2 acceptable / 1 weak / 0 wrong | maintainer audit, deterministic seed |
+| 2 ROI pilot | 100 sections | (n/a single rater) | 109 items, $0.38 USD; full-corpus projection ~$15 USD |
+| 4a coverage | 499 contracts | (deterministic match) | 489 = 98% joined to minister + portfolio |
+
+
 
 ## Critical: Stage 1 28k LLM run is in progress in the background
 
