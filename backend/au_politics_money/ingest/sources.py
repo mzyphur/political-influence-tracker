@@ -1443,6 +1443,192 @@ SOURCES: tuple[SourceRecord, ...] = (
             "permalinks so each row is reproducibly citable."
         ),
     ),
+    # ---- State-level lobbyist registers (Batch X #2 registration) ----
+    # Each state/territory maintains its own register of lobbyists
+    # under its own statutory regime. Each register publishes the
+    # third-party lobbyists registered to deal with that state's
+    # government, plus their declared client list. Together they
+    # are the state-level peer of the Commonwealth Register of
+    # Lobbyists (`australian_lobbyists_register`).
+    SourceRecord(
+        source_id="nsw_register_of_lobbyists",
+        name="NSW Register of Lobbyists",
+        jurisdiction="New South Wales",
+        level="state",
+        source_type="lobbyist_register",
+        url="https://www.lobbyists.electoral.nsw.gov.au/",
+        expected_format="html_searchable_register",
+        update_frequency="continuous",
+        priority="high",
+        notes=(
+            "NSW Electoral Commission's lobbyist register under the "
+            "Lobbying of Government Officials Act 2011 (NSW). "
+            "Contains: registrant name, ABN, business address, "
+            "current and former office-holder details (where "
+            "applicable), declared client list per registrant. "
+            "Pairs with the Commonwealth lobbyist register to "
+            "show cross-jurisdiction lobbying footprints."
+        ),
+    ),
+    SourceRecord(
+        source_id="vic_register_of_lobbyists",
+        name="Victorian Register of Lobbyists",
+        jurisdiction="Victoria",
+        level="state",
+        source_type="lobbyist_register",
+        url="https://www.vps.vic.gov.au/code-of-conduct/lobbyist-register/",
+        expected_format="html_searchable_register",
+        update_frequency="continuous",
+        priority="high",
+        notes=(
+            "Victorian Public Sector Commission's lobbyist register "
+            "under the Victorian Government Professional Lobbyist "
+            "Code of Conduct. Same shape as the Commonwealth and "
+            "NSW registers: registrant + clients."
+        ),
+    ),
+    SourceRecord(
+        source_id="qld_register_of_lobbyists",
+        name="Queensland Register of Lobbyists",
+        jurisdiction="Queensland",
+        level="state",
+        source_type="lobbyist_register",
+        url="https://www.lobbyists.integrity.qld.gov.au/",
+        expected_format="html_searchable_register",
+        update_frequency="continuous",
+        priority="high",
+        notes=(
+            "Queensland Integrity Commission's lobbyist register "
+            "under the Integrity Act 2009 (Qld). Each registrant "
+            "row includes registered office, principal officer, and "
+            "client list. Registrants are subject to a Lobbying Code "
+            "of Conduct."
+        ),
+    ),
+    SourceRecord(
+        source_id="wa_register_of_lobbyists",
+        name="WA Register of Lobbyists",
+        jurisdiction="Western Australia",
+        level="state",
+        source_type="lobbyist_register",
+        url="https://www.lobbyists.wa.gov.au/",
+        expected_format="html_searchable_register",
+        update_frequency="continuous",
+        priority="high",
+        notes=(
+            "Public Sector Commission of Western Australia's "
+            "lobbyist register. Includes WA Code of Conduct text "
+            "alongside the registrant + client listings."
+        ),
+    ),
+    SourceRecord(
+        source_id="sa_register_of_lobbyists",
+        name="SA Register of Lobbyists",
+        jurisdiction="South Australia",
+        level="state",
+        source_type="lobbyist_register",
+        url="https://www.dpc.sa.gov.au/responsibilities/lobbyist-register",
+        expected_format="html_searchable_register",
+        update_frequency="continuous",
+        priority="high",
+        notes=(
+            "Department of Premier and Cabinet South Australia's "
+            "lobbyist register under the South Australian Lobbyists "
+            "Act 2015."
+        ),
+    ),
+    SourceRecord(
+        source_id="tas_register_of_lobbyists",
+        name="Tasmanian Register of Lobbyists",
+        jurisdiction="Tasmania",
+        level="state",
+        source_type="lobbyist_register",
+        url="https://www.dpac.tas.gov.au/divisions/policy_and_advisory_division/lobbyists",
+        expected_format="html_searchable_register",
+        update_frequency="continuous",
+        priority="medium",
+        notes=(
+            "Department of Premier and Cabinet Tasmania's lobbyist "
+            "register. Smaller jurisdiction; fewer registrants but "
+            "complete-coverage important for state transparency."
+        ),
+    ),
+    SourceRecord(
+        source_id="act_register_of_lobbyists",
+        name="ACT Register of Lobbyists",
+        jurisdiction="Australian Capital Territory",
+        level="state",
+        source_type="lobbyist_register",
+        url="https://www.cmtedd.act.gov.au/governance/lobbyists",
+        expected_format="html_searchable_register",
+        update_frequency="continuous",
+        priority="medium",
+        notes=(
+            "Chief Minister, Treasury and Economic Development "
+            "Directorate's ACT lobbyist register. Companion to the "
+            "Commonwealth register because much ACT lobbying "
+            "overlaps with federal lobbying given Canberra's role "
+            "as the national capital."
+        ),
+    ),
+    SourceRecord(
+        source_id="nt_register_of_lobbyists",
+        name="NT Register of Lobbyists",
+        jurisdiction="Northern Territory",
+        level="state",
+        source_type="lobbyist_register",
+        url="https://nt.gov.au/industry/lobbying-government",
+        expected_format="html_searchable_register",
+        update_frequency="continuous",
+        priority="medium",
+        notes=(
+            "NT Government's lobbyist register. Small jurisdiction; "
+            "register may be hosted on a partner page. Companion to "
+            "the CLP-aligned political register."
+        ),
+    ),
+    # ---- State-level Hansard / parliamentary speech sources ----
+    SourceRecord(
+        source_id="nsw_parliament_hansard",
+        name="NSW Parliament Hansard",
+        jurisdiction="New South Wales",
+        level="state",
+        source_type="parliamentary_speech_text",
+        url="https://www.parliament.nsw.gov.au/Hansard/",
+        expected_format="html_per_session_with_pdf_archives",
+        update_frequency="continuous",
+        priority="medium",
+        notes=(
+            "NSW Parliamentary Hansard. Per-session HTML pages plus "
+            "full-PDF archive. Pairs with NSW state-election results "
+            "and the NSW lobbyist register for state-level 'who said "
+            "what / who lobbied whom' analysis."
+        ),
+    ),
+    SourceRecord(
+        source_id="vic_parliament_hansard",
+        name="Victorian Parliament Hansard",
+        jurisdiction="Victoria",
+        level="state",
+        source_type="parliamentary_speech_text",
+        url="https://www.parliament.vic.gov.au/about/hansard",
+        expected_format="html_per_session_with_pdf_archives",
+        update_frequency="continuous",
+        priority="medium",
+        notes="Victorian Parliamentary Hansard.",
+    ),
+    SourceRecord(
+        source_id="qld_parliament_hansard",
+        name="Queensland Parliament Hansard",
+        jurisdiction="Queensland",
+        level="state",
+        source_type="parliamentary_speech_text",
+        url="https://www.parliament.qld.gov.au/work-of-assembly/hansard",
+        expected_format="html_per_session_with_pdf_archives",
+        update_frequency="continuous",
+        priority="medium",
+        notes="Queensland Parliamentary Hansard.",
+    ),
 )
 
 
