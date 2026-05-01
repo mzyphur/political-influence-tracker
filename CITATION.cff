@@ -1,0 +1,61 @@
+# Citation File Format (CFF) — https://citation-file-format.github.io/
+# Cite this project in publications using the metadata below.
+cff-version: 1.2.0
+title: "Australian Political Influence Transparency Project"
+abstract: |
+  A reproducible, source-backed Australian political influence
+  transparency platform. Federal-first; state-and-local
+  expansion in progress. Combines deterministic parsing of
+  public political-finance disclosures (AEC donations, APH
+  Register of Interests, AusTender contract notices) with a
+  versioned, hash-cached LLM-assisted extraction layer
+  (Anthropic Claude Sonnet 4.6) for industry classification,
+  contract topic tagging, and structured disclosure-item
+  extraction. Cross-source correlation surfaces — never sum
+  across evidence tiers — power public-interest analyses of
+  donor-contract overlaps and industry-level influence
+  patterns. Inter-rater reliability quantified with Cohen's
+  kappa for every LLM stage.
+type: software
+authors:
+  - given-names: Michael
+    family-names: Zyphur
+    email: mzyphur@gmail.com
+    affiliation: Independent
+license: AGPL-3.0
+repository-code: "https://github.com/mzyphur/political-influence-tracker"
+url: "https://github.com/mzyphur/political-influence-tracker"
+keywords:
+  - political-finance-transparency
+  - australia
+  - public-records
+  - donations
+  - lobbying
+  - government-contracts
+  - claude-anthropic
+  - reproducible-research
+  - cohen-kappa
+  - inter-rater-reliability
+preferred-citation:
+  type: software
+  title: "Australian Political Influence Transparency Project"
+  authors:
+    - given-names: Michael
+      family-names: Zyphur
+  year: 2026
+  url: "https://github.com/mzyphur/political-influence-tracker"
+references:
+  - type: article
+    authors:
+      - given-names: J. Richard
+        family-names: Landis
+      - given-names: Gary G.
+        family-names: Koch
+    title: "The Measurement of Observer Agreement for Categorical Data"
+    journal: Biometrics
+    year: 1977
+    volume: 33
+    issue: 1
+    start: 159
+    end: 174
+    notes: "Source for the kappa interpretation thresholds (≥0.81 almost perfect; 0.61-0.80 substantial; 0.41-0.60 moderate; etc.)"
