@@ -6315,3 +6315,247 @@ def get_project_stats(*, database_url: str | None = None) -> dict[str, Any]:
             "caveat": PROJECT_STATS_CAVEAT,
         }
     )
+
+
+# ----------------------------------------------------------------
+# Industry-aggregate + contract-donor-overlap (Batch BB / CC)
+# ----------------------------------------------------------------
+
+INDUSTRY_AGGREGATE_CAVEAT: str = (
+    "Donor-side amounts (deterministic, evidence tier 1) and "
+    "contract-side amounts (LLM-tagged, evidence tier 2) are "
+    "surfaced as separate columns and are NEVER summed. The view "
+    "exposes correlation, not causation. Sector classifications "
+    "carry a `prompt_version` label so v1 / v2 outputs can be "
+    "distinguished by consumers."
+)
+
+
+def get_industry_aggregate(
+    *,
+    min_donor_money_aud: float = 0,
+    min_contract_value_aud: float = 0,
+    limit: int = 100,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    """Return rows from `v_industry_influence_aggregate` ordered by
+    combined activity (donor money + contract value) descending.
+
+    Powers the public app's industry-level surface ("how much did
+    the gas industry donate AND receive in contracts").
+    """
+    sql = """
+        SELECT
+            sector,
+            distinct_donor_entities,
+            donor_event_count,
+            money_event_count,
+            campaign_support_event_count,
+            private_interest_event_count,
+            benefit_event_count,
+            access_event_count,
+            organisational_role_event_count,
+            total_money_aud,
+            total_campaign_support_aud,
+            donor_earliest_event_date,
+            donor_latest_event_date,
+            donor_evidence_tier,
+            donor_sector_method,
+            contract_prompt_version,
+            contract_count,
+            distinct_contract_ids,
+            distinct_suppliers,
+            total_contract_value_aud,
+            contracting_agencies,
+            procurement_classes,
+            contract_evidence_tier
+        FROM v_industry_influence_aggregate
+        WHERE
+            (COALESCE(total_money_aud, 0) >= %s
+             OR COALESCE(total_contract_value_aud, 0) >= %s)
+        ORDER BY
+            COALESCE(total_money_aud, 0)
+            + COALESCE(total_contract_value_aud, 0) DESC
+        LIMIT %s
+    """
+    with connect(database_url) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                sql,
+                (
+                    min_donor_money_aud,
+                    min_contract_value_aud,
+                    limit,
+                ),
+            )
+            rows = cur.fetchall()
+
+    return {
+        "claim_discipline_caveat": INDUSTRY_AGGREGATE_CAVEAT,
+        "row_count": len(rows),
+        "filters": {
+            "min_donor_money_aud": min_donor_money_aud,
+            "min_contract_value_aud": min_contract_value_aud,
+            "limit": limit,
+        },
+        "rows": _jsonable(rows),
+    }
+
+
+def get_contract_minister_responsibility(
+    *,
+    agency: str | None = None,
+    minister_name: str | None = None,
+    portfolio: str | None = None,
+    sector: str | None = None,
+    limit: int = 100,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    """Return rows from `v_contract_minister_responsibility`."""
+    where_clauses: list[str] = []
+    params: list[Any] = []
+    if agency:
+        where_clauses.append("lower(agency_name) = lower(%s)")
+        params.append(agency)
+    if minister_name:
+        where_clauses.append("lower(minister_name) = lower(%s)")
+        params.append(minister_name)
+    if portfolio:
+        where_clauses.append("lower(portfolio_label) = lower(%s)")
+        params.append(portfolio)
+    if sector:
+        where_clauses.append("sector = %s")
+        params.append(sector)
+    where_sql = (" WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
+
+    sql = f"""
+        SELECT
+            contract_id,
+            agency_name,
+            supplier_name,
+            sector,
+            policy_topics,
+            procurement_class,
+            summary,
+            portfolio_label,
+            cabinet_ministry_id,
+            cabinet_ministry_label,
+            parliamentary_term,
+            governing_party_short_name,
+            minister_role_id,
+            minister_person_id,
+            minister_name,
+            minister_role_title,
+            minister_role_type,
+            minister_effective_from,
+            minister_effective_to,
+            contract_evidence_tier,
+            portfolio_evidence_tier,
+            minister_evidence_tier,
+            claim_discipline_note
+        FROM v_contract_minister_responsibility
+        {where_sql}
+        ORDER BY agency_name, supplier_name
+        LIMIT %s
+    """
+    params.append(limit)
+
+    with connect(database_url) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+
+    return {
+        "claim_discipline_caveat": INDUSTRY_AGGREGATE_CAVEAT,
+        "row_count": len(rows),
+        "filters": {
+            "agency": agency,
+            "minister_name": minister_name,
+            "portfolio": portfolio,
+            "sector": sector,
+            "limit": limit,
+        },
+        "rows": _jsonable(rows),
+    }
+
+
+def get_contract_donor_overlap(
+    *,
+    min_contract_value_aud: float = 0,
+    min_donor_money_aud: float = 0,
+    sector: str | None = None,
+    limit: int = 100,
+    database_url: str | None = None,
+) -> dict[str, Any]:
+    """Return rows from `v_contract_donor_overlap` ordered by
+    combined activity (contract value + donor money) descending.
+
+    Suppliers that BOTH received Australian Government contracts
+    (LLM-tagged) AND appear as donors / gift-givers / hosts in
+    `influence_event` (deterministic).
+    """
+    where_clauses = [
+        "COALESCE(total_contract_value_aud, 0) >= %s",
+        "COALESCE(donor_total_money_aud, 0) >= %s",
+    ]
+    params: list[Any] = [min_contract_value_aud, min_donor_money_aud]
+    if sector:
+        where_clauses.append(
+            "%s = ANY(contract_sectors)"
+        )
+        params.append(sector)
+
+    sql = f"""
+        SELECT
+            supplier_name,
+            supplier_normalized,
+            contract_prompt_version,
+            contract_count,
+            distinct_contract_ids,
+            total_contract_value_aud,
+            contract_sectors,
+            contract_policy_topics,
+            contract_agencies,
+            matched_entity_id,
+            matched_entity_canonical_name,
+            matched_entity_type,
+            donor_event_count,
+            money_event_count,
+            campaign_support_event_count,
+            private_interest_event_count,
+            benefit_event_count,
+            access_event_count,
+            organisational_role_event_count,
+            donor_total_money_aud,
+            donor_total_campaign_support_aud,
+            donor_event_families,
+            donor_earliest_event_date,
+            donor_latest_event_date,
+            contract_evidence_tier,
+            donor_evidence_tier,
+            claim_discipline_note
+        FROM v_contract_donor_overlap
+        WHERE {' AND '.join(where_clauses)}
+        ORDER BY
+            COALESCE(total_contract_value_aud, 0)
+            + COALESCE(donor_total_money_aud, 0) DESC
+        LIMIT %s
+    """
+    params.append(limit)
+
+    with connect(database_url) as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(sql, tuple(params))
+            rows = cur.fetchall()
+
+    return {
+        "claim_discipline_caveat": INDUSTRY_AGGREGATE_CAVEAT,
+        "row_count": len(rows),
+        "filters": {
+            "min_contract_value_aud": min_contract_value_aud,
+            "min_donor_money_aud": min_donor_money_aud,
+            "sector": sector,
+            "limit": limit,
+        },
+        "rows": _jsonable(rows),
+    }

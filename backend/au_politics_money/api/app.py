@@ -601,6 +601,101 @@ def influence_graph(
     return graph
 
 
+@app.get(
+    "/api/industry-aggregate",
+    tags=["Influence"],
+    summary="Per-sector industry-level influence aggregate",
+    description=(
+        "Returns rows from `v_industry_influence_aggregate`: one "
+        "row per sector with side-by-side donor-side aggregates "
+        "(money / campaign-support / private-interest / benefit / "
+        "access / organisational-role event counts and totals — "
+        "deterministic tier 1) and contract-side aggregates "
+        "(LLM-tagged AusTender contract count + total value — "
+        "tier 2). NEVER sums across tier boundaries. Powers "
+        "questions like 'how much did the gas industry donate AND "
+        "how much did it receive in contracts'."
+    ),
+    responses={200: {"description": "Sector-by-sector aggregate"}},
+)
+def industry_aggregate(
+    min_donor_money_aud: Annotated[float, Query(ge=0)] = 0,
+    min_contract_value_aud: Annotated[float, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=1, le=200)] = 100,
+) -> dict:
+    return queries.get_industry_aggregate(
+        min_donor_money_aud=min_donor_money_aud,
+        min_contract_value_aud=min_contract_value_aud,
+        limit=limit,
+    )
+
+
+@app.get(
+    "/api/contract-minister-responsibility",
+    tags=["Influence"],
+    summary="Contracts joined to the responsible minister via portfolio mapping",
+    description=(
+        "Returns rows from `v_contract_minister_responsibility`: "
+        "every LLM-tagged AusTender contract joined to the minister "
+        "+ portfolio that oversees the awarding agency, via the "
+        "deterministic `portfolio_agency` + `minister_role` "
+        "tables (Stage 4a, schema 044/045). Closes the structural "
+        "influence-narrative loop: a query that combines this with "
+        "`/api/contract-donor-overlap` surfaces 'supplier-X donated "
+        "to MP-Z whose portfolio oversees the agency that paid X'. "
+        "The contract → minister join uses lower-cased exact match "
+        "on `agency_canonical_name` OR any of the per-agency "
+        "`agency_aliases`. Coverage on the BB pilot data: ~98% of "
+        "tagged contracts joined to a minister + portfolio."
+    ),
+    responses={200: {"description": "Per-contract minister responsibility"}},
+)
+def contract_minister_responsibility(
+    agency: str | None = None,
+    minister_name: str | None = None,
+    portfolio: str | None = None,
+    sector: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict:
+    return queries.get_contract_minister_responsibility(
+        agency=agency,
+        minister_name=minister_name,
+        portfolio=portfolio,
+        sector=sector,
+        limit=limit,
+    )
+
+
+@app.get(
+    "/api/contract-donor-overlap",
+    tags=["Influence"],
+    summary="Contract suppliers that ALSO appear as donors",
+    description=(
+        "Returns rows from `v_contract_donor_overlap`: entities "
+        "that received Australian Government contracts (LLM-tagged) "
+        "AND appear as donors / gift-givers / hosts in "
+        "`influence_event` (deterministic). Tier-1 donor amounts "
+        "and tier-2 contract amounts are surfaced as separate "
+        "columns; the API does NOT sum them. Powers the public "
+        "app's headline 'supplier-X-got-$N-contracts-AND-donated-"
+        "$M-to-MP-Y' surface."
+    ),
+    responses={200: {"description": "Per-supplier overlap rows"}},
+)
+def contract_donor_overlap(
+    min_contract_value_aud: Annotated[float, Query(ge=0)] = 0,
+    min_donor_money_aud: Annotated[float, Query(ge=0)] = 0,
+    sector: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=500)] = 100,
+) -> dict:
+    return queries.get_contract_donor_overlap(
+        min_contract_value_aud=min_contract_value_aud,
+        min_donor_money_aud=min_donor_money_aud,
+        sector=sector,
+        limit=limit,
+    )
+
+
 def main() -> None:
     import uvicorn
 
