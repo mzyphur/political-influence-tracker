@@ -1,5 +1,88 @@
 # Build Log
 
+## 2026-05-01 (Batch BB extended — Stage 1 v2 launched + ALL-jurisdiction cabinet coverage + Stage 3 v3 prompt + frontend industry card)
+
+Massive extension of Batch BB. Twelve total commits in the day-of
+session. Headline achievements:
+
+* **Stage 1 v1 28k complete + loaded.** 28,218 entities classified
+  in $104 USD; 21,834 entity.entity_type promotions from `unknown`
+  to specific types (individual / company / association / etc.)
+  — biggest single-batch entity-type enrichment ever.
+* **Industry-aggregate view rolled to full corpus.** Top sectors:
+  unions $1.55B donations, government_owned $1.46B+$2.29B,
+  mining $1.43B, banking $757M, finance $677M, property_dev
+  $296M+$1.16B, fossil_fuels $159M+$135M, education $72M+$852M.
+* **Stage 1 v2 pilot + IRR.** v2 (40-sector taxonomy with
+  energy + mining splits) ran on 200 entities; 197/200 success
+  ($0.74 USD); confidence properly discriminative (low 39% / med
+  31% / high 30% vs v1's near-uniform "high"). v1-vs-v2 IRR on
+  the 197 overlap: **public-sector kappa = 0.907 (almost perfect
+  — Landis-Koch)**. v2 production-ready.
+* **Stage 1 v2 FULL run in flight.** PID 79579 running at
+  end-of-session; will land 28k v2-tagged classifications at
+  ~$100 USD over ~2.5h. v2 cache invalidates by prompt-version
+  bump; v1 cache remains for audit + IRR.
+* **--prompt-version flag in driver.** scripts/llm_classify_entities.py
+  now supports `--prompt-version v1` (default, 33-sector) or
+  `--prompt-version v2` (40-sector). Backward-compat preserved.
+* **ALL 9 Australian cabinet ministries seeded.** Federal Albanese
+  + NSW Minns + VIC Allan + QLD Crisafulli + WA Cook + SA
+  Malinauskas + TAS Rockliff + ACT Barr + NT Finocchiaro.
+  Combined: ~73 portfolios + ~76 cabinet ministers across the
+  whole country. Schemas 044-049.
+* **Stage 3 v3 prompt drafted** with 40-sector taxonomy mirroring
+  Stage 1 v2. Covers energy + mining splits with worked examples
+  (Vales Point coal, Santos LNG, Fortescue iron-ore, Pilbara
+  Minerals lithium, BHP diversified-conglomerate, Tilt
+  Renewables, Deloitte energy advisory). Cache + DB CHECK
+  constraint already accept all 40 codes (migration 043).
+* **Frontend wiring complete.** api.ts has 4 new fetch functions
+  (industry-aggregate, contract-donor-overlap,
+  contract-minister-responsibility, minister-voting-pattern).
+  types.ts has 4 new response types. New IndustryActivityCard
+  component renders on App home view (collapsed by default).
+  Styled with tier-1 / tier-2 evidence pills.
+
+End-of-batch commits (newest first):
+* `9956e1a` Stage 3 v3 prompt + ALL 8 state/territory cabinet seeds
+* `44bd9c6` --prompt-version flag + Stage 1 v1 final stats
+* `5e7897e` IndustryActivityCard frontend component
+* `988175a` api.ts client functions re-applied
+* `ba02213` State cabinet seeds (NSW + VIC + QLD) + frontend types
+* `e3309ce` Stage 4c voting view + design decisions log
+* `e6f7d1b` Pre-compact docs refresh
+* `0d72093` Stage 4a portfolio mapping + 3 API endpoints
+* `9c240b8` Build log Batch BB entry
+* `d226368` Stage 1 v2 prompt + sector taxonomy v2 split
+* `e5cde27` Scientific validation + industry rollup + sector v2 plan
+* `bf1194f` Stages 2+3 LLM stack + cross-source correlation
+
+Total schemas added: 039 → 049 (11 new migrations).
+Total scripts added: 7 (two LLM drivers + two loaders + cross-
+correlation reporter + IRR analyzer + driver flag refactor).
+Total prompts: 4 (austender v1, austender v2, austender v3, ROI
+v1) + 1 entity-classification v2.
+Total docs: 5 new (influence_correlation_gaps,
+scientific_validation_protocol, sector_taxonomy_evolution,
+design_decisions, CITATION.cff).
+Total API endpoints: 4 new
+(industry-aggregate, contract-donor-overlap,
+contract-minister-responsibility, minister-voting-pattern).
+Total SQL views: 7 new (contract supplier aggregates, donor
+entity aggregates, contract-donor overlap, sector donor-side,
+sector contract-side, industry influence aggregate, contract
+minister responsibility + 3 voting views).
+Total frontend additions: api.ts (4 fetchers), types.ts (4
+response types), IndustryActivityCard component, styles.css
+(industry-card + tier-pill block).
+
+Cumulative project LLM spend: ~$108 USD (Stage 1 v1 $104 + v2
+pilot $0.74 + Stages 2+3 pilots ~$3); v2 full run pending.
+Within the $1k AUD budget envelope; remaining headroom for
+Stage 3 v3 corpus + Stage 2 ROI corpus + Stage 1 v2 full = ~$500
+USD.
+
 ## 2026-05-01 (Batch BB — Stages 2+3 LLM stack + cross-source correlation + scientific validation + sector taxonomy v2)
 
 Major batch landing four commits + two GitHub mirror pushes during
