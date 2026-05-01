@@ -747,43 +747,12 @@ export function DetailsPanel({
               not allegations of wrongdoing.
             </p>
             <div className="benefit-provider-list">
-              {topBenefitProviders.slice(0, 8).map((provider) => {
-                // Compute a per-(event_type, subtype) breakdown for this
-                // provider from the provider summary's parallel arrays.
-                // The arrays are aligned 1:1 in the API; we group them
-                // here so the expanded card can show "Lounge access × 2"
-                // style chips.
-                const counts = new Map<string, {
-                  eventType: string;
-                  subtype: string | null;
-                  count: number;
-                }>();
-                const totalForms = Math.max(
-                  provider.event_types.length,
-                  provider.event_subtypes.length
-                );
-                for (let index = 0; index < totalForms; index += 1) {
-                  const eventType = provider.event_types[index] ?? "benefit";
-                  const subtype = provider.event_subtypes[index] ?? null;
-                  const key = `${eventType}:${subtype ?? ""}`;
-                  const existing = counts.get(key);
-                  if (existing) {
-                    existing.count += 1;
-                  } else {
-                    counts.set(key, { eventType, subtype, count: 1 });
-                  }
-                }
-                const perFormCounts = Array.from(counts.values()).sort(
-                  (a, b) => b.count - a.count
-                );
-                return (
-                  <BenefitProviderCard
-                    key={`${provider.provider_entity_id ?? "raw"}:${provider.provider_name}`}
-                    provider={provider}
-                    perFormCounts={perFormCounts}
-                  />
-                );
-              })}
+              {topBenefitProviders.slice(0, 8).map((provider) => (
+                <BenefitProviderCard
+                  key={`${provider.provider_entity_id ?? "raw"}:${provider.provider_name}`}
+                  provider={provider}
+                />
+              ))}
               <BenefitOrphanCard
                 count={benefitHighlights.reduce(
                   (total, summary) =>
@@ -1729,13 +1698,57 @@ function benefitFormChipLabel(eventType: string, subtype: string | null): string
 }
 
 /**
+ * Compute the "form chips" to show inside an expanded provider
+ * card. The API returns `event_types` and `event_subtypes` as
+ * INDEPENDENT deduped sets (not parallel record-by-record arrays),
+ * so we cannot derive per-form counts from them; we just show the
+ * distinct forms the reader saw across this provider's records.
+ *
+ * Preference order:
+ *  1. If subtypes exist → show subtype labels (more specific).
+ *  2. Else fall back to type labels (less specific but still
+ *     informative — "Gift", "Sponsored travel or hospitality").
+ *  3. Always dedupe and sort by label for a stable, readable order.
+ */
+function deriveProviderFormChips(
+  provider: RepresentativeBenefitProviderSummary
+): string[] {
+  const labels = new Set<string>();
+  if (provider.event_subtypes.length > 0) {
+    for (const subtype of provider.event_subtypes) {
+      const label = benefitFormChipLabel(
+        provider.event_types[0] ?? "benefit",
+        subtype
+      );
+      if (label) labels.add(label);
+    }
+  }
+  // Always include the "type" chips when we don't have a subtype
+  // yet OR when there's a record family that lacks a subtype on
+  // the source side (e.g. plain "Gift" with no further detail).
+  if (
+    provider.event_subtypes.length === 0 ||
+    provider.event_subtypes.length < provider.event_types.length
+  ) {
+    for (const eventType of provider.event_types) {
+      const label = humanize(eventType);
+      if (label) labels.add(label);
+    }
+  }
+  return Array.from(labels).sort((a, b) => a.localeCompare(b));
+}
+
+/**
  * One expandable card per named provider. Closed: shows the
  * provider name, total record count, and a one-line summary
  * (forms received + date span + reported value if any).
- * Open: shows a per-(event-type/subtype) breakdown, the partial-
- * review status if any, and the loaded date span — all sourced
- * from the existing `RepresentativeBenefitProviderSummary` payload
- * with no additional API calls.
+ * Open: shows the distinct benefit forms received from this
+ * provider as chips, the reported-amount line, the loaded date
+ * span, the missing-fields note (when applicable), the partial-
+ * review status (only when informative), and the project's
+ * standing claim-discipline caveat. All sourced from the existing
+ * `RepresentativeBenefitProviderSummary` payload — no additional
+ * API calls per expansion.
  *
  * The closed view is the scannable headline a reporter or voter
  * sees first. Click to drill in for context. Provider-first is
@@ -1743,13 +1756,12 @@ function benefitFormChipLabel(eventType: string, subtype: string | null): string
  * "who's been giving this MP what?".
  */
 function BenefitProviderCard({
-  provider,
-  perFormCounts
+  provider
 }: {
   provider: RepresentativeBenefitProviderSummary;
-  perFormCounts: Array<{ eventType: string; subtype: string | null; count: number }>;
 }) {
   const [open, setOpen] = useState(false);
+  const formChips = deriveProviderFormChips(provider);
   const detailLine = benefitProviderDetail(provider);
   const reviewLine = partialReviewDetail(
     provider.needs_review_event_count,
@@ -1759,8 +1771,20 @@ function BenefitProviderCard({
     provider.reported_amount_event_count > 0
       ? `${formatMoney(provider.reported_amount_total)} reported across ${
           provider.reported_amount_event_count
-        } record${provider.reported_amount_event_count === 1 ? "" : "s"}`
-      : "No dollar value disclosed in the source for any of these records.";
+        } of ${provider.event_count} record${
+          provider.event_count === 1 ? "" : "s"
+        }${
+          provider.reported_amount_event_count < provider.event_count
+            ? "; the rest have no dollar value in the source PDF"
+            : ""
+        }.`
+      : provider.event_count === 1
+        ? "No dollar value disclosed in the source PDF for this record."
+        : `No dollar value disclosed in the source PDF for any of these ${provider.event_count} records.`;
+  const formsCountLine =
+    formChips.length > 1
+      ? `${provider.event_count.toLocaleString("en-AU")} records spanning ${formChips.length} distinct benefit forms.`
+      : null;
   return (
     <div className="benefit-provider-card" data-expanded={open ? "true" : "false"}>
       <button
@@ -1783,39 +1807,44 @@ function BenefitProviderCard({
       </button>
       {open && (
         <div className="benefit-provider-card__body">
-          <div className="benefit-provider-card__chips">
-            {perFormCounts.map(({ eventType, subtype, count }) => (
-              <span
-                key={`${eventType}:${subtype ?? ""}`}
-                className="benefit-provider-card__chip"
-              >
-                {benefitFormChipLabel(eventType, subtype)}
-                <em>× {count.toLocaleString("en-AU")}</em>
-              </span>
-            ))}
-          </div>
+          {formChips.length > 0 ? (
+            <div>
+              <h5 className="benefit-provider-card__subhead">Benefit forms</h5>
+              <div className="benefit-provider-card__chips">
+                {formChips.map((label) => (
+                  <span key={label} className="benefit-provider-card__chip">
+                    {label}
+                  </span>
+                ))}
+              </div>
+              {formsCountLine ? (
+                <p className="benefit-provider-card__note benefit-provider-card__note--tight">
+                  {formsCountLine}
+                </p>
+              ) : null}
+            </div>
+          ) : null}
           <p className="benefit-provider-card__note">{reportedLine}</p>
           <p className="benefit-provider-card__note">
-            Loaded date span: {voteDateSpan(
-              provider.first_event_date,
-              provider.last_event_date
-            )}
+            <strong>Loaded date span:</strong>{" "}
+            {voteDateSpan(provider.first_event_date, provider.last_event_date)}
             {provider.missing_data_event_count > 0 ? (
               <>
                 {" · "}
                 {provider.missing_data_event_count.toLocaleString("en-AU")}{" "}
                 of {provider.event_count.toLocaleString("en-AU")} have at least
-                one missing field in the source PDF.
+                one missing field in the source PDF
               </>
             ) : null}
+            .
           </p>
           {reviewLine ? (
             <p className="benefit-provider-card__note">{reviewLine}.</p>
           ) : null}
           <p className="benefit-provider-card__caveat">
-            Disclosed records, not allegations of wrongdoing. Each row links
-            back to the original APH Register of Interests entry on the
-            representative's evidence page.
+            Disclosed records, not allegations of wrongdoing. Each row
+            traces back to the original APH Register of Interests entry on
+            the representative's evidence page.
           </p>
         </div>
       )}
@@ -1883,7 +1912,9 @@ function BenefitOrphanCard({
                   className="benefit-provider-card__chip"
                 >
                   {benefitFormChipLabel(summary.event_type, summary.event_subtype)}
-                  <em>× {orphanCount.toLocaleString("en-AU")}</em>
+                  {orphanCount > 1 ? (
+                    <em>× {orphanCount.toLocaleString("en-AU")}</em>
+                  ) : null}
                 </span>
               );
             })}

@@ -1602,6 +1602,15 @@ a:focus-visible {
   gap: 8px;
 }
 
+.benefit-provider-card__subhead {
+  margin: 0 0 5px;
+  color: #253941;
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
 .benefit-provider-card__chips {
   display: flex;
   flex-wrap: wrap;
@@ -1634,6 +1643,17 @@ a:focus-visible {
   color: var(--ink-muted);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.benefit-provider-card__note strong {
+  color: #14333a;
+  font-weight: 800;
+}
+
+.benefit-provider-card__note--tight {
+  margin-top: 4px;
+  font-size: 10.5px;
+  color: #6f7c80;
 }
 
 .benefit-provider-card__caveat {
