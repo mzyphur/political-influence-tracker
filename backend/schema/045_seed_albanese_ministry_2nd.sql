@@ -37,6 +37,16 @@ SELECT
 WHERE NOT EXISTS (
     SELECT 1 FROM cabinet_ministry
     WHERE label = 'Albanese Ministry — 2nd Cabinet (48th Parliament, post-2025 election)'
+)
+-- Guard: only seed when the Commonwealth jurisdiction has been
+-- seeded. Migration 047 adds a NOT NULL on jurisdiction_id; if
+-- this row exists with NULL jurisdiction_id when 047 runs, the
+-- backfill subquery returns nothing (no federal jurisdiction)
+-- and the SET NOT NULL fails. Test integration fixtures seed
+-- jurisdictions AFTER migrations run; this guard skips insertion
+-- in those fixtures so the migration chain stays green.
+AND EXISTS (
+    SELECT 1 FROM jurisdiction WHERE level = 'federal'
 );
 
 -- Major portfolio agencies. Aliases include common AusTender

@@ -29,7 +29,17 @@ SET jurisdiction_id = (
     ORDER BY id
     LIMIT 1
 )
-WHERE jurisdiction_id IS NULL;
+WHERE jurisdiction_id IS NULL
+  AND EXISTS (SELECT 1 FROM jurisdiction WHERE level = 'federal');
+
+-- Defence in depth: if any rows still have NULL jurisdiction_id
+-- (no federal jurisdiction existed at backfill time — seen in
+-- the test integration fixture which seeds jurisdictions AFTER
+-- migrations run), DELETE them as orphans rather than failing
+-- the SET NOT NULL. They can be re-inserted by migration 045's
+-- idempotent INSERT (which now requires the federal jurisdiction
+-- to exist before insertion).
+DELETE FROM cabinet_ministry WHERE jurisdiction_id IS NULL;
 
 ALTER TABLE cabinet_ministry
 ALTER COLUMN jurisdiction_id SET NOT NULL;
