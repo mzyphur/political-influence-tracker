@@ -7,6 +7,7 @@ import type {
   ElectorateProfile,
   EntityProfile,
   IndustryAggregateResponse,
+  IndustryAnatomyResponse,
   InfluenceGraph,
   MinisterVotingPatternResponse,
   PartyProfile,
@@ -251,6 +252,28 @@ export async function fetchIndustryAggregate(options: {
   }
   return fetchJson<IndustryAggregateResponse>(
     apiUrl("/api/industry-aggregate", params),
+    options.signal
+  );
+}
+
+/** THE comprehensive industry view: donations + gifts + sponsored
+ * travel + memberships + contracts per sector. Never summed across
+ * tiers. Powers the "Industry Detail" surface. */
+export async function fetchIndustryAnatomy(options: {
+  sector?: string;
+  minMoneyAud?: number;
+  limit?: number;
+  signal?: AbortSignal;
+}): Promise<IndustryAnatomyResponse> {
+  const params = new URLSearchParams({
+    limit: String(options.limit ?? 60)
+  });
+  if (options.sector) params.set("sector", options.sector);
+  if (options.minMoneyAud !== undefined) {
+    params.set("min_money_aud", String(options.minMoneyAud));
+  }
+  return fetchJson<IndustryAnatomyResponse>(
+    apiUrl("/api/industry-anatomy", params),
     options.signal
   );
 }

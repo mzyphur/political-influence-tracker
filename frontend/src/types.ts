@@ -944,6 +944,62 @@ export type IndustryAggregateResponse = {
 
 
 /**
+ * Industry-anatomy row: comprehensive per-sector aggregation
+ * surfacing every evidence stream the project has on the
+ * sector. Donations + ROI gifts/travel/memberships +
+ * contracts. Each surface in its own column; NEVER summed
+ * across tiers.
+ */
+export type IndustryAnatomyRow = {
+  sector: string;
+  /* Donor side (tier 1) */
+  distinct_donor_entities: number | null;
+  donor_event_count: number | null;
+  money_event_count: number | null;
+  campaign_support_event_count: number | null;
+  private_interest_event_count: number | null;
+  benefit_event_count: number | null;
+  access_event_count: number | null;
+  organisational_role_event_count: number | null;
+  total_money_aud: number | null;
+  total_campaign_support_aud: number | null;
+  /* ROI gifts/travel/memberships (tier 2 — LLM extraction) */
+  gift_count: number | null;
+  gift_total_aud: number | null;
+  sponsored_travel_count: number | null;
+  sponsored_travel_total_aud: number | null;
+  membership_count: number | null;
+  directorship_count: number | null;
+  investment_count: number | null;
+  liability_count: number | null;
+  distinct_gift_counterparty_names: number | null;
+  /* Contract side (tier 2) */
+  contract_count: number | null;
+  distinct_contract_ids: number | null;
+  distinct_suppliers: number | null;
+  total_contract_value_aud: number | null;
+  contracting_agencies: string[] | null;
+  procurement_classes: string[] | null;
+  /* Provenance */
+  donor_evidence_tier: string | null;
+  contract_evidence_tier: string | null;
+  gift_evidence_tier: string | null;
+  claim_discipline_note: string;
+};
+
+export type IndustryAnatomyResponse = {
+  claim_discipline_caveat: string;
+  row_count: number;
+  filters: {
+    sector: string | null;
+    min_money_aud: number;
+    limit: number;
+  };
+  rows: IndustryAnatomyRow[];
+};
+
+
+/**
  * Per-supplier overlap row: a contract supplier that ALSO appears
  * as a donor / gift-giver / host in the deterministic record.
  */
