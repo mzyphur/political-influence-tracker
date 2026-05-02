@@ -80,6 +80,122 @@ disclosed person-level money with campaign-support records, party-
 mediated party/entity context, or modelled allocation. Every public
 claim must travel with its evidence tier and attribution limit.
 
+## NEXT-SESSION PRIORITY LIST (project-lead approved 2026-05-02)
+
+The project lead said "big YES" to all of the following. They land
+in this order:
+
+### 1. When you reload, FIRST check the in-flight Haiku run
+
+```bash
+ps aux | grep llm_tag_austender | grep -v grep
+wc -l "data/processed/llm_austender_topic_tags_haiku_v3/"*.jsonl
+```
+
+* PID at compact time: 448
+* Start command: `scripts/llm_tag_austender_contracts.py --prompt-version v3 --model claude-haiku-4-5-20251001 --start-offset 200 --concurrency 6 --output-dir data/processed/llm_austender_topic_tags_haiku_v3`
+* Pilot file (already complete): `20260501T235624Z.jsonl` (200 lines)
+* Full-run file: `20260502T000509Z.jsonl` (was at 2,062 lines / 2.8% at compact)
+* Expected total when done: ~73,458 lines combined
+* Estimated wall-clock from kick-off: 4-5h
+* Started ~2026-05-02 10:05 AEST
+
+If complete: run Sonnet recovery pass on `error` rows + load both
+to DB (see post-completion checklist below).
+
+### 2. Wire up Anthropic Batches API support in LLMClient
+
+* User-approved 2026-05-02. No harm; 50% off all rates.
+* For: GrantConnect annual run (~50k grants, $40-55 saved),
+  Stage 5+ Hansard, and especially the **25-year archive
+  (1.9M contracts) where Batches saves ~$1,050 vs regular API**.
+* Implementation: add `client.messages.batches.create(...)` path
+  to `backend/au_politics_money/llm/client.py` alongside the
+  existing `messages.create`. Polling helper for batch status.
+  Tool-use + caching both supported by Batches API per Anthropic
+  docs.
+* Estimated dev effort: 3-4 hours.
+* Reference doc:
+  https://platform.claude.com/docs/en/build-with-claude/batch-processing
+
+### 3. Build Gemini 3.1 Flash-Lite Preview integration as Batch EE
+
+* User-approved 2026-05-02. Half the cost of Haiku-Batches at
+  archive scale; cross-provider IRR strengthens validation
+  evidence.
+* Pricing confirmed: **$0.25/M input, $1.50/M output** (released
+  2026-03-03).
+* For 73k Stage 3 v3 corpus: ~$25 USD vs Haiku ~$45 (Batches).
+* For 1.9M historical archive: ~$650 vs Haiku-Batches ~$1,150
+  → ~$500 savings.
+* Implementation:
+  - Extract `LLMClient` into a generic interface.
+  - Build `GeminiLLMClient` mirroring it (Google Generative AI
+    SDK; uses `responseSchema` for structured output instead of
+    Anthropic tool-use).
+  - Pilot Gemini v3 on the same 200 contracts already covered
+    by Haiku + Sonnet pilots (cache will hit for those models).
+  - Cross-rater IRR: Gemini-vs-Sonnet AND Gemini-vs-Haiku
+    (3-rater triangulation per scientific_validation_protocol.md).
+  - Manual audit 30 random Gemini records (per protocol §4).
+  - Decision gate: sector κ ≥ 0.70 AND wrong rate ≤ 10%
+    AND schema-failure rate ≤ 1%.
+* Estimated cost: ~$0.50 USD pilot.
+* Estimated dev effort: 4-6 hours.
+
+### 4. Order: do all three sequentially
+
+User said "Both, sequentially?" → answered "yes":
+1. Wire Batches API (next batch).
+2. Build Gemini integration + pilot + IRR (Batch EE).
+3. If Gemini passes: production run for the historical archive
+   uses Gemini-Batches (or Gemini regular if Google's batch
+   savings + Anthropic's Sonnet recovery + IRR re-checks).
+
+### Post-Stage-3-v3-Haiku-completion checklist
+
+When the in-flight Haiku run finishes:
+
+```bash
+# 1. Verify completion
+wc -l "data/processed/llm_austender_topic_tags_haiku_v3/"*.jsonl
+# Expect ~73,458 total
+
+# 2. Sonnet recovery pass on Haiku-failed rows
+grep '"error"' data/processed/llm_austender_topic_tags_haiku_v3/*.jsonl > /tmp/haiku_failures.jsonl
+# (count failures; if >100, investigate before re-running)
+
+# 3. Load Haiku results to DB
+DATABASE_URL=postgresql://au_politics:change-me-local-only@127.0.0.1:54329/au_politics \
+    backend/.venv/bin/python scripts/load_llm_austender_topic_tags.py
+
+# 4. Final IRR + 5% Sonnet re-sample
+backend/.venv/bin/python scripts/compute_llm_inter_rater_reliability.py \
+    --task austender_contract_topic_tag \
+    --rater-a-jsonl data/processed/llm_austender_topic_tags_haiku_v3/<full-run>.jsonl \
+    --rater-a-label "Haiku 4.5 v3 (full corpus, n=73k)" \
+    --rater-b-jsonl data/processed/llm_austender_topic_tags_sonnet_v3/20260501T235626Z.jsonl \
+    --rater-b-label "Sonnet 4.6 v3 (n=200 sample)"
+
+# 5. Update CHANGELOG + cumulative cost summary
+```
+
+### Cost picture at this checkpoint
+
+| Item | Status | Cost USD |
+|---|---|---:|
+| Cumulative spend through Batch DD pilot | ✅ done | ~$206 |
+| Stage 3 v3 Haiku full run (in flight) | ⏳ ~3% done | ~$60-90 estimated |
+| Sonnet recovery on failures | pending | ~$3-5 |
+| GrantConnect full corpus (next batch via Batches API) | pending | ~$40-55 |
+| Gemini pilot (Batch EE) | pending | ~$0.50 |
+| Optional 25-year archive (Batches+Gemini) | optional | ~$650 |
+| **Pre-archive total estimate** | | **~$310-360 USD (~$480-560 AUD)** |
+
+Within $1,000 AUD budget envelope with comfortable headroom.
+
+---
+
 ## Current state (live, end of Batch DD — 2026-05-02)
 
 **HAIKU VALIDATION PIPELINE SHIPPED + FULL HAIKU V3 CORPUS RUN

@@ -13,6 +13,27 @@ gate hit; full 73k Haiku v3 corpus run IN FLIGHT in background.
 ~$60-90 USD estimated for full run; saves ~$150-300 USD vs
 Sonnet alone).
 
+## NEXT-SESSION PRIORITIES (project-lead-approved 2026-05-02)
+
+User said "big YES" to all three:
+1. **Wire Anthropic Batches API in LLMClient** (50% off, no harm).
+   For GrantConnect run + 25-year archive (~$1,050 saved on archive).
+2. **Build Gemini 3.1 Flash-Lite integration + pilot + IRR + audit
+   as Batch EE.** Pricing confirmed $0.25/$1.50 per M tokens
+   (released 2026-03-03). Cross-provider IRR strengthens validation
+   evidence + saves ~$500 on archive vs Haiku-Batches.
+3. **Sequential order**: Batches first, then Gemini. Both as
+   separate batches with proper documentation + decision gates per
+   `docs/scientific_validation_protocol.md`.
+
+Plus the in-flight work already running:
+- Stage 3 v3 Haiku full corpus (~73k contracts, ~3% done at
+  compact, ~4-5h to complete).
+- After: Sonnet recovery pass + DB loader + final IRR.
+
+The full hand-off detail with checklist commands is in
+`docs/resume_prompt.md` at the top.
+
 ## Batch DD — Haiku validation pipeline (2026-05-02)
 
 Project-lead directive: validate Haiku 4.5 vs Sonnet 4.6 on the
