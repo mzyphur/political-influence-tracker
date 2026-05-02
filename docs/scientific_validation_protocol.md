@@ -189,6 +189,24 @@ the maintainer:
 judgment calls, 1 weak (medium-confidence flagged correctly), 0
 wrong. Wrong rate: 0%. Verdict: production-grade.
 
+**Stage 3 v3 Haiku audit (n=30, 2026-05-02):** 22 correct, 5
+acceptable, 2 weak, 1 wrong (AOT Group misread as
+`government_owned`). Wrong rate: 3.3%. Verdict: GREEN-LIGHT for
+full corpus run. IRR with Sonnet on n=199: sector κ=0.85
+(almost perfect).
+
+**Full-population audit precedent (Gemini 3.1 Flash-Lite Preview
+v3, planned 2026-05-02):** the project lead directed that the
+Gemini pilot be audited at FULL n=200 (not the default 30) so
+the validity evidence for cross-provider integration is
+exhaustive. Each record gets verdict + rationale + comparison
+against Haiku and Sonnet output on the same contract.
+**Precedent:** when the project lead specifies a full-
+population audit, the protocol honors it as the strongest
+possible validity evidence. Output deposited as durable project
+documentation under
+`data/audit/llm_inter_rater_reliability/austender_contract_topic_tag_gemini_v3_full_audit/<ts>.audit.{md,csv}`.
+
 ## 5. Bias acknowledgments
 
 The project commits to publicly documenting known biases:
