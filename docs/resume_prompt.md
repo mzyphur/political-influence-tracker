@@ -137,9 +137,19 @@ to DB (see post-completion checklist below).
     by Haiku + Sonnet pilots (cache will hit for those models).
   - Cross-rater IRR: Gemini-vs-Sonnet AND Gemini-vs-Haiku
     (3-rater triangulation per scientific_validation_protocol.md).
-  - Manual audit 30 random Gemini records (per protocol §4).
+  - **Manual audit ALL 200 Gemini pilot records** (project lead's
+    explicit directive 2026-05-02 — strengthen the validity
+    evidence beyond the protocol's default 30-sample). Each
+    record gets a correct/acceptable/wrong/summary_issue verdict
+    coded by the agent acting as project-lead reviewer; results
+    deposited as project documentation under
+    `data/audit/llm_inter_rater_reliability/austender_contract_topic_tag_gemini_v3_full_audit/<ts>.audit.{md,csv}`
+    with one row per (contract_id, verdict, rationale,
+    haiku_verdict, sonnet_verdict). Total: 200 × ~3 minutes
+    each = ~10 hours of focused agent work; doable in chunks.
   - Decision gate: sector κ ≥ 0.70 AND wrong rate ≤ 10%
-    AND schema-failure rate ≤ 1%.
+    AND schema-failure rate ≤ 1%, with the audit of all 200
+    records giving high statistical confidence.
 * Estimated cost: ~$0.50 USD pilot.
 * Estimated dev effort: 4-6 hours.
 
