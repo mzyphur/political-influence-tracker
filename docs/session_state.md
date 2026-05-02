@@ -5,13 +5,103 @@ needs to pick up where the previous one left off. Read this **before**
 proposing a plan; it captures decisions, gotchas, and the current next
 step that aren't necessarily obvious from `git log` or the build_log.
 
-Last updated: **2026-05-02** (end of Batch CC — Stage 1 v1 + v2
-both COMPLETE + LOADED; v1↔v2 IRR κ=0.887 almost-perfect;
-Stage 2 ROI full corpus loaded (3,547 items); GrantConnect
-pipeline scaffolded end-to-end; influence-anatomy view live;
-loader SAVEPOINT bug fixed (28,236 model_assisted rows now
-correctly in DB, was 7,622 due to rollback bug); methodology
-page updated with all new sections; 27+ commits in BB+CC).
+Last updated: **2026-05-02** (end of Batch DD — Haiku-validation
+pipeline shipped; Stage 3 v3 Haiku-vs-Sonnet IRR κ=0.85
+almost-perfect; manual audit 22/30 correct + 5 acceptable +
+2 weak + 1 wrong (3.3% wrong rate, PASS); GREEN-LIGHT decision
+gate hit; full 73k Haiku v3 corpus run IN FLIGHT in background.
+~$60-90 USD estimated for full run; saves ~$150-300 USD vs
+Sonnet alone).
+
+## Batch DD — Haiku validation pipeline (2026-05-02)
+
+Project-lead directive: validate Haiku 4.5 vs Sonnet 4.6 on the
+v3 prompt; if passes, run full corpus with Haiku at 1/3 cost.
+Outcome: PASS, full run in flight.
+
+### Driver enhancements
+
+* `scripts/llm_tag_austender_contracts.py` extended with three
+  flags: `--model` (Haiku or Sonnet), `--prompt-version` (v1/v2/v3),
+  `--start-offset` (skip first N contracts; for resuming partial
+  runs).
+* Schema, prompt path, and pricing math switch automatically by
+  model + version.
+
+### IRR Haiku v3 vs Sonnet v3 (n=199, full pilot overlap)
+
+* Sector κ = **0.850 (almost perfect — Landis-Koch)**
+* Procurement-class κ = 0.652 (substantial)
+* Policy-topics Jaccard = 0.846; micro-F1 = 0.865
+* All exceed production threshold (κ ≥ 0.60).
+* Output: `data/audit/llm_inter_rater_reliability/austender_contract_topic_tag/<ts>.{json,md}`.
+
+### Manual audit (project-lead delegation)
+
+* 30 random Haiku-v3 records, deterministic seed=42.
+* 22 correct / 5 acceptable / 2 weak / 1 wrong = **3.3% wrong rate**.
+* PASS (≤ 10% threshold).
+* Audit doc:
+  `data/audit/llm_inter_rater_reliability/austender_contract_topic_tag_haiku_v3_vs_sonnet_v3/20260502T100000Z.audit.md`.
+* Specific failure: AOT Group misread as `government_owned` (private
+  travel-accommodation provider). Mitigation: Stage 1 entity
+  classification override at query time once AOT entity is
+  classified.
+
+### Decision gate criteria — ALL PASS
+
+| Criterion | Threshold | Actual | Status |
+|---|---|---|:---:|
+| Cohen's κ (sector) | ≥ 0.60 substantial | 0.85 almost-perfect | ✅ |
+| Cohen's κ (procurement_class) | ≥ 0.60 substantial | 0.65 substantial | ✅ |
+| Pilot failure rate | ≤ 1% | 0.5% (1/200) | ✅ |
+| Manual audit wrong rate | ≤ 10% | 3.3% (1/30) | ✅ |
+| Multi-label F1 | ≥ 0.50 | macro 0.66 / micro 0.86 | ✅ |
+
+**GREEN-LIGHT for full Haiku v3 corpus run.**
+
+### Critical: Stage 3 v3 Haiku full corpus run IN FLIGHT
+
+When the next session reloads, FIRST CHECK:
+
+```bash
+ps aux | grep llm_tag_austender_contracts | grep -v grep | head -3
+ls -la "data/processed/llm_austender_topic_tags_haiku_v3/"
+wc -l data/processed/llm_austender_topic_tags_haiku_v3/*.jsonl
+```
+
+* Pilot file: `20260501T235624Z.jsonl` (200 contracts, COMPLETE).
+* Full-run file: NEW timestamp `20260502T<HHMMSS>Z.jsonl`.
+* Expected total at end of run: ~73,258 lines (after 200 pilot
+  + ~73,258 remaining).
+* Process: kicked off via background bash task `bk2iedlwn` running
+  `scripts/llm_tag_austender_contracts.py --prompt-version v3
+  --model claude-haiku-4-5-20251001 --start-offset 200
+  --concurrency 6`.
+* Estimated wall-clock: 4-5 hours from kick-off (2026-05-02 ~10:00 AEST).
+* Estimated cost: $50-90 USD.
+
+### When Stage 3 v3 Haiku full run completes
+
+1. Sonnet recovery pass for the failed rows:
+   ```bash
+   # Identify Haiku-failed rows (have "error" key)
+   grep '"error"' data/processed/llm_austender_topic_tags_haiku_v3/*.jsonl > /tmp/haiku_failures.jsonl
+   # Re-tag with Sonnet
+   backend/.venv/bin/dotenv -f backend/.env run -- \
+       backend/.venv/bin/python scripts/llm_tag_austender_contracts.py \
+           --prompt-version v3 --model claude-sonnet-4-6 \
+           --jsonl /tmp/haiku_failures.jsonl --concurrency 8 \
+           --output-dir data/processed/llm_austender_topic_tags_sonnet_recovery_v3
+   ```
+2. Load both Haiku + Sonnet-recovery results into
+   `austender_contract_topic_tag` table (loader at
+   `scripts/load_llm_austender_topic_tags.py`).
+3. Final IRR check on full Haiku corpus + Sonnet sample (5%
+   re-sample) for production sign-off.
+4. Update CHANGELOG + cumulative cost summary.
+
+## Batch CC delivered (14 commits, all on public mirror)
 
 ## Batch CC delivered (14 commits, all on public mirror)
 

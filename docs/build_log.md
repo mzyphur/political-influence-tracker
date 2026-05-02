@@ -1,5 +1,107 @@
 # Build Log
 
+## 2026-05-02 (Batch DD — Haiku validation pipeline + Stage 3 v3 full corpus run via Haiku at 1/3 cost)
+
+Project-lead direction: validate Haiku 4.5 against Sonnet 4.6 on
+the v3 (40-sector) prompt; if passes decision gates, run full
+73k AusTender corpus with Haiku to save ~70% of LLM cost.
+
+### Haiku-validation pipeline shipped
+
+* `scripts/llm_tag_austender_contracts.py` — added `--model`,
+  `--prompt-version` (v1/v2/v3), and `--start-offset` flags. Single
+  driver now supports all three prompt versions × Haiku 4.5 +
+  Sonnet 4.6.
+* `_resolve_prompt_paths()` + `_build_response_schema()` switch
+  enum (33 vs 40 sector) by version.
+* Pricing math per-model — Haiku at $1/$5 per Mtok, Sonnet at $3/$15.
+
+### Pilot + cross-rater results
+
+**Haiku 4.5 v3 pilot (200 contracts, concurrency=6):**
+* 199/200 success, 1 failure (schema mismatch, 0.5%).
+* Cost: $0.24 USD regular API.
+* Wall-clock: ~46 sec at 4.30/s.
+
+**Sonnet 4.6 v3 pilot (same 200 contracts, concurrency=8):**
+* 200/200 success, 0 failures.
+* Cost: $0.75 USD regular API. (3.1× Haiku cost.)
+
+**IRR Haiku v3 vs Sonnet v3 (n=199 overlap):**
+* **Sector kappa: 0.850 (ALMOST PERFECT — Landis-Koch).** 87.9%
+  observed agreement.
+* Procurement-class kappa: 0.652 (substantial).
+* Confidence kappa: 0.366 (fair).
+* Policy-topics Jaccard 0.846 mean / 1.0 median; macro-F1 0.66;
+  micro-F1 0.86.
+
+This is ABOVE both the Haiku-v1-vs-Sonnet-v2 baseline (κ=0.76)
+and the project's production-use threshold (κ ≥ 0.60).
+
+### Manual audit (project-lead delegation per scientific_validation_protocol.md §4)
+
+Audit doc:
+`data/audit/llm_inter_rater_reliability/austender_contract_topic_tag_haiku_v3_vs_sonnet_v3/20260502T100000Z.audit.md`.
+
+Sample: 30 random Haiku v3 records, deterministic seed=42:
+* CORRECT: 22 (73%)
+* ACCEPTABLE: 5 (17%) — judgment-call differences, defensible
+* WEAK: 2 (7%) — medium-confidence flagged correctly
+* WRONG: 1 (3%) — AOT Group misread as `government_owned`
+
+**Wrong rate: 3.3% ≤ 10% threshold. PASS.**
+
+### Decision gate — ALL 5 criteria PASS
+
+| Criterion | Threshold | Actual |
+|---|---|---|
+| Sector κ | ≥ 0.60 substantial | 0.85 almost-perfect |
+| Procurement κ | ≥ 0.60 substantial | 0.65 substantial |
+| Pilot failure rate | ≤ 1% | 0.5% |
+| Audit wrong rate | ≤ 10% | 3.3% |
+| Topics multi-label F1 | ≥ 0.50 | macro 0.66 / micro 0.86 |
+
+GREEN-LIGHT for full corpus run.
+
+### Full Haiku v3 corpus run — IN FLIGHT at end of batch
+
+* PID `bk2iedlwn` running in background.
+* Input: 73,258 remaining contracts (after the 200 pilot).
+* Concurrency: 6 (Haiku TPM-aware).
+* Estimated cost: $50–90 USD regular API (vs $200–400 if Sonnet).
+* Estimated wall-clock: ~4–5 hours.
+* Output JSONL: `data/processed/llm_austender_topic_tags_haiku_v3/<ts>.jsonl`.
+
+When the run completes (next session likely), the loader runs
+plus a Sonnet-recovery pass on the ~0.5% schema-failed contracts.
+Net additional cost: ~$3–5 USD.
+
+### Cost picture
+
+| Approach | Pilot 200 | Full 73,458 |
+|---|---:|---:|
+| Sonnet alone | $0.75 | ~$200–400 |
+| Haiku-v3 + cross-rater + Sonnet-recovery | $0.99 ($0.24 Haiku + $0.75 Sonnet pilot) | ~$60–95 (Haiku full + Sonnet recovery + Sonnet pilot) |
+| **Savings** | — | **~$140–305 USD** on this corpus, ~$2,000+ on the full 25-year archive |
+
+### Cumulative project LLM spend through Batch DD
+
+| Stage | Cost USD |
+|---|---:|
+| Stage 1 v1 (28k entities) | $104 |
+| Stage 1 v2 (23k unknowns re-classified) | $87 |
+| Stage 2 ROI full corpus (3,547 items) | $11 |
+| Stage 3 v1+v2 pilots (Haiku+Sonnet 33-sector) | $2 |
+| Stage 3 v3 pilots (Haiku + Sonnet, 200 each) | $1 |
+| **TOTAL through Batch DD pilots** | **~$205 USD** |
+| Stage 3 v3 full Haiku corpus (in flight) | ~$60 estimated |
+| Sonnet recovery pass | ~$5 estimated |
+| **Projected total at end of Batch DD** | **~$270 USD** |
+
+Within the original $1,000 AUD project budget. Headroom for
+Stages 5+ (Hansard, committee submissions, etc.) remains
+substantial.
+
 ## 2026-05-02 (Batch CC — comprehensive transparency surface: anatomy view + ROI APIs + GrantConnect + lobbyist scaffold + Stage 1 v2 complete + loader bugfix)
 
 15 commits in extended day-of session. Stage 1 v2 28k full corpus

@@ -80,6 +80,38 @@ disclosed person-level money with campaign-support records, party-
 mediated party/entity context, or modelled allocation. Every public
 claim must travel with its evidence tier and attribution limit.
 
+## Current state (live, end of Batch DD — 2026-05-02)
+
+**HAIKU VALIDATION PIPELINE SHIPPED + FULL HAIKU V3 CORPUS RUN
+IN FLIGHT.** Project-lead approved running Stage 3 v3 (40-sector
+contract topic tagging) via Haiku 4.5 instead of Sonnet 4.6 for
+1/3 the cost, after a formal IRR + manual-audit decision-gate
+PASSED.
+
+Headline results:
+* Sector κ = 0.85 (almost perfect Haiku-vs-Sonnet on n=199 pilot).
+* Manual audit 3.3% wrong rate on n=30 (≤10% threshold).
+* Pilot cost: $0.24 Haiku vs $0.75 Sonnet (3.1× cheaper).
+* Full 73k corpus IN FLIGHT in background: estimated ~$60-90 USD,
+  ~4-5h wall-clock. PID `bk2iedlwn`.
+* Output: `data/processed/llm_austender_topic_tags_haiku_v3/<ts>.jsonl`.
+
+When the next session reloads, FIRST CHECK Haiku run status:
+
+```bash
+ps aux | grep llm_tag_austender | grep -v grep
+wc -l "data/processed/llm_austender_topic_tags_haiku_v3/"*.jsonl
+```
+
+If complete (~73,458 total lines across pilot + full run):
+1. Run Sonnet recovery pass on Haiku-failed rows.
+2. Load both Haiku + Sonnet-recovery results to DB via
+   `scripts/load_llm_austender_topic_tags.py`.
+3. Final IRR + 5% Sonnet re-sample for sign-off.
+
+Audit + IRR reports under
+`data/audit/llm_inter_rater_reliability/austender_contract_topic_tag_haiku_v3_vs_sonnet_v3/`.
+
 ## Current state (live, end of Batch BB — 2026-05-01)
 
 **STAGES 2 + 3 + 4a ALL SHIPPED IN BATCH BB.** Plus the

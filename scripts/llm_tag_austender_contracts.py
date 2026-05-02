@@ -59,20 +59,27 @@ from au_politics_money.config import PROCESSED_DIR  # noqa: E402
 from au_politics_money.llm import LLMClient, LLMResponse  # noqa: E402
 
 
-PROMPT_VERSION = "austender_contract_topic_tag_v2"
-MODEL_ID = "claude-sonnet-4-6"
+DEFAULT_PROMPT_VERSION = "austender_contract_topic_tag_v2"
+DEFAULT_MODEL_ID = "claude-sonnet-4-6"
 TASK_NAME = "austender_contract_topic_tag"
 
-# v2 (2026-05-01): upgraded from Haiku 4.5 to Sonnet 4.6 per project-
-# lead direction for maximum accuracy on the 33-sector + 24-topic enum
-# constraint. v1 had one schema-mismatch hallucination across 500
-# pilot contracts ("furniture" returned as a sector, not in the enum).
-# v2's expanded sector + policy-topic taxonomy table (above the
-# 1,024-token Anthropic prompt-cache threshold) ensures cache fires.
-PROMPT_PATH = PROJECT_ROOT / "prompts" / "austender_contract_topic_tag" / "v2.md"
+# Backward-compat constants. Driver was originally Sonnet-only;
+# Batch CC-15 added --model + --prompt-version flags so a single
+# script supports v1 (Haiku 4.5, 33-sector), v2 (Sonnet 4.6,
+# 33-sector), and v3 (40-sector w/ energy/mining splits — runs
+# against either Haiku 4.5 or Sonnet 4.6). The Haiku-validation-
+# pipeline (Stage 3 cost-down) uses --model claude-haiku-4-5-20251001
+# --prompt-version v3.
+MODEL_ID = DEFAULT_MODEL_ID
+PROMPT_VERSION = DEFAULT_PROMPT_VERSION
+PROMPT_PATH_V1 = PROJECT_ROOT / "prompts" / "austender_contract_topic_tag" / "v1.md"
+PROMPT_PATH_V2 = PROJECT_ROOT / "prompts" / "austender_contract_topic_tag" / "v2.md"
+PROMPT_PATH_V3 = PROJECT_ROOT / "prompts" / "austender_contract_topic_tag" / "v3.md"
+PROMPT_PATH = PROMPT_PATH_V2  # default for legacy callers
 
 
-VALID_SECTORS: frozenset[str] = frozenset(
+# v1 / v2 use the 33-sector taxonomy.
+VALID_SECTORS_V1_V2: frozenset[str] = frozenset(
     {
         "fossil_fuels", "mining", "renewable_energy",
         "property_development", "construction", "gambling",
@@ -87,6 +94,28 @@ VALID_SECTORS: frozenset[str] = frozenset(
         "political_entity", "individual_uncoded", "unknown",
     }
 )
+
+# v3 adds the 8 energy + mining commodity sub-codes (40 total).
+VALID_SECTORS_V3: frozenset[str] = frozenset(
+    {
+        "coal", "gas", "petroleum", "uranium", "fossil_fuels_other",
+        "iron_ore", "critical_minerals", "mining_other",
+        "renewable_energy", "property_development", "construction",
+        "gambling", "alcohol", "tobacco", "finance",
+        "superannuation", "insurance", "banking", "technology",
+        "telecoms", "defence", "consulting", "law", "accounting",
+        "healthcare", "pharmaceuticals", "education", "media",
+        "sport_entertainment", "transport", "aviation",
+        "agriculture", "unions", "business_associations",
+        "charities_nonprofits", "foreign_government",
+        "government_owned", "political_entity",
+        "individual_uncoded", "unknown",
+    }
+)
+
+# Backward-compat alias used by tests and tools that imported
+# VALID_SECTORS without specifying a version.
+VALID_SECTORS = VALID_SECTORS_V1_V2
 
 VALID_POLICY_TOPICS: frozenset[str] = frozenset(
     {
@@ -110,40 +139,65 @@ VALID_PROCUREMENT_CLASSES: frozenset[str] = frozenset(
 )
 
 
-RESPONSE_SCHEMA: dict[str, Any] = {
-    "type": "object",
-    "additionalProperties": False,
-    "required": ["sector", "policy_topics", "procurement_class",
-                 "summary", "confidence"],
-    "properties": {
-        "sector": {
-            "type": "string",
-            "enum": sorted(VALID_SECTORS),
-        },
-        "policy_topics": {
-            "type": "array",
-            "minItems": 1,
-            "maxItems": 4,
-            "items": {
-                "type": "string",
-                "enum": sorted(VALID_POLICY_TOPICS),
+def _build_response_schema(prompt_version: str) -> dict[str, Any]:
+    """Build the response schema for the requested prompt version.
+    v1/v2 use 33-sector taxonomy; v3 uses 40-sector taxonomy."""
+    sectors = (
+        VALID_SECTORS_V3 if prompt_version.endswith("_v3") else VALID_SECTORS_V1_V2
+    )
+    return {
+        "type": "object",
+        "additionalProperties": False,
+        "required": [
+            "sector",
+            "policy_topics",
+            "procurement_class",
+            "summary",
+            "confidence",
+        ],
+        "properties": {
+            "sector": {"type": "string", "enum": sorted(sectors)},
+            "policy_topics": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": {"type": "string", "enum": sorted(VALID_POLICY_TOPICS)},
             },
+            "procurement_class": {
+                "type": "string",
+                "enum": sorted(VALID_PROCUREMENT_CLASSES),
+            },
+            "summary": {"type": "string", "minLength": 1, "maxLength": 250},
+            "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
         },
-        "procurement_class": {
-            "type": "string",
-            "enum": sorted(VALID_PROCUREMENT_CLASSES),
-        },
-        "summary": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 250,
-        },
-        "confidence": {
-            "type": "string",
-            "enum": ["high", "medium", "low"],
-        },
-    },
-}
+    }
+
+
+# Backward-compat: legacy callers can still import RESPONSE_SCHEMA.
+RESPONSE_SCHEMA: dict[str, Any] = _build_response_schema(DEFAULT_PROMPT_VERSION)
+
+
+def _resolve_prompt_paths(prompt_version: str) -> tuple[str, Path, frozenset[str]]:
+    """Map a prompt-version arg ('v1' / 'v2' / 'v3' or full task-name)
+    to (full_prompt_version_string, prompt_md_path, valid_sectors)."""
+    short = prompt_version.lower().lstrip("v")
+    if prompt_version.endswith("_v3") or short == "3":
+        return (
+            "austender_contract_topic_tag_v3",
+            PROMPT_PATH_V3,
+            VALID_SECTORS_V3,
+        )
+    if prompt_version.endswith("_v2") or short == "2":
+        return (
+            "austender_contract_topic_tag_v2",
+            PROMPT_PATH_V2,
+            VALID_SECTORS_V1_V2,
+        )
+    return (
+        "austender_contract_topic_tag_v1",
+        PROMPT_PATH_V1,
+        VALID_SECTORS_V1_V2,
+    )
 
 
 # Strip HTML tags + decode HTML entities. The AusTender CSV's
@@ -161,19 +215,17 @@ def _strip_html(text: str | None) -> str:
     return cleaned
 
 
-def _load_system_instruction() -> str:
-    """Extract the load-bearing system instruction from the v1
-    prompt markdown. The prompt file is the source of truth; this
-    script reads it at runtime so a prompt update lands without a
-    code change.
+def _load_system_instruction(prompt_path: Path | None = None) -> str:
+    """Extract the load-bearing system instruction from the prompt
+    markdown file. Defaults to the legacy PROMPT_PATH (v2) for
+    backward compat; v3 / future versions pass `prompt_path` directly.
     """
-    text = PROMPT_PATH.read_text(encoding="utf-8")
+    target = prompt_path if prompt_path is not None else PROMPT_PATH
+    text = target.read_text(encoding="utf-8")
     marker = "## System instruction"
     start = text.find(marker)
     if start < 0:
-        raise RuntimeError(
-            f"Prompt v1 missing '{marker}' section: {PROMPT_PATH}"
-        )
+        raise RuntimeError(f"Prompt missing '{marker}' section: {target}")
     rest = text[start + len(marker):]
     if rest.startswith(" (load-bearing)"):
         rest = rest[len(" (load-bearing)"):]
@@ -262,14 +314,22 @@ def _tag_one(
     *,
     record: dict[str, Any],
     system_instruction: str,
+    model_id: str = DEFAULT_MODEL_ID,
+    prompt_version: str = DEFAULT_PROMPT_VERSION,
+    valid_sectors: frozenset[str] = VALID_SECTORS_V1_V2,
+    response_schema: dict[str, Any] | None = None,
 ) -> tuple[LLMResponse, dict[str, Any]]:
     user_message = _build_user_message(record)
+    schema = (
+        response_schema if response_schema is not None
+        else _build_response_schema(prompt_version)
+    )
     response = client.call_json(
-        model_id=MODEL_ID,
-        prompt_version=PROMPT_VERSION,
+        model_id=model_id,
+        prompt_version=prompt_version,
         system_instruction=system_instruction,
         user_message=user_message,
-        response_schema=RESPONSE_SCHEMA,
+        response_schema=schema,
         temperature=0.0,
         max_tokens=400,
     )
@@ -277,7 +337,7 @@ def _tag_one(
     # Belt-and-braces validation. The Anthropic tool_use schema
     # check is server-side; we re-check enums here so the project's
     # reproducibility chain doesn't depend on the API alone.
-    if parsed["sector"] not in VALID_SECTORS:
+    if parsed["sector"] not in valid_sectors:
         raise ValueError(
             f"Invalid sector {parsed['sector']!r} for "
             f"contract {record.get('contract_id')}"
@@ -312,7 +372,7 @@ def _tag_one(
         "procurement_method": record.get("procurement_method"),
         "consultancy_flag": record.get("consultancy_flag"),
         "llm_model_id": response.model_id,
-        "llm_prompt_version": PROMPT_VERSION,
+        "llm_prompt_version": prompt_version,
         "llm_temperature": 0.0,
         "llm_response_sha256": response.sha256,
         "llm_input_tokens": response.input_tokens,
@@ -323,7 +383,7 @@ def _tag_one(
         "procurement_class": parsed["procurement_class"],
         "summary": parsed["summary"],
         "confidence": parsed["confidence"],
-        "extraction_method": "llm_austender_topic_tag_v2",
+        "extraction_method": f"llm_{prompt_version}",
     }
     return response, out_record
 
@@ -395,6 +455,30 @@ def main(argv: list[str] | None = None) -> int:
             "are not re-emitted to the JSONL (saves disk on full re-runs)."
         ),
     )
+    parser.add_argument(
+        "--prompt-version", default="v2",
+        choices=["v1", "v2", "v3"],
+        help=(
+            "Prompt version to use. v1=33-sector Haiku-era; v2=33-sector "
+            "Sonnet upgrade; v3=40-sector with energy/mining commodity splits."
+            " Default: v2."
+        ),
+    )
+    parser.add_argument(
+        "--model", default=DEFAULT_MODEL_ID,
+        help=(
+            "Anthropic model id. Default: claude-sonnet-4-6. For "
+            "Haiku-validation-pipeline runs use claude-haiku-4-5-20251001."
+        ),
+    )
+    parser.add_argument(
+        "--start-offset", type=int, default=0,
+        help=(
+            "Skip the first N contracts in the input JSONL. Combined with "
+            "--limit, lets the driver process slices of the corpus (e.g., "
+            "--start-offset 200 --limit 1000 = contracts 201..1200)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if not os.environ.get("ANTHROPIC_API_KEY"):
@@ -403,6 +487,13 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
+
+    # Resolve prompt-version + model.
+    prompt_version, prompt_path, valid_sectors = _resolve_prompt_paths(
+        args.prompt_version
+    )
+    response_schema = _build_response_schema(prompt_version)
+    model_id = args.model
 
     if args.jsonl:
         jsonl_input = Path(args.jsonl).resolve()
@@ -424,8 +515,11 @@ def main(argv: list[str] | None = None) -> int:
     jsonl_output = output_dir / f"{timestamp}.jsonl"
     summary_path = output_dir / f"{timestamp}.summary.json"
 
-    print(f"Loading system instruction from {PROMPT_PATH}...")
-    system_instruction = _load_system_instruction()
+    print(
+        f"Loading system instruction (prompt {prompt_version}, "
+        f"model {model_id}) from {prompt_path}..."
+    )
+    system_instruction = _load_system_instruction(prompt_path)
 
     client = LLMClient(task_name=TASK_NAME)
 
@@ -433,6 +527,9 @@ def main(argv: list[str] | None = None) -> int:
     contracts = _read_jsonl(jsonl_input)
     print(f"  {len(contracts):,} contract notices loaded.")
 
+    if args.start_offset and args.start_offset > 0:
+        contracts = contracts[args.start_offset:]
+        print(f"  --start-offset {args.start_offset} applied: {len(contracts):,} remain.")
     if args.limit and args.limit > 0:
         contracts = contracts[: args.limit]
         print(f"  --limit applied: {len(contracts):,} contracts will be tagged.")
@@ -465,11 +562,15 @@ def main(argv: list[str] | None = None) -> int:
                 client,
                 record=record,
                 system_instruction=system_instruction,
+                model_id=model_id,
+                prompt_version=prompt_version,
+                valid_sectors=valid_sectors,
+                response_schema=response_schema,
             )
         except Exception as exc:  # noqa: BLE001
             error_record = {
                 "contract_id": record.get("contract_id"),
-                "extraction_method": "llm_austender_topic_tag_v2",
+                "extraction_method": f"llm_{prompt_version}",
                 "error": repr(exc),
             }
             with output_lock:
@@ -541,18 +642,28 @@ def main(argv: list[str] | None = None) -> int:
     # Sonnet 4.6 pricing (v2 upgrade): $3 / M input, $15 / M output
     # regular API. Anthropic Batches API: $1.50 / M input, $7.50 / M
     # output (50% off). Cached input tokens cost 10% of regular
-    # input rate (so ~$0.30 / M cached).
-    estimated_cost_usd = (
-        (total_input_tokens / 1_000_000) * 3.0
-        + (total_output_tokens / 1_000_000) * 15.0
-    )
+    # input rate (so ~$0.30 / M cached). For Haiku 4.5 the input
+    # rate is $1/M and output is $5/M (1/3 of Sonnet); the
+    # estimated cost columns reflect both.
+    is_haiku = "haiku" in model_id.lower()
+    if is_haiku:
+        estimated_cost_usd = (
+            (total_input_tokens / 1_000_000) * 1.0
+            + (total_output_tokens / 1_000_000) * 5.0
+        )
+    else:
+        estimated_cost_usd = (
+            (total_input_tokens / 1_000_000) * 3.0
+            + (total_output_tokens / 1_000_000) * 15.0
+        )
     summary = {
         "task_name": TASK_NAME,
-        "prompt_version": PROMPT_VERSION,
-        "model_id": MODEL_ID,
+        "prompt_version": prompt_version,
+        "model_id": model_id,
         "generated_at": timestamp,
         "concurrency": args.concurrency,
         "input_jsonl": str(jsonl_input),
+        "start_offset": args.start_offset,
         "contract_count": len(contracts),
         "cache_hits": cache_hits,
         "fresh_calls": fresh_calls,
@@ -561,18 +672,17 @@ def main(argv: list[str] | None = None) -> int:
         "elapsed_seconds": round(elapsed, 2),
         "total_input_tokens": total_input_tokens,
         "total_output_tokens": total_output_tokens,
-        "estimated_cost_usd_sonnet_4_6_regular": round(estimated_cost_usd, 4),
-        "estimated_cost_usd_sonnet_4_6_batches_50pct": round(estimated_cost_usd * 0.5, 4),
+        "estimated_cost_usd_regular": round(estimated_cost_usd, 4),
+        "estimated_cost_usd_batches_50pct": round(estimated_cost_usd * 0.5, 4),
         "sector_distribution": sector_distribution,
         "confidence_distribution": confidence_distribution,
         "procurement_distribution": procurement_distribution,
         "jsonl_path": str(jsonl_output),
         "claim_discipline_caveat": (
-            "These contract topic tags are produced by Claude Sonnet 4.6 "
-            "under the v2 prompt at "
-            "prompts/austender_contract_topic_tag/v2.md. They are "
-            "labelled with extraction_method = "
-            "'llm_austender_topic_tag_v2' wherever they surface; the "
+            f"These contract topic tags are produced by {model_id} "
+            f"under the {prompt_version} prompt at {prompt_path}. They "
+            f"are labelled with extraction_method = "
+            f"'llm_{prompt_version}' wherever they surface; the "
             "project's claim-discipline rule treats them as a separate "
             "evidence tier from rule-based classifications. Each row's "
             "full input + output envelope is cached at "
